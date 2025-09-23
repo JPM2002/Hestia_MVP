@@ -1,0 +1,20 @@
+:root{
+  --bg:#FAFAFB;
+  --bg-elev:#FFFFFF;
+  --text:#16242D;
+  --brand:#16242D;
+  --accent:#41D4A8;
+  --warning:#C09B5F;
+  --critical:#E5484D;
+}
+
+body.bg-soft{ background: var(--bg); color: var(--text); }
+
+.btn-brand{
+  background: var(--brand);
+  color: #fff;
+}
+.btn-brand:hover{
+  background: #0f1a22;
+  color:#fff;
+}

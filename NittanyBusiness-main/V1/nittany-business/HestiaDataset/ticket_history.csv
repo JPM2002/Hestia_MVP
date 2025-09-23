@@ -1,0 +1,4 @@
+id,ticket_id,actor_user_id,action,motivo,at
+1,1001,3,CREADO,,2025-01-16T09:05:00
+2,1002,5,CREADO,,2025-01-16T09:15:00
+3,1002,5,ACEPTADO,,2025-01-16T09:17:00

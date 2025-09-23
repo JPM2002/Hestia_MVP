@@ -1,0 +1,26 @@
+id,username,email,role,area,telefono,activo
+1,gerente1,gerente1@hotel.test,GERENTE,,+56 9 72867825,1
+2,gerente2,gerente2@hotel.test,GERENTE,,+56 9 71419610,1
+3,supervisor1,supervisor1@hotel.test,SUPERVISOR,MANTENCION,+56 9 75614226,1
+4,supervisor2,supervisor2@hotel.test,SUPERVISOR,HOUSEKEEPING,+56 9 75108603,1
+5,supervisor3,supervisor3@hotel.test,SUPERVISOR,ROOMSERVICE,+56 9 74744854,1
+6,supervisor4,supervisor4@hotel.test,SUPERVISOR,MANTENCION,+56 9 73341057,1
+7,tecnico1,tecnico1@hotel.test,TECNICO,MANTENCION,+56 9 72719583,1
+8,tecnico2,tecnico2@hotel.test,TECNICO,HOUSEKEEPING,+56 9 72458591,1
+9,tecnico3,tecnico3@hotel.test,TECNICO,ROOMSERVICE,+56 9 78078673,1
+10,tecnico4,tecnico4@hotel.test,TECNICO,MANTENCION,+56 9 71533224,1
+11,tecnico5,tecnico5@hotel.test,TECNICO,HOUSEKEEPING,+56 9 71499914,1
+12,tecnico6,tecnico6@hotel.test,TECNICO,ROOMSERVICE,+56 9 72571945,1
+13,tecnico7,tecnico7@hotel.test,TECNICO,MANTENCION,+56 9 74668136,1
+14,tecnico8,tecnico8@hotel.test,TECNICO,HOUSEKEEPING,+56 9 74903402,1
+15,tecnico9,tecnico9@hotel.test,TECNICO,ROOMSERVICE,+56 9 79478454,1
+16,tecnico10,tecnico10@hotel.test,TECNICO,MANTENCION,+56 9 71445199,1
+17,tecnico11,tecnico11@hotel.test,TECNICO,HOUSEKEEPING,+56 9 74335942,1
+18,tecnico12,tecnico12@hotel.test,TECNICO,ROOMSERVICE,+56 9 78038374,1
+19,tecnico13,tecnico13@hotel.test,TECNICO,MANTENCION,+56 9 74698379,1
+20,tecnico14,tecnico14@hotel.test,TECNICO,HOUSEKEEPING,+56 9 78536477,1
+21,tecnico15,tecnico15@hotel.test,TECNICO,ROOMSERVICE,+56 9 75667265,1
+22,tecnico16,tecnico16@hotel.test,TECNICO,MANTENCION,+56 9 71109031,1
+23,tecnico17,tecnico17@hotel.test,TECNICO,HOUSEKEEPING,+56 9 73678638,1
+24,tecnico18,tecnico18@hotel.test,TECNICO,ROOMSERVICE,+56 9 78090293,1
+25,tecnico19,tecnico19@hotel.test,TECNICO,MANTENCION,+56 9 76708456,1

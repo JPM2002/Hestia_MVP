@@ -1,0 +1,2 @@
+huesped_id,nombre,habitacion,checkin_at,checkout_at,status
+HG123,"Ana Torres",1203,2025-01-15T14:00:00,2025-01-18T11:00:00,IN_HOUSE

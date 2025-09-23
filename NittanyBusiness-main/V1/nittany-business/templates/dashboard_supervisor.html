@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Supervisor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="page-title">Dashboard ({{ kpis.area or 'Área' }})</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('ticket_create') }}" class="btn btn-primary">Nuevo ticket</a>
+    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-outline-secondary">Ver tickets</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-muted">Activos en área</div>
+      <div class="display-6 fw-bold">{{ kpis.active_area or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-muted">Críticos en área</div>
+      <div class="display-6 fw-bold">{{ kpis.critical_area or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-muted">SLA cumplido (30d)</div>
+      <div class="display-6 fw-bold">{{ (kpis.sla_rate or 0) }}%</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">Backlog por técnico</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="techChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">Prioridades en curso</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="prioChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span>Tickets abiertos ({{ kpis.area or 'área' }})</span>
+    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-secondary">Ver todo</a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>Prioridad</th>
+          <th>Estado</th>
+          <th>Detalle</th>
+          <th>Técnico</th>
+          <th>Creado</th>
+          <th>Vence</th>
+          <th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in (tickets or []) %}
+          <tr class="{% if t.is_critical %}table-warning{% endif %}">
+            <td class="fw-semibold">{{ t.id }}</td>
+            <td>{{ t.prioridad }}</td>
+            <td>{{ t.estado }}</td>
+            <td class="text-truncate" style="max-width: 420px">{{ t.detalle }}</td>
+            <td>{{ t.assigned_name or t.assigned_to or '-' }}</td>
+            <td><small class="text-muted">{{ t.created_at }}</small></td>
+            <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}">
+              <small>{{ t.due_at or '-' }}</small>
+            </td>
+            <td class="text-end">
+              {% if techs %}
+                <form class="d-inline" method="post" action="{{ url_for('ticket_reassign', id=t.id) }}">
+                  <select name="assigned_to" class="form-select form-select-sm d-inline w-auto align-text-top me-1">
+                    {% for tech in techs %}
+                      <option value="{{ tech.id }}"
+                        {% if (t.assigned_to|string) == (tech.id|string) %}selected{% endif %}>
+                        {{ tech.username }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn-sm btn-outline-primary" title="Reasignar">Reasignar</button>
+                </form>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary me-1" disabled title="Sin lista de técnicos">
+                  Reasignar
+                </button>
+              {% endif %}
+
+              <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+                <input type="hidden" name="motivo" value="Falta repuesto">
+                <button class="btn btn-sm btn-outline-warning" title="Pausar">Pausar</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  // Fallback-safe data from server
+  const tech = {{ (kpis.backlog_by_tech or {'labels':[],'values':[]}) | tojson | safe }};
+  const prio = {{ (kpis.priorities_mix or {'labels':[],'values':[]}) | tojson | safe }};
+
+  // Draw charts only if canvas exists
+  document.addEventListener('DOMContentLoaded', () => {
+    const $tech = document.getElementById('techChart');
+    if ($tech) {
+      new Chart($tech, {
+        type: 'bar',
+        data: {
+          labels: tech.labels || [],
+          datasets: [{ label: 'Tickets', data: tech.values || [] }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, ticks: { precision:0 } } }
+        }
+      });
+    }
+
+    const $prio = document.getElementById('prioChart');
+    if ($prio) {
+      new Chart($prio, {
+        type: 'doughnut',
+        data: {
+          labels: prio.labels || [],
+          datasets: [{ data: prio.values || [] }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } }
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}

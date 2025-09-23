@@ -1,0 +1,147 @@
+/* Global Styles */
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f8f9fa;
+}
+
+/* Login Page Styles */
+.login-container {
+  max-width: 450px;
+  margin: 80px auto;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+  background-color: #fff;
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.message-box {
+  margin: 20px 0;
+  padding: 10px;
+  border-radius: 5px;
+}
+
+.success-message {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+/* Register Page Styles */
+.register-container {
+  max-width: 550px;
+  margin: 50px auto;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+  background-color: #fff;
+}
+
+/* Products Page Styles */
+.product-card {
+  height: 100%;
+  transition: transform 0.3s;
+  background-color: #fff;
+}
+
+.product-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.stock-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.product-price {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #0d6efd;
+}
+
+.product-description {
+  height: 60px;
+  overflow: hidden;
+}
+
+.filters {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+/* Dashboard Page Styles */
+.dashboard-card {
+  transition: transform 0.3s;
+  height: 100%;
+  background-color: #fff;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-icon {
+  font-size: 2.5rem;
+  margin-bottom: 15px;
+  color: #0d6efd;
+}
+
+.user-welcome {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 30px;
+}
+
+.user-type-badge {
+  font-size: 0.9rem;
+  padding: 5px 10px;
+  border-radius: 20px;
+}
+
+.buyer-badge {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.seller-badge {
+  background-color: #cfe2ff;
+  color: #084298;
+}
+
+.helpdesk-badge {
+  background-color: #f8d7da;
+  color: #842029;
+}
+
+/* Rating Styles */
+.rating {
+  display: inline-block;
+}
+
+.star {
+  color: #ccc;
+  font-size: 1.2rem;
+}
+
+.star.filled {
+  color: #ffc107;
+}
+
+.review-text {
+  margin-left: 10px;
+  font-style: italic;
+}

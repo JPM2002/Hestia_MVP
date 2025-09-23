@@ -1,0 +1,6 @@
+id,username,email,password,role,turno,telefono,activo
+1,gerente,hestia.manager@demo.com,Admin123!,GERENTE,,+56911111111,1
+2,supervisor1,supervisor@hotel.com,Supervisor123!,SUPERVISOR,,+56922222222,1
+3,recep1,recepcion@hotel.com,Recep123!,RECEPCION,A, +56933333333,1
+4,tec1,tec.mantencion@hotel.com,Tec123!,MANTENCION,B, +56944444444,1
+5,hk1,house.keeping@hotel.com,HK123!,HOUSEKEEPING,B, +56955555555,1
