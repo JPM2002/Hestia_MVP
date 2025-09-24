@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Miembros – {{ org.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Miembros — {{ org.name }}</h2>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_super') }}">Superadmin</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_hotels') }}">Hoteles</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold">Agregar miembro</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('admin_org_members_add', org_id=org.id) }}" class="row g-2">
+      <div class="col-md-3">
+        <input class="form-control" name="email" type="email" placeholder="email@hotel.com" required>
+      </div>
+      <div class="col-md-3">
+        <input class="form-control" name="username" placeholder="username" required>
+      </div>
+      <div class="col-md-2">
+        <select class="form-select" name="base_role">
+          <option value="GERENTE">GERENTE</option>
+          <option value="SUPERVISOR">SUPERVISOR</option>
+          <option value="TECNICO">TECNICO</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <select class="form-select" name="org_role">
+          <option value="GERENTE">GERENTE</option>
+          <option value="SUPERVISOR">SUPERVISOR</option>
+          <option value="RECEPCION">RECEPCION</option>
+          <option value="TECNICO">TECNICO</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <select class="form-select" name="default_hotel_id">
+          <option value="">Hotel (opcional)</option>
+          {% for h in hotels %}
+            <option value="{{ h.id }}">{{ h.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <select class="form-select" name="default_area">
+          <option value="">Área (opcional)</option>
+          <option value="MANTENCION">MANTENCION</option>
+          <option value="HOUSEKEEPING">HOUSEKEEPING</option>
+          <option value="ROOMSERVICE">ROOMSERVICE</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <input class="form-control" name="password" type="text" placeholder="Password (por defecto demo123)">
+      </div>
+      <div class="col-md-2 ms-auto">
+        <button class="btn btn-brand w-100">Agregar / Actualizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white fw-semibold">Miembros actuales</div>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Usuario</th><th>Email</th><th>Rol base</th><th>Rol en org</th><th>Área</th><th>Hotel por defecto</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+          <tr>
+            <td>{{ m.username }}</td>
+            <td>{{ m.email }}</td>
+            <td>{{ m.role }}</td>
+            <td>{{ m.org_role }}</td>
+            <td>{{ m.default_area or '—' }}</td>
+            <td>{{ m.default_hotel or '—' }}</td>
+            <td class="text-end">
+              <form method="post" action="{{ url_for('admin_org_members_remove', org_id=org.id, org_user_id=m.org_user_id) }}"
+                    onsubmit="return confirm('¿Remover a {{ m.username }} de {{ org.name }}?');">
+                <button class="btn btn-sm btn-outline-danger">Remover</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-4">Sin miembros</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

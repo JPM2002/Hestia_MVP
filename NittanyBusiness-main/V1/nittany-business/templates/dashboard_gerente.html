@@ -3,16 +3,16 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="page-title">Dashboard</h1>
+  <h1 class="page-title mb-0">Dashboard</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('ticket_create') }}" class="btn btn-primary">Nuevo ticket</a>
-    <a href="{{ url_for('tickets') }}" class="btn btn-outline-secondary">Ver tickets</a>
+    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets') }}" class="btn btn-outline-dark">Ver tickets</a>
   </div>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-4">
-    <div class="card shadow-sm">
+    <div class="card stat-card">
       <div class="card-body">
         <div class="text-muted">Críticos</div>
         <div class="display-5 fw-bold">{{ kpis.critical or 0 }}</div>
@@ -20,7 +20,7 @@
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="card shadow-sm">
+    <div class="card stat-card">
       <div class="card-body">
         <div class="text-muted">Activos</div>
         <div class="display-5 fw-bold">{{ kpis.active or 0 }}</div>
@@ -28,7 +28,7 @@
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="card shadow-sm">
+    <div class="card stat-card">
       <div class="card-body">
         <div class="text-muted">Resueltos (hoy)</div>
         <div class="display-5 fw-bold">{{ kpis.resolved_today or 0 }}</div>
@@ -39,27 +39,27 @@
 
 <div class="row g-3 mt-1">
   <div class="col-xl-8">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white">Evolución de tickets (últimos 30 días)</div>
-      <div class="card-body"><canvas id="tsChart"></canvas></div>
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Evolución de tickets (últimos 30 días)</div>
+      <div class="card-body" style="height:340px"><canvas id="tsChart"></canvas></div>
     </div>
   </div>
   <div class="col-xl-4">
-    <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white">% por área</div>
-      <div class="card-body"><canvas id="areaChart"></canvas></div>
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">% por área</div>
+      <div class="card-body" style="height:180px"><canvas id="areaChart"></canvas></div>
     </div>
-    <div class="card shadow-sm">
-      <div class="card-header bg-white">Críticos por prioridad</div>
-      <div class="card-body"><canvas id="critChart"></canvas></div>
+    <div class="card">
+      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Críticos por prioridad</div>
+      <div class="card-body" style="height:180px"><canvas id="critChart"></canvas></div>
     </div>
   </div>
 </div>
 
-<div class="card shadow-sm mt-3">
-  <div class="card-header bg-white">Últimos críticos</div>
+<div class="card mt-3">
+  <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Últimos críticos</div>
   <div class="table-responsive">
-    <table class="table mb-0">
+    <table class="table mb-0 align-middle">
       <thead class="table-light">
         <tr>
           <th>ID</th><th>Área</th><th>Prioridad</th><th>Detalle</th><th>Creado</th><th>Vence</th>
@@ -70,10 +70,18 @@
         <tr>
           <td>{{ t.id }}</td>
           <td>{{ t.area }}</td>
-          <td>{{ t.prioridad }}</td>
+          <td>
+            <span class="badge
+              {% if t.prioridad=='URGENTE' %} bg-danger
+              {% elif t.prioridad=='ALTA' %} bg-warning text-dark
+              {% elif t.prioridad=='MEDIA' %} bg-info
+              {% else %} bg-secondary {% endif %}">
+              {{ t.prioridad }}
+            </span>
+          </td>
           <td class="text-truncate" style="max-width: 380px">{{ t.detalle }}</td>
-          <td>{{ t.created_at }}</td>
-          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}">{{ t.due_at or '-' }}</td>
+          <td><small>{{ t.created_at }}</small></td>
+          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at or '-' }}</small></td>
         </tr>
       {% else %}
         <tr><td colspan="6" class="text-center text-muted py-4">Sin resultados</td></tr>
@@ -87,12 +95,10 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-  // Data from backend (provide defaults)
   const ts = {{ (charts.timeseries or {'labels':[],'opened':[],'closed':[]}) | tojson }};
   const byArea = {{ (kpis.by_area or {}) | tojson }};
   const critByPri = {{ (charts.critical_by_priority or {'labels':[],'values':[]}) | tojson }};
 
-  // Line: opened vs closed
   new Chart(document.getElementById('tsChart'), {
     type: 'line',
     data: {
@@ -105,16 +111,12 @@
     options: { responsive: true, maintainAspectRatio: false }
   });
 
-  // Pie: by area
-  const areaLabels = Object.keys(byArea);
-  const areaValues = Object.values(byArea);
   new Chart(document.getElementById('areaChart'), {
     type: 'pie',
-    data: { labels: areaLabels, datasets: [{ data: areaValues }] },
+    data: { labels: Object.keys(byArea), datasets: [{ data: Object.values(byArea) }] },
     options: { responsive: true, maintainAspectRatio: false }
   });
 
-  // Bar: critical by priority
   new Chart(document.getElementById('critChart'), {
     type: 'bar',
     data: { labels: critByPri.labels, datasets: [{ label: 'Críticos', data: critByPri.values }] },

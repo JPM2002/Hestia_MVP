@@ -4,30 +4,81 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Hestia Ops{% endblock %}</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Brand CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/hestia.css') }}">
+
   <style>
     :root{
       --bg:#FAFAFB; --bg-elev:#FFFFFF; --text:#16242D;
       --brand:#16242D; --accent:#41D4A8; --warn:#C09B5F; --critical:#E5484D;
     }
-    body{ background:var(--bg); color:var(--text); }
+    body{ background:var(--bg); color:var(--text); font-family:"Open Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+    h1,h2,h3,h4,h5,h6,.navbar-brand,.page-title{ font-family:"Montserrat", "Open Sans", sans-serif; }
     .navbar{ background:var(--brand); }
     .navbar .navbar-brand, .navbar .nav-link{ color:#fff !important; }
     .badge-critical{ background:var(--critical); }
     .badge-ok{ background:var(--accent); }
+    .badge-warn{ background:var(--warn); }
+    .chip { display:inline-block; padding:.25rem .5rem; border-radius:999px; background:#eef3f3; font-size:.75rem; }
+    .chip-accent { background: #d7f4ea; }
+    .chip-warn   { background: #f3e7d6; }
+    .chip-crit   { background: #fde3e4; }
   </style>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg mb-3">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard') }}">Hestia</a>
-    <div class="ms-auto">
-      {% if session.get('user') %}
-        <span class="text-white-50 me-3">
-          {{ session['user']['name'] }} ({{ session['user']['role'] }})
-        </span>
-        <a class="btn btn-sm btn-light" href="{{ url_for('logout') }}">Salir</a>
-      {% endif %}
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div id="nav" class="collapse navbar-collapse">
+      <ul class="navbar-nav me-auto">
+        {% if session.get('user') %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('tickets') }}">Tickets</a></li>
+          {% if session.get('user', {}).get('role') in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('ticket_create') }}">Nuevo ticket</a></li>
+          {% endif %}
+          {% if session.get('user', {}).get('is_superadmin') %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('sudo_form') }}">Sudo</a></li>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown">Admin</a>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('admin_orgs') }}">Organizaciones</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_hotels') }}">Hoteles</a></li>
+              </ul>
+            </li>
+          {% endif %}
+        {% endif %}
+      </ul>
+
+      <div class="d-flex align-items-center ms-auto gap-2">
+        {% if session.get('org_id') %}
+          <span class="chip chip-accent">Org #{{ session.get('org_id') }}</span>
+        {% endif %}
+        {% if session.get('hotel_id') %}
+          <span class="chip">Hotel #{{ session.get('hotel_id') }}</span>
+        {% endif %}
+
+        {% if session.get('user') %}
+          <span class="text-white-50 ms-2 me-2 small">
+            {{ session['user']['name'] }} ({{ session['user']['role'] }})
+          </span>
+          <a class="btn btn-sm btn-light" href="{{ url_for('logout') }}">Salir</a>
+        {% endif %}
+      </div>
     </div>
   </div>
 </nav>
@@ -49,8 +100,6 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-{# Page-specific scripts go here (e.g., Chart.js usage). #}
 {% block scripts %}{% endblock %}
 </body>
 </html>

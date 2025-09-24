@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Superadmin — Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Superadmin</h2>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('sudo_form') }}">Cambiar contexto</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_orgs') }}">Todas las orgs</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_hotels') }}">Todos los hoteles</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Crear organización</div>
+      <div class="card-body">
+        <form method="post" class="row g-2">
+          <div class="col-8">
+            <input type="text" class="form-control" name="org_name" placeholder="Nombre de la organización" required>
+          </div>
+          <div class="col-4">
+            <button class="btn btn-brand w-100">Crear</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="card shadow-sm mt-3">
+      <div class="card-header bg-white fw-semibold">Hoteles recientes</div>
+      <ul class="list-group list-group-flush">
+        {% for h in hotels %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>
+            <span class="fw-semibold">{{ h.name }}</span>
+            <span class="text-muted">— {{ h.org_name }}</span>
+          </span>
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_org_members', org_id=h.org_id) }}">
+            Miembros
+          </a>
+        </li>
+        {% else %}
+          <li class="list-group-item text-muted">Sin hoteles</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Organizaciones</div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th><th>Nombre</th><th>Hoteles</th><th>Miembros</th><th>Tickets</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for o in orgs %}
+            <tr>
+              <td>{{ o.id }}</td>
+              <td>{{ o.name }}</td>
+              <td>{{ o.hotels }}</td>
+              <td>{{ o.members }}</td>
+              <td>{{ o.tickets }}</td>
+              <td class="text-nowrap">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_org_members', org_id=o.id) }}">Miembros</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin_hotels') }}">Hoteles</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">Sin organizaciones</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

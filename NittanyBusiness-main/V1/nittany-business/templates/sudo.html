@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Cambiar contexto (SUDO){% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Cambiar contexto (SUDO)</h2>
+
+<form method="post" class="row g-3">
+  <div class="col-md-6">
+    <label class="form-label">Organización</label>
+    <select name="org_id" class="form-select">
+      <option value="">-- seleccionar --</option>
+      {% for org in orgs %}
+        <option value="{{ org.id }}" {% if org.id == current.org_id %}selected{% endif %}>
+          {{ org.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Hotel</label>
+    <select name="hotel_id" class="form-select">
+      <option value="">-- auto --</option>
+      {% for h in hotels %}
+        <option value="{{ h.id }}" {% if h.id == current.hotel_id %}selected{% endif %}>
+          {{ h.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12">
+    <button class="btn btn-brand">Actualizar contexto</button>
+  </div>
+</form>
+{% endblock %}

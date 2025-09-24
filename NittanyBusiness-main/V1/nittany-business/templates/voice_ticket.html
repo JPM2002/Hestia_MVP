@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hestia · Nuevo ticket por voz</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Fonts: Montserrat (headings) + Open Sans (body) -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg:#FAFAFB; --bg-elev:#FFFFFF; --text:#16242D;
+      --brand:#16242D; --accent:#41D4A8; --warn:#C09B5F; --critical:#E5484D;
+    }
+    html, body { height: 100%; }
+    body{ background:var(--bg); color:var(--text); font-family:"Open Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+    .navbar{ background:var(--brand); }
+    .navbar .navbar-brand, .navbar .nav-link{ color:#fff !important; }
+    .page-title{ font-family:"Montserrat", system-ui, sans-serif; }
+
+    .card{ border:0; border-radius: 14px; background: var(--bg-elev); }
+    .btn-brand{ background: var(--brand); color:#fff; border-color: var(--brand); }
+    .btn-brand:hover{ filter: brightness(0.95); color:#fff; }
+    .btn-accent{ background: var(--accent); color:#0b3a2c; border-color: var(--accent); }
+    .btn-accent:hover{ filter: brightness(0.95); color:#0b3a2c; }
+    .form-label{ font-weight:600; }
+    .bg-soft{ background:#f3f5f6; }
+    .text-muted small, small.text-muted { color:#6b7a85 !important; }
+
+    .step-badge{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:24px; height:24px; border-radius:999px; background:#e9eef1; color:#23313a;
+      font-weight:700; font-size:12px; margin-right:8px;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg mb-3">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" href="/voice">Hestia · Voz</a>
+  </div>
+</nav>
+
+<main class="container pb-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <h2 class="page-title mb-3">Crear ticket por voz</h2>
+
+      <div class="alert alert-info small">
+        <span class="step-badge">1</span>Graba o sube audio
+        &nbsp; <span class="step-badge">2</span>Transcribe
+        &nbsp; <span class="step-badge">3</span>Autocompleta campos
+        &nbsp; <span class="step-badge">4</span>Verifica y crea el ticket
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <!-- Step 1: Grabación -->
+          <h5 class="mb-2">1) Grabación</h5>
+          <div class="d-flex align-items-center gap-2">
+            <button id="btnRecord" class="btn btn-primary" type="button">● Grabar</button>
+            <button id="btnStop" class="btn btn-outline-secondary" type="button" disabled>■ Detener</button>
+            <button id="btnUpload" class="btn btn-success" type="button" disabled>↑ Transcribir</button>
+          </div>
+          <div class="mt-2 small text-muted">Soportado en Chrome/Edge. En Safari usa el cargador de archivo.</div>
+
+          <div class="mt-3">
+            <audio id="player" controls class="w-100" style="display:none"></audio>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label">o Subir archivo (wav/mp3/webm)</label>
+            <div class="d-flex gap-2">
+              <input id="fileInput" type="file" accept="audio/*" class="form-control">
+              <button id="btnUploadFile" class="btn btn-outline-success" type="button">Transcribir archivo</button>
+            </div>
+          </div>
+
+          <hr class="my-4">
+
+          <!-- Step 2: Transcripción -->
+          <h5 class="mb-2">2) Transcripción</h5>
+          <textarea id="transcript" class="form-control" rows="4" placeholder="La transcripción aparecerá aquí..."></textarea>
+          <div class="mt-2">
+            <button id="btnExtract" class="btn btn-accent btn-sm" type="button">🧠 Autocompletar campos</button>
+          </div>
+
+          <hr class="my-4">
+
+          <!-- Step 3: Campos -->
+          <h5 class="mb-2">3) Revisión de campos</h5>
+          <div class="border rounded p-3 bg-soft mb-3">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Área</label>
+                <select id="area" class="form-select">
+                  <option>MANTENCION</option>
+                  <option>HOUSEKEEPING</option>
+                  <option>ROOMSERVICE</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Prioridad</label>
+                <select id="prioridad" class="form-select">
+                  <option>BAJA</option>
+                  <option>MEDIA</option>
+                  <option>ALTA</option>
+                  <option>URGENTE</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Ubicación / Habitación</label>
+                <input id="ubicacion" class="form-control" placeholder="Ej: 1203 o Lobby">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Detalle</label>
+                <textarea id="detalle" class="form-control" rows="3"></textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Canal</label>
+                <input id="canal" class="form-control" value="recepcion">
+              </div>
+              <div class="col-md-4 form-check ms-2 mt-4">
+                <input class="form-check-input" type="checkbox" id="qrreq">
+                <label class="form-check-label" for="qrreq">Requerir validación por QR</label>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Huésped ID (opcional)</label>
+                <input id="huesped" class="form-control">
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Envío -->
+          <h5 class="mb-2">4) Crear ticket</h5>
+          <div class="d-flex gap-2">
+            <button id="btnSubmit" class="btn btn-brand" type="button">Crear ticket</button>
+            <div id="result" class="align-self-center ms-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="small text-muted">
+        Nota: Este prototipo usa un transcriptor ficticio y reglas básicas para extracción. Más adelante se conectará a un
+        servicio de STT real y LLM para parseo avanzado.
+      </p>
+    </div>
+  </div>
+</main>
+
+<!-- Bootstrap JS (optional for some components) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+let mediaRecorder, chunks = [];
+const btnRecord = document.getElementById('btnRecord');
+const btnStop = document.getElementById('btnStop');
+const btnUpload = document.getElementById('btnUpload');
+const btnUploadFile = document.getElementById('btnUploadFile');
+const player = document.getElementById('player');
+const transcriptEl = document.getElementById('transcript');
+
+async function startRecording(){
+  if (!navigator.mediaDevices || !window.MediaRecorder){
+    alert('Este navegador no soporta grabación directa. Usa "Subir archivo".');
+    return;
+  }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      player.src = URL.createObjectURL(blob);
+      player.style.display = 'block';
+      btnUpload.disabled = false;
+      btnStop.disabled = true;
+    };
+    mediaRecorder.start();
+    btnRecord.disabled = true;
+    btnStop.disabled = false;
+  }catch(err){
+    alert('No se pudo acceder al micrófono: ' + err);
+  }
+}
+
+function stopRecording(){
+  if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+    mediaRecorder.stop();
+    btnRecord.disabled = false;
+  }
+}
+
+async function uploadBlob(){
+  if(chunks.length === 0){ alert('Graba algo primero.'); return; }
+  const blob = new Blob(chunks, { type: 'audio/webm' });
+  const fd = new FormData();
+  fd.append('audio', blob, 'grabacion.webm');
+
+  const res = await fetch('/api/stt', { method: 'POST', body: fd });
+  const data = await res.json();
+  if(data.error){ alert('Error en STT: ' + data.error); return; }
+  transcriptEl.value = data.text || '';
+}
+
+async function uploadFile(){
+  const fi = document.getElementById('fileInput');
+  if(!fi.files || fi.files.length === 0){ alert('Selecciona un archivo.'); return; }
+  const fd = new FormData();
+  fd.append('audio', fi.files[0]);
+  const res = await fetch('/api/stt', { method:'POST', body: fd });
+  const data = await res.json();
+  if(data.error){ alert('Error en STT: ' + data.error); return; }
+  transcriptEl.value = data.text || '';
+}
+
+async function extractFields(){
+  const text = transcriptEl.value.trim();
+  if(!text){ alert('No hay texto para analizar.'); return; }
+  const res = await fetch('/api/extract', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ text })
+  });
+  const data = await res.json();
+  const f = data.fields || {};
+  document.getElementById('area').value = f.area || 'MANTENCION';
+  document.getElementById('prioridad').value = f.prioridad || 'MEDIA';
+  document.getElementById('ubicacion').value = f.ubicacion || '';
+  document.getElementById('detalle').value = f.detalle || text;
+  document.getElementById('canal').value = f.canal_origen || 'recepcion';
+  document.getElementById('qrreq').checked = false;
+  document.getElementById('huesped').value = '';
+  document.getElementById('btnSubmit').dataset.conf = f.confidence_score ?? 0.7;
+}
+
+async function submitTicket(){
+  const payload = {
+    area: document.getElementById('area').value,
+    prioridad: document.getElementById('prioridad').value,
+    ubicacion: document.getElementById('ubicacion').value,
+    detalle: document.getElementById('detalle').value,
+    canal_origen: document.getElementById('canal').value,
+    qr_required: document.getElementById('qrreq').checked ? 1 : 0,
+    huesped_id: document.getElementById('huesped').value || null,
+    confidence_score: Number(document.getElementById('btnSubmit').dataset.conf || 0.7)
+  };
+  const res = await fetch('/api/submit', {
+    method:'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  const result = document.getElementById('result');
+  if(data.ok){
+    result.innerHTML = `<span class="text-success">✅ Ticket creado: #${data.ticket_id}</span>`;
+  }else{
+    result.innerHTML = `<span class="text-danger">Error: ${data.error || 'desconocido'}</span>`;
+  }
+}
+
+btnRecord.addEventListener('click', startRecording);
+btnStop.addEventListener('click', stopRecording);
+btnUpload.addEventListener('click', uploadBlob);
+btnUploadFile.addEventListener('click', uploadFile);
+document.getElementById('btnExtract').addEventListener('click', extractFields);
+document.getElementById('btnSubmit').addEventListener('click', submitTicket);
+</script>
+
+</body>
+</html>
