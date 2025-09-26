@@ -3,19 +3,21 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="page-title mb-0">Dashboard</h1>
+  <h1 class="page-title mb-0">Resumen general</h1>
   <div class="d-flex gap-2">
     <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
     <a href="{{ url_for('tickets') }}" class="btn btn-outline-dark">Ver tickets</a>
   </div>
 </div>
 
+<!-- KPI cards -->
 <div class="row g-3">
   <div class="col-lg-4">
     <div class="card stat-card">
       <div class="card-body">
         <div class="text-muted">Críticos</div>
         <div class="display-5 fw-bold">{{ kpis.critical or 0 }}</div>
+        <div class="small text-muted">Tickets en ventana crítica (SLA)</div>
       </div>
     </div>
   </div>
@@ -24,6 +26,7 @@
       <div class="card-body">
         <div class="text-muted">Activos</div>
         <div class="display-5 fw-bold">{{ kpis.active or 0 }}</div>
+        <div class="small text-muted">En curso en toda la organización</div>
       </div>
     </div>
   </div>
@@ -32,32 +35,41 @@
       <div class="card-body">
         <div class="text-muted">Resueltos (hoy)</div>
         <div class="display-5 fw-bold">{{ kpis.resolved_today or 0 }}</div>
+        <div class="small text-muted">Cierres del día</div>
       </div>
     </div>
   </div>
 </div>
 
+<!-- Charts -->
 <div class="row g-3 mt-1">
   <div class="col-xl-8">
     <div class="card h-100">
-      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Evolución de tickets (últimos 30 días)</div>
-      <div class="card-body" style="height:340px"><canvas id="tsChart"></canvas></div>
+      <div class="card-header bg-white fw-semibold">Evolución (últimos 7 días)</div>
+      <div class="card-body" style="height:360px">
+        <canvas id="tsChart"></canvas>
+      </div>
     </div>
   </div>
   <div class="col-xl-4">
     <div class="card mb-3">
-      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">% por área</div>
-      <div class="card-body" style="height:180px"><canvas id="areaChart"></canvas></div>
+      <div class="card-header bg-white fw-semibold">% por área</div>
+      <div class="card-body" style="height:180px">
+        <canvas id="areaChart"></canvas>
+      </div>
     </div>
     <div class="card">
-      <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Críticos por prioridad</div>
-      <div class="card-body" style="height:180px"><canvas id="critChart"></canvas></div>
+      <div class="card-header bg-white fw-semibold">Críticos por prioridad</div>
+      <div class="card-body" style="height:180px">
+        <canvas id="critChart"></canvas>
+      </div>
     </div>
   </div>
 </div>
 
+<!-- Critical table -->
 <div class="card mt-3">
-  <div class="card-header bg-white fw-semibold" style="font-family:var(--font-head)">Últimos críticos</div>
+  <div class="card-header bg-white fw-semibold">Últimos críticos</div>
   <div class="table-responsive">
     <table class="table mb-0 align-middle">
       <thead class="table-light">
@@ -95,32 +107,52 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-  const ts = {{ (charts.timeseries or {'labels':[],'opened':[],'closed':[]}) | tojson }};
+  // Palette from CSS variables
+  const css = getComputedStyle(document.documentElement);
+  const BRAND    = css.getPropertyValue('--brand').trim()    || '#16242D';
+  const ACCENT   = css.getPropertyValue('--accent').trim()   || '#41D4A8';
+  const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
+  const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
+
+  // Data from backend (with safe fallbacks)
+  const ts7   = {{ (charts.resolved_last7 or []) | tojson }};
   const byArea = {{ (kpis.by_area or {}) | tojson }};
   const critByPri = {{ (charts.critical_by_priority or {'labels':[],'values':[]}) | tojson }};
 
+  // Build 7-day labels & counts (resolved only)
+  const tsLabels = ts7.map(x => x.date);
+  const tsValues = ts7.map(x => x.count);
+
+  // Line: resolved last 7 days
   new Chart(document.getElementById('tsChart'), {
     type: 'line',
     data: {
-      labels: ts.labels,
-      datasets: [
-        { label: 'Abiertos', data: ts.opened, fill: false },
-        { label: 'Cerrados', data: ts.closed, fill: false }
-      ]
+      labels: tsLabels,
+      datasets: [{
+        label: 'Resueltos',
+        data: tsValues,
+        tension: 0.35,
+        borderColor: ACCENT,
+        backgroundColor: ACCENT + '33',
+        fill: true,
+        pointRadius: 3
+      }]
     },
-    options: { responsive: true, maintainAspectRatio: false }
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
   });
 
+  // Pie: by area
   new Chart(document.getElementById('areaChart'), {
-    type: 'pie',
-    data: { labels: Object.keys(byArea), datasets: [{ data: Object.values(byArea) }] },
-    options: { responsive: true, maintainAspectRatio: false }
+    type: 'doughnut',
+    data: { labels: Object.keys(byArea), datasets: [{ data: Object.values(byArea), backgroundColor: [ACCENT, WARNING, BRAND, CRITICAL] }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
   });
 
+  // Bar: critical by priority
   new Chart(document.getElementById('critChart'), {
     type: 'bar',
-    data: { labels: critByPri.labels, datasets: [{ label: 'Críticos', data: critByPri.values }] },
-    options: { responsive: true, maintainAspectRatio: false }
+    data: { labels: critByPri.labels || [], datasets: [{ label: 'Críticos', data: critByPri.values || [], backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
   });
 </script>
 {% endblock %}
