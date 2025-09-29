@@ -8,73 +8,66 @@ import hashlib
 from functools import wraps
 import os
 
-# Optional Postgres (Supabase) imports
-try:
-    import psycopg2
-    from psycopg2 import pool, extras
-except Exception:
-    psycopg2 = None
+# --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
+DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
+DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
+USE_PG = bool(DATABASE_URL)
 
+# Try to import psycopg2; don't crash if missing (local SQLite dev may not need it)
+pg = None
+pg_pool = None
+pg_extras = None
+if USE_PG:
+    try:
+        import psycopg2 as pg
+        import psycopg2.pool as pg_pool
+        import psycopg2.extras as pg_extras
+    except Exception as e:
+        print(f"[BOOT] psycopg2 import failed: {e}", flush=True)
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
+PG_POOL = None  # created lazily on first use
 
-# Prefer Supabase Postgres when DATABASE_URL is set; otherwise use local SQLite file
-DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://user:pass@host:5432/postgres?sslmode=require
-DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback
-
-PG_POOL = None
-if DATABASE_URL and psycopg2:
-    PG_POOL = pool.SimpleConnectionPool(
-        minconn=1,
-        maxconn=int(os.getenv('PG_POOL_MAX', '5')),
-        dsn=DATABASE_URL
-    )
-
-    # --- boot diagnostics (helps you see if you're on Postgres or SQLite) ---
-print(f"[boot] DATABASE_URL set? {bool(DATABASE_URL)}", flush=True)
-print(f"[boot] PG_POOL created? {bool(PG_POOL)}", flush=True)
-
-
-# Hardening for HTTPS deployments (keeps local dev working)
-if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER'):  # Render sets RENDER=1
-    app.config.update(
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax',
-    )
-
-
-
-# ---------------------------- DB & helpers ----------------------------
-def hp(password: str) -> str:
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+def _init_pg_pool():
+    """Create the global pool once. Raise with the real reason if it fails."""
+    global PG_POOL
+    if not USE_PG:
+        return None
+    if PG_POOL is not None:
+        return PG_POOL
+    if pg is None or pg_pool is None:
+        raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements.txt).")
+    try:
+        PG_POOL = pg_pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=int(os.getenv('PG_POOL_MAX', '5')),
+            dsn=DATABASE_URL,
+        )
+        print("[BOOT] Postgres pool initialized.", flush=True)
+        return PG_POOL
+    except Exception as e:
+        print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
+        raise
 
 def db():
     """
-    Return a DB connection. If DATABASE_URL is set but the pool didn't init,
-    fail fast instead of silently falling back to SQLite.
+    Get a DB connection:
+      - Postgres (Supabase) when DATABASE_URL is set
+      - SQLite local file otherwise
     """
-    if DATABASE_URL:
-        if not PG_POOL:
-            raise RuntimeError("DATABASE_URL is set but Postgres pool didn't initialize.")
-        return PG_POOL.getconn()
-
-    # Local dev fallback (SQLite)
+    if USE_PG:
+        pool = _init_pg_pool()  # will raise with true cause if it fails
+        return pool.getconn()
+    # SQLite path
     conn = sql.connect(DATABASE, check_same_thread=False)
     conn.row_factory = sql.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-
 def _execute(conn, query, params=()):
-    """
-    Execute a query on either backend. Converts '?' to '%s' for Postgres.
-    """
-    if DATABASE_URL and PG_POOL:
-        cur = conn.cursor(cursor_factory=extras.RealDictCursor)
-        q = query.replace('?', '%s')
-        cur.execute(q, params)
+    """Run a query on either backend. Converts '?' -> '%s' for Postgres."""
+    if USE_PG:
+        cur = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
+        cur.execute(query.replace('?', '%s'), params)
         return cur
     else:
         return conn.execute(query, params)
@@ -82,7 +75,7 @@ def _execute(conn, query, params=()):
 def fetchone(query, params=()):
     conn = db()
     try:
-        if DATABASE_URL and PG_POOL:
+        if USE_PG:
             cur = _execute(conn, query, params)
             row = cur.fetchone()
             cur.close()
@@ -93,16 +86,17 @@ def fetchone(query, params=()):
                 cur = _execute(conn, query, params)
                 return cur.fetchone()
     finally:
-        if DATABASE_URL and PG_POOL and conn:
-            PG_POOL.putconn(conn)
+        if USE_PG:
+            try: PG_POOL.putconn(conn)
+            except Exception: pass
         else:
             try: conn.close()
-            except: pass
+            except Exception: pass
 
 def fetchall(query, params=()):
     conn = db()
     try:
-        if DATABASE_URL and PG_POOL:
+        if USE_PG:
             cur = _execute(conn, query, params)
             rows = cur.fetchall()
             cur.close()
@@ -113,16 +107,17 @@ def fetchall(query, params=()):
                 cur = _execute(conn, query, params)
                 return cur.fetchall()
     finally:
-        if DATABASE_URL and PG_POOL and conn:
-            PG_POOL.putconn(conn)
+        if USE_PG:
+            try: PG_POOL.putconn(conn)
+            except Exception: pass
         else:
             try: conn.close()
-            except: pass
+            except Exception: pass
 
 def execute(query, params=()):
     conn = db()
     try:
-        if DATABASE_URL and PG_POOL:
+        if USE_PG:
             cur = _execute(conn, query, params)
             cur.close()
             conn.commit()
@@ -131,11 +126,44 @@ def execute(query, params=()):
                 _ = _execute(conn, query, params)
                 conn.commit()
     finally:
-        if DATABASE_URL and PG_POOL and conn:
-            PG_POOL.putconn(conn)
+        if USE_PG:
+            try: PG_POOL.putconn(conn)
+            except Exception: pass
         else:
             try: conn.close()
-            except: pass
+            except Exception: pass
+
+def insert_and_get_id(query, params=()):
+    """
+    Run an INSERT and return the new primary key id on both backends.
+    For Postgres, appends 'RETURNING id' if not already present.
+    For SQLite, uses cursor.lastrowid.
+    """
+    conn = db()
+    try:
+        if USE_PG:
+            sql_text = query
+            if 'RETURNING' not in sql_text.upper():
+                sql_text = sql_text.rstrip().rstrip(';') + ' RETURNING id'
+            cur = _execute(conn, sql_text, params)
+            row = cur.fetchone()
+            cur.close()
+            conn.commit()
+            # RealDictCursor returns dict-like rows
+            return row['id'] if isinstance(row, dict) else row[0]
+        else:
+            with conn:
+                cur = _execute(conn, query, params)
+                conn.commit()
+                return cur.lastrowid
+    finally:
+        if USE_PG:
+            try: PG_POOL.putconn(conn)
+            except Exception: pass
+        else:
+            try: conn.close()
+            except Exception: pass
+
 
 def is_critical(now: datetime, due_at) -> bool:
     """
@@ -153,35 +181,19 @@ def is_critical(now: datetime, due_at) -> bool:
         return False
     return now >= (due - timedelta(minutes=10))
 
-
-def insert_and_get_id(query, params=()):
-    """
-    Run an INSERT and return the new primary key id on both backends.
-    For Postgres, appends 'RETURNING id' if not already present.
-    For SQLite, uses cursor.lastrowid.
-    """
-    conn = db()
+def sla_minutes(area: str, prioridad: str) -> int | None:
+    r = fetchone("SELECT max_minutes FROM SLARules WHERE area=? AND prioridad=?", (area, prioridad))
     try:
-        if DATABASE_URL and PG_POOL:
-            sql_text = query
-            if 'RETURNING' not in sql_text.upper():
-                sql_text = sql_text.rstrip().rstrip(';') + ' RETURNING id'
-            cur = _execute(conn, sql_text, params)
-            new_id = cur.fetchone()['id']
-            cur.close()
-            conn.commit()
-            return new_id
-        else:
-            with conn:
-                cur = _execute(conn, query, params)
-                conn.commit()
-                return cur.lastrowid
-    finally:
-        if DATABASE_URL and PG_POOL and conn:
-            PG_POOL.putconn(conn)
-        else:
-            try: conn.close()
-            except: pass
+        return int(r["max_minutes"]) if r and r.get("max_minutes") is not None else None
+    except Exception:
+        return None
+
+def compute_due(created_at: datetime, area: str, prioridad: str) -> datetime | None:
+    mins = sla_minutes(area, prioridad)
+    return created_at + timedelta(minutes=mins) if mins else None
+
+
+
 
 
 # ---- tenant helpers
