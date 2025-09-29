@@ -8,9 +8,28 @@ import hashlib
 from functools import wraps
 import os
 
+# Optional Postgres (Supabase) imports
+try:
+    import psycopg2
+    from psycopg2 import pool, extras
+except Exception:
+    psycopg2 = None
+
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
-DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')
+
+# Prefer Supabase Postgres when DATABASE_URL is set; otherwise use local SQLite file
+DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://user:pass@host:5432/postgres?sslmode=require
+DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback
+
+PG_POOL = None
+if DATABASE_URL and psycopg2:
+    PG_POOL = pool.SimpleConnectionPool(
+        minconn=1,
+        maxconn=int(os.getenv('PG_POOL_MAX', '5')),
+        dsn=DATABASE_URL
+    )
 
 # Hardening for HTTPS deployments (keeps local dev working)
 if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER'):  # Render sets RENDER=1
@@ -21,49 +40,139 @@ if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER'):  # Render sets
     )
 
 
+
 # ---------------------------- DB & helpers ----------------------------
 def hp(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def db():
-    conn = sql.connect(DATABASE)
+    """
+    Returns a DB connection. Uses Postgres pool when DATABASE_URL is set;
+    otherwise opens a SQLite connection to the local file.
+    """
+    if DATABASE_URL and PG_POOL:
+        return PG_POOL.getconn()
+    conn = sql.connect(DATABASE, check_same_thread=False)
     conn.row_factory = sql.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+def _execute(conn, query, params=()):
+    """
+    Execute a query on either backend. Converts '?' to '%s' for Postgres.
+    """
+    if DATABASE_URL and PG_POOL:
+        cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+        q = query.replace('?', '%s')
+        cur.execute(q, params)
+        return cur
+    else:
+        return conn.execute(query, params)
+
 def fetchone(query, params=()):
-    with db() as conn:
-        cur = conn.execute(query, params)
-        return cur.fetchone()
+    conn = db()
+    try:
+        if DATABASE_URL and PG_POOL:
+            cur = _execute(conn, query, params)
+            row = cur.fetchone()
+            cur.close()
+            conn.commit()
+            return row
+        else:
+            with conn:
+                cur = _execute(conn, query, params)
+                return cur.fetchone()
+    finally:
+        if DATABASE_URL and PG_POOL and conn:
+            PG_POOL.putconn(conn)
+        else:
+            try: conn.close()
+            except: pass
 
 def fetchall(query, params=()):
-    with db() as conn:
-        cur = conn.execute(query, params)
-        return cur.fetchall()
+    conn = db()
+    try:
+        if DATABASE_URL and PG_POOL:
+            cur = _execute(conn, query, params)
+            rows = cur.fetchall()
+            cur.close()
+            conn.commit()
+            return rows
+        else:
+            with conn:
+                cur = _execute(conn, query, params)
+                return cur.fetchall()
+    finally:
+        if DATABASE_URL and PG_POOL and conn:
+            PG_POOL.putconn(conn)
+        else:
+            try: conn.close()
+            except: pass
 
 def execute(query, params=()):
-    with db() as conn:
-        conn.execute(query, params)
-        conn.commit()
+    conn = db()
+    try:
+        if DATABASE_URL and PG_POOL:
+            cur = _execute(conn, query, params)
+            cur.close()
+            conn.commit()
+        else:
+            with conn:
+                _ = _execute(conn, query, params)
+                conn.commit()
+    finally:
+        if DATABASE_URL and PG_POOL and conn:
+            PG_POOL.putconn(conn)
+        else:
+            try: conn.close()
+            except: pass
 
-def sla_minutes(area, prioridad) -> int | None:
-    row = fetchone("SELECT max_minutes FROM SLARules WHERE area=? AND prioridad=?",
-                   (area, prioridad))
-    return int(row["max_minutes"]) if row else None
-
-def compute_due(created_at: datetime, area: str, prioridad: str) -> datetime | None:
-    mins = sla_minutes(area, prioridad)
-    return created_at + timedelta(minutes=mins) if mins else None
-
-def is_critical(now: datetime, due_at: str | None) -> bool:
+def is_critical(now: datetime, due_at) -> bool:
+    """
+    Accepts either ISO string (SQLite) or datetime (Postgres) for due_at.
+    crítico si faltan <=10 min o ya vencido
+    """
     if not due_at:
         return False
     try:
-        due = datetime.fromisoformat(due_at)
+        if isinstance(due_at, datetime):
+            due = due_at
+        else:
+            due = datetime.fromisoformat(str(due_at))
     except Exception:
         return False
-    # crítico si faltan <=10 min o ya vencido
     return now >= (due - timedelta(minutes=10))
+
+
+def insert_and_get_id(query, params=()):
+    """
+    Run an INSERT and return the new primary key id on both backends.
+    For Postgres, appends 'RETURNING id' if not already present.
+    For SQLite, uses cursor.lastrowid.
+    """
+    conn = db()
+    try:
+        if DATABASE_URL and PG_POOL:
+            sql_text = query
+            if 'RETURNING' not in sql_text.upper():
+                sql_text = sql_text.rstrip().rstrip(';') + ' RETURNING id'
+            cur = _execute(conn, sql_text, params)
+            new_id = cur.fetchone()['id']
+            cur.close()
+            conn.commit()
+            return new_id
+        else:
+            with conn:
+                cur = _execute(conn, query, params)
+                conn.commit()
+                return cur.lastrowid
+    finally:
+        if DATABASE_URL and PG_POOL and conn:
+            PG_POOL.putconn(conn)
+        else:
+            try: conn.close()
+            except: pass
+
 
 # ---- tenant helpers
 def current_scope():
@@ -269,18 +378,26 @@ def get_global_kpis():
         "by_area": {r["area"]: r["c"] for r in by_area}
     }
 
-    # Serie de resueltos últimos 7 días
-    trend = fetchall("""
-        SELECT substr(finished_at,1,10) d, COUNT(1) c
+    # Serie de resueltos últimos 7 días (DB-agnóstico: calculado en Python)
+    cutoff = (now - timedelta(days=7)).isoformat()
+    rows = fetchall("""
+        SELECT finished_at
         FROM Tickets
-        WHERE org_id=? AND estado='RESUELTO' AND finished_at >= date('now','-7 day')
-        GROUP BY substr(finished_at,1,10)
-        ORDER BY d
-    """, (org_id,))
+        WHERE org_id=? AND estado='RESUELTO' AND finished_at >= ?
+    """, (org_id, cutoff))
+
+    from collections import Counter
+    cnt = Counter()
+    for r in rows or []:
+        fa = r["finished_at"]
+        if fa:
+            cnt[fa[:10]] += 1
     charts = {
-        "resolved_last7": [{"date": r["d"], "count": r["c"]} for r in trend]
-    }
+        "resolved_last7": [{"date": d, "count": cnt[d]} for d in sorted(cnt.keys())]
+    }   
     return kpis, charts
+
+
 
 def get_area_data(area: str | None):
     """KPIs + tickets abiertos para SUPERVISOR (scoped by ORG; filter by area si viene)."""
@@ -307,14 +424,16 @@ def get_area_data(area: str | None):
     total_active = len(active)
     critical = sum(1 for r in active if is_critical(now, r['due_at']))
 
+    cut24 = (datetime.now() - timedelta(days=1)).isoformat()
     resolved_24 = fetchone(
         f"""
         SELECT COUNT(1) c
         FROM Tickets
         WHERE {' AND '.join(where)} AND estado='RESUELTO'
-          AND finished_at >= datetime('now','-1 day')
-        """, params
+        AND finished_at >= ?
+        """, params + [cut24]
     )['c']
+
 
     kpis = {
         "area": area,
@@ -526,19 +645,20 @@ def ticket_create():
         due_at = due_dt.isoformat() if due_dt else None
 
         try:
-            execute("""
-                INSERT INTO Tickets(id, org_id, hotel_id, area, prioridad, estado, detalle, canal_origen, ubicacion,
+            new_id = insert_and_get_id("""
+                INSERT INTO Tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen, ubicacion,
                                     huesped_id, created_at, due_at, assigned_to, created_by,
                                     confidence_score, qr_required)
-                VALUES (NULL, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, NULL, ?, NULL, ?)
+                VALUES (?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, NULL, ?, NULL, ?)
             """, (org_id, hotel_id, area, prioridad, detalle, canal, ubicacion, huesped_id,
-                  created_at.isoformat(), due_at, session['user']['id'], qr_required))
+                created_at.isoformat(), due_at, session['user']['id'], qr_required))
 
             # history
             execute("""
                 INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
-                VALUES ((SELECT last_insert_rowid()), ?, 'CREADO', NULL, ?)
-            """, (session['user']['id'], created_at.isoformat()))
+                VALUES (?, ?, 'CREADO', NULL, ?)
+            """, (new_id, session['user']['id'], created_at.isoformat()))
+
 
             flash('Ticket creado.', 'success')
             return redirect(url_for('tickets'))
@@ -768,7 +888,7 @@ def api_sup_backlog_by_tech():
         FROM Tickets t
         LEFT JOIN Users u ON u.id = t.assigned_to
         WHERE {' AND '.join(where)}
-        GROUP BY tech
+        GROUP BY 1
         ORDER BY c DESC
         """,
         tuple(params)
