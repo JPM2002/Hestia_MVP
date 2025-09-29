@@ -31,6 +31,11 @@ if DATABASE_URL and psycopg2:
         dsn=DATABASE_URL
     )
 
+    # --- boot diagnostics (helps you see if you're on Postgres or SQLite) ---
+print(f"[boot] DATABASE_URL set? {bool(DATABASE_URL)}", flush=True)
+print(f"[boot] PG_POOL created? {bool(PG_POOL)}", flush=True)
+
+
 # Hardening for HTTPS deployments (keeps local dev working)
 if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER'):  # Render sets RENDER=1
     app.config.update(
@@ -47,15 +52,20 @@ def hp(password: str) -> str:
 
 def db():
     """
-    Returns a DB connection. Uses Postgres pool when DATABASE_URL is set;
-    otherwise opens a SQLite connection to the local file.
+    Return a DB connection. If DATABASE_URL is set but the pool didn't init,
+    fail fast instead of silently falling back to SQLite.
     """
-    if DATABASE_URL and PG_POOL:
+    if DATABASE_URL:
+        if not PG_POOL:
+            raise RuntimeError("DATABASE_URL is set but Postgres pool didn't initialize.")
         return PG_POOL.getconn()
+
+    # Local dev fallback (SQLite)
     conn = sql.connect(DATABASE, check_same_thread=False)
     conn.row_factory = sql.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
 
 def _execute(conn, query, params=()):
     """
