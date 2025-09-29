@@ -6,10 +6,20 @@ import sqlite3 as sql
 from datetime import datetime, timedelta
 import hashlib
 from functools import wraps
+import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'change-me-in-env'
-DATABASE = 'hestia_V2.db'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
+DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')
+
+# Hardening for HTTPS deployments (keeps local dev working)
+if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER'):  # Render sets RENDER=1
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+    )
+
 
 # ---------------------------- DB & helpers ----------------------------
 def hp(password: str) -> str:
@@ -216,6 +226,12 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+#CHeck status of the app
+@app.get('/healthz')
+def healthz():
+    return 'ok', 200
+
 
 # ---------------------------- role data helpers ----------------------------
 OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
