@@ -779,14 +779,40 @@ def get_in_progress_tickets_for_user(user_id: int, area: str | None):
     } for r in rows]
 
 
-def get_area_available_tickets(area: str, only_unassigned: bool = True):
-    """Tickets disponibles del área (por defecto solo PENDIENTE y sin asignar)."""
-    now = datetime.now()
+def get_area_available_tickets(area: str, only_unassigned: bool = False):
+    """
+    Tickets del área en estado PENDIENTE.
+    - only_unassigned=True => solo los sin asignar.
+    Compatible con SQLite (a veces guarda ''), y Postgres (NULL).
+    """
     org_id, _ = current_scope()
     if not org_id:
         return []
-    where = ["org_id=?", "area=?"]
+
+    where = ["org_id=?", "area=?", "estado='PENDIENTE'"]
     params = [org_id, area]
+
+    if only_unassigned:
+        if USE_PG:
+            where.append("(assigned_to IS NULL)")
+        else:
+            # SQLite legacy: algunos registros pueden tener '' en vez de NULL
+            where.append("(assigned_to IS NULL OR assigned_to='')")
+
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+    """, tuple(params))
+
+    now = datetime.now()
+    return [{
+        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
+        "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
+    } for r in rows]
+
 
     # “Disponibles” por defecto: PENDIENTE y sin assigned_to
     where.append("estado='PENDIENTE'")
@@ -1095,7 +1121,8 @@ def tickets():
             "canal": r["canal_origen"],
         })
 
-        view = g.view_mode
+    view = g.view_mode
+    
     return render_best(
         [f"tickets_{view}.html", "tickets.html"],
         user=session['user'], tickets=items,
