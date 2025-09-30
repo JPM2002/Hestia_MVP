@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Tickets (Móvil){% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-2">
+  <h1 class="h5 mb-0">📋 Tickets</h1>
+  <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+</header>
+
+<form class="row g-2 mb-2" method="get" action="{{ url_for('tickets') }}">
+  <div class="col-12">
+    <input class="form-control form-control-sm" name="q" value="{{ (filters.q or '') }}" placeholder="Buscar texto..."/>
+  </div>
+  <div class="col-4">
+    <select class="form-select form-select-sm" name="area">
+      <option value="">Área</option>
+      {% for a in ['MANTENCION','HOUSEKEEPING','ROOMSERVICE'] %}
+      <option value="{{ a }}" {% if filters.area==a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-4">
+    <select class="form-select form-select-sm" name="prioridad">
+      <option value="">Prioridad</option>
+      {% for p in ['URGENTE','ALTA','MEDIA','BAJA'] %}
+      <option value="{{ p }}" {% if filters.prioridad==p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-4">
+    <select class="form-select form-select-sm" name="estado">
+      <option value="">Estado</option>
+      {% for s in ['PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO','RESUELTO'] %}
+      <option value="{{ s }}" {% if filters.estado==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12">
+    <div class="btn-group w-100" role="group">
+      {% set period = filters.period or 'today' %}
+      <input type="hidden" name="period" id="period-input" value="{{ period }}">
+      <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if period=='today' }}" data-p="today">Hoy</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if period=='7d' }}" data-p="7d">7 días</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if period=='30d' }}" data-p="30d">30 días</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if period=='all' }}" data-p="all">Todos</button>
+    </div>
+  </div>
+  <div class="col-12">
+    <button class="btn btn-sm btn-dark w-100">Aplicar</button>
+  </div>
+</form>
+
+<ul class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) %}
+  <li class="card {% if t.is_critical %}border-danger{% endif %}">
+    <div class="card-body p-2">
+      <div class="d-flex justify-content-between">
+        <div>
+          <div class="fw-semibold">{{ t.area }} · {{ t.ubicacion or 'Ubicación' }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 90vw">{{ t.detalle }}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ t.prioridad }}</span>
+          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">{{ t.due_at or 'sin SLA' }}</div>
+        </div>
+      </div>
+
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}"><button class="btn btn-sm btn-outline-primary">Aceptar</button></form>
+        {% endif %}
+        {% if t.estado in ['ACEPTADO'] %}
+          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}"><button class="btn btn-sm btn-dark">Iniciar</button></form>
+        {% endif %}
+        {% if t.estado in ['EN_CURSO'] %}
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}"><input type="hidden" name="motivo" value="Pausa"><button class="btn btn-sm btn-outline-warning">Pausa</button></form>
+          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}"><button class="btn btn-sm btn-success">Resolver</button></form>
+        {% endif %}
+        {% if t.estado in ['PAUSADO'] %}
+          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}"><button class="btn btn-sm btn-outline-secondary">Reanudar</button></form>
+        {% endif %}
+      </div>
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado }}</span>
+        <span>Creado: {{ t.created_at }}</span>
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">No hay resultados.</li>
+  {% endfor %}
+</ul>
+
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+    <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    <a class="btn btn-link" href="{{ url_for('tickets', estado='PENDIENTE') }}">🔄 Actualizar</a>
+  </div>
+</nav>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('[data-p]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.getElementById('period-input').value = b.dataset.p;
+      document.querySelectorAll('[data-p]').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+</script>
+{% endblock %}

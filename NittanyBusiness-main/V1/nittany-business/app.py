@@ -10,10 +10,18 @@ import os
 # --- add for DSN normalization ---
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
+# Device detection
+from user_agents import parse as parse_ua
+from flask import g
+from jinja2 import TemplateNotFound
 
 # 👇 ADD THESE TWO LINES
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
+
+# Demo switcher on login (set ENABLE_TECH_DEMO=1 in env to show it)
+app.config['ENABLE_TECH_DEMO'] = os.getenv('ENABLE_TECH_DEMO', '0') == '1'
+
 
 # Friendly error if DB drops
 try:
@@ -32,6 +40,65 @@ def _db_down(e):
 DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
 DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
 USE_PG = bool(DATABASE_URL)
+
+# ---------------------------- Device detection ----------------------------
+MOBILE_COOKIE = "view_mode"   # 'mobile' | 'desktop' | 'auto'
+
+def _detect_device_from_ua(ua_string: str) -> dict:
+    try:
+        ua = parse_ua(ua_string or "")
+        # "mobile" includes phones; tablets we treat separately
+        if ua.is_mobile and not ua.is_tablet:
+            cls = "mobile"
+        elif ua.is_tablet:
+            cls = "tablet"
+        else:
+            cls = "desktop"
+        return {"class": cls, "is_mobile": cls == "mobile", "is_tablet": cls == "tablet", "is_desktop": cls == "desktop"}
+    except Exception:
+        return {"class":"desktop","is_mobile":False,"is_tablet":False,"is_desktop":True}
+
+def _decide_view_mode(req):
+    # 1) explicit ?view=mobile|desktop|auto overrides (and we persist via cookie)
+    q = (req.args.get("view") or "").lower()
+    if q in ("mobile","desktop","auto"):
+        g._set_view_cookie = q
+        if q != "auto":
+            return q
+
+    # 2) cookie
+    cv = (req.cookies.get(MOBILE_COOKIE) or "").lower()
+    if cv in ("mobile","desktop"):
+        return cv
+
+    # 3) auto from UA
+    dev = _detect_device_from_ua(req.headers.get("User-Agent",""))
+    return "mobile" if dev["is_mobile"] else "desktop"
+
+@app.before_request
+def _inject_device():
+    dev = _detect_device_from_ua(request.headers.get("User-Agent",""))
+    g.device = dev
+    g.view_mode = _decide_view_mode(request)   # 'mobile' | 'desktop'
+
+@app.after_request
+def _persist_view_cookie(resp):
+    # Set cookie only when query override was used
+    v = getattr(g, "_set_view_cookie", None)
+    if v:
+        resp.set_cookie(MOBILE_COOKIE, v, max_age=30*24*3600, samesite="Lax")
+    return resp
+
+def render_best(templates: list[str], **ctx):
+    """Try templates in order; fall back to last item if none found."""
+    last = templates[-1]
+    for name in templates:
+        try:
+            return render_template(name, **ctx)
+        except TemplateNotFound:
+            continue
+    return render_template(last, **ctx)
+
 
 # --- DSN helpers & pooler detection ---
 IS_SUPABASE_POOLER = bool(DATABASE_URL and "pooler.supabase.com" in DATABASE_URL)
@@ -348,6 +415,31 @@ def user_area_codes(org_id: int, user_id: int) -> set[str]:
     r = fetchone("SELECT default_area FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, user_id))
     return {r['default_area']} if r and r['default_area'] else set()
 
+# ---------------------------- Area helpers ----------------------------
+AREA_SLUGS = {
+    "MANTENCION": "mantencion",
+    "HOUSEKEEPING": "housekeeping",
+    "ROOMSERVICE": "roomservice",
+}
+def area_slug(area: str | None) -> str:
+    if not area: return "general"
+    return AREA_SLUGS.get(area.upper(), area.lower().replace(" ", "_"))
+
+def default_area_for_user() -> str | None:
+    """Prefer OrgUsers.default_area, else first from OrgUserAreas, else Users.area."""
+    u = session.get("user"); org_id = session.get("org_id")
+    if not u:
+        return None
+    # explicit default on membership
+    r = fetchone("SELECT default_area FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, u["id"]))
+    if r and r.get("default_area"): return r["default_area"]
+    # multi-area table
+    areas = user_area_codes(org_id, u["id"])
+    if areas: return sorted(list(areas))[0]
+    # legacy single-area on Users
+    return u.get("area")
+
+
 def has_perm(code: str) -> bool:
     role = current_org_role()
     if not role:
@@ -450,12 +542,54 @@ def login():
         else:
             message = 'Credenciales inválidas o usuario inactivo.'
 
-    return render_template('login.html', message=message, success=success)
+    return render_template('login.html', message=message, success=success, enable_demo=app.config['ENABLE_TECH_DEMO'])
+
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+@app.get('/demo/tecnico')
+def demo_tecnico():
+    # Guard: only if explicitly enabled
+    if not app.config.get('ENABLE_TECH_DEMO'):
+        flash('Demo deshabilitada.', 'error')
+        return redirect(url_for('login'))
+
+    area = (request.args.get('area') or 'MANTENCION').upper()
+    if area not in ('MANTENCION', 'HOUSEKEEPING', 'ROOMSERVICE'):
+        area = 'MANTENCION'
+
+    # Optional force view: 'mobile' | 'desktop' | 'auto'
+    view = (request.args.get('view') or '').lower()
+    if view not in ('mobile', 'desktop', 'auto'):
+        view = 'auto'
+
+    # Create a demo session user (no DB write)
+    session['user'] = {
+        'id': -9999,
+        'name': 'Demo Tech',
+        'email': 'demo@local',
+        'role': 'TECNICO',
+        'area': area,
+        'is_superadmin': False,
+    }
+
+    # Set org/hotel scope to the first available rows (if exist)
+    org = fetchone("SELECT id FROM Orgs ORDER BY id LIMIT 1")
+    session['org_id'] = org['id'] if org else None
+    if org:
+        h = fetchone("SELECT id FROM Hotels WHERE org_id=? ORDER BY id LIMIT 1", (org['id'],))
+        session['hotel_id'] = h['id'] if h else None
+    else:
+        session['hotel_id'] = None
+
+    # Use the device/view cookie mechanism you already have:
+    # app.before_request sees ?view=... and sets the cookie for future pages.
+    flash(f"Demo técnico — Área: {area} (vista: {view or 'auto'})", "success")
+    return redirect(url_for('dashboard', view=view if view else None))
+
 
 #CHeck status of the app
 @app.get('/healthz')
@@ -582,6 +716,28 @@ def get_area_data(area: str | None):
     } for r in rows]
     return kpis, tickets
 
+def get_assigned_tickets_for_area(user_id: int, area: str | None):
+    now = datetime.now()
+    org_id, _ = current_scope()
+    if not org_id: return []
+    params = [org_id, user_id]
+    where = ["org_id=?","assigned_to=?",
+             "estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')"]
+    if area:
+        where.append("area=?"); params.append(area)
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+    """, tuple(params))
+    return [{
+        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
+        "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
+    } for r in rows]
+
+
 def get_assigned_tickets(user_id: int):
     """Tickets asignados a un técnico/operador (scoped by ORG)."""
     now = datetime.now()
@@ -600,6 +756,8 @@ def get_assigned_tickets(user_id: int):
         "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
+
+    
 
 # ---------------------------- dashboards ----------------------------
 @app.route('/dashboard')
@@ -627,6 +785,33 @@ def dashboard():
         # Otherwise avoid the loop: send them somewhere safe + explain
         flash('No tienes permisos para ver el inbox o falta contexto de organización.', 'error')
         return redirect(url_for('tickets'))
+        # TECNICO / others
+    if role == 'TECNICO':
+        # pick a default area for the technician
+        area = default_area_for_user()
+        slug = area_slug(area)
+        view = g.view_mode  # 'mobile' or 'desktop'
+        # pull tickets for that area
+        tickets = get_assigned_tickets_for_area(user['id'], area)
+
+        # Try specialized templates first, then fall back.
+        # Create any of these files if you want unique UIs:
+        #   templates/tecnico_<area>_mobile.html
+        #   templates/tecnico_<area>_desktop.html
+        #   templates/tecnico_mobile.html
+        #   templates/tecnico_desktop.html
+        # Fallback to your existing generic: dashboard_tecnico.html
+        template_order = [
+            f"tecnico_{slug}_{view}.html",
+            f"tecnico_{view}.html",
+            "dashboard_tecnico.html",
+        ]
+        return render_best(template_order, user=user, tickets=tickets, area=area, device=g.device, view=view)
+
+    # default (non-recognized roles) => generic technician page for now
+    tickets = get_assigned_tickets(user['id'])
+    return render_template('dashboard_tecnico.html', user=user, tickets=tickets)
+
 
 
     # TECNICO / otros
@@ -716,10 +901,14 @@ def tickets():
             "canal": r["canal_origen"],
         })
 
-    return render_template('tickets.html',
-                           user=session['user'],
-                           tickets=items,
-                           filters={"q": q, "area": area, "prioridad": prioridad, "estado": estado, "period": period})
+        view = g.view_mode
+    return render_best(
+        [f"tickets_{view}.html", "tickets.html"],
+        user=session['user'], tickets=items,
+        filters={"q": q, "area": area, "prioridad": prioridad, "estado": estado, "period": period},
+        device=g.device, view=view
+    )
+
 
 # ---------------------------- Recepción inbox (triage) ----------------------------
 @app.route('/recepcion/inbox')
@@ -737,15 +926,20 @@ def recepcion_inbox():
         WHERE org_id=? AND estado='PENDIENTE'
         ORDER BY created_at DESC
     """, (org_id,))
-    return render_template('tickets.html',
-                           user=session['user'],
-                           tickets=[{
-                               "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
-                               "detalle": r["detalle"], "ubicacion": r["ubicacion"],
-                               "created_at": r["created_at"], "due_at": None, "is_critical": False,
-                               "assigned_to": None, "canal": r["canal_origen"]
-                           } for r in rows],
-                           filters={"q":"", "area":"", "prioridad":"", "estado":"PENDIENTE", "period":"today"})
+    view = g.view_mode
+    return render_best(
+        [f"tickets_{view}.html", "tickets.html"],
+        user=session['user'],
+        tickets=[{
+            "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+            "detalle": r["detalle"], "ubicacion": r["ubicacion"],
+            "created_at": r["created_at"], "due_at": None, "is_critical": False,
+            "assigned_to": None, "canal": r["canal_origen"]
+        } for r in rows],
+        filters={"q":"", "area":"", "prioridad":"", "estado":"PENDIENTE", "period":"today"},
+        device=g.device, view=view
+    )
+
 
 # ---------------------------- create & confirm ticket ----------------------------
 @app.route('/tickets/create', methods=['GET', 'POST'])
