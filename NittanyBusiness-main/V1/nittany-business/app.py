@@ -426,6 +426,19 @@ def area_slug(area: str | None) -> str:
     if not area: return "general"
     return AREA_SLUGS.get(area.upper(), area.lower().replace(" ", "_"))
 
+def area_from_slug(slug: str | None) -> str | None:
+    if not slug:
+        return None
+    s = slug.strip().lower()
+    if s in ("mantencion", "maintenance"):
+        return "MANTENCION"
+    if s in ("housekeeping", "hk"):
+        return "HOUSEKEEPING"
+    if s in ("roomservice", "rs", "room_service"):
+        return "ROOMSERVICE"
+    return None
+
+
 def default_area_for_user() -> str | None:
     """Prefer OrgUsers.default_area, else first from OrgUserAreas, else Users.area."""
     u = session.get("user"); org_id = session.get("org_id")
@@ -738,6 +751,89 @@ def get_assigned_tickets_for_area(user_id: int, area: str | None):
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
 
+def get_in_progress_tickets_for_user(user_id: int, area: str | None):
+    """Tickets del usuario en ACEPATADO/EN_CURSO (scoped by ORG, optional área)."""
+    now = datetime.now()
+    org_id, _ = current_scope()
+    if not org_id:
+        return []
+    params = [org_id, user_id]
+    where = [
+        "org_id=?",
+        "assigned_to=?",
+        "estado IN ('ACEPTADO','EN_CURSO')"
+    ]
+    if area:
+        where.append("area=?")
+        params.append(area)
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+    """, tuple(params))
+    return [{
+        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
+        "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
+    } for r in rows]
+
+
+def get_area_available_tickets(area: str, only_unassigned: bool = True):
+    """Tickets disponibles del área (por defecto solo PENDIENTE y sin asignar)."""
+    now = datetime.now()
+    org_id, _ = current_scope()
+    if not org_id:
+        return []
+    where = ["org_id=?", "area=?"]
+    params = [org_id, area]
+
+    # “Disponibles” por defecto: PENDIENTE y sin assigned_to
+    where.append("estado='PENDIENTE'")
+    if only_unassigned:
+        where.append("(assigned_to IS NULL OR assigned_to='')")
+
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+    """, tuple(params))
+
+    return [{
+        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
+        "due_at": r["due_at"], "assigned_to": r["assigned_to"],
+        "is_critical": is_critical(now, r["due_at"])
+    } for r in rows]
+
+
+def get_history_tickets_for_user(user_id: int, area: str | None, days: int = 7):
+    """Tickets resueltos por el usuario en los últimos N días (scoped by ORG, opcional área)."""
+    now = datetime.now()
+    cutoff = (now - timedelta(days=max(1, int(days)))).isoformat()
+    org_id, _ = current_scope()
+    if not org_id:
+        return []
+    params = [org_id, user_id, cutoff]
+    where = ["org_id=?", "assigned_to=?", "estado='RESUELTO'", "finished_at >= ?"]
+    if area:
+        where.append("area=?")
+        params.append(area)
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, finished_at
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY finished_at DESC
+    """, tuple(params))
+    return [{
+        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
+        "due_at": r["due_at"], "finished_at": r.get("finished_at"),
+        "is_critical": False
+    } for r in rows]
+
+
 
 def get_assigned_tickets(user_id: int):
     """Tickets asignados a un técnico/operador (scoped by ORG)."""
@@ -818,6 +914,103 @@ def dashboard():
     # TECNICO / otros
     tickets = get_assigned_tickets(user['id'])
     return render_template('dashboard_tecnico.html', user=user, tickets=tickets)
+
+    # ---------------------------- Technician mobile routes ----------------------------
+from werkzeug.exceptions import NotFound
+
+def _area_or_404(slug: str) -> str:
+    area = area_from_slug(slug)
+    if not area:
+        raise NotFound()
+    return area
+
+@app.get('/tecnico/<slug>/my')
+def tech_my(slug):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    area = _area_or_404(slug)
+    tickets = get_assigned_tickets_for_area(session['user']['id'], area)
+    template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
+    return render_best(template_order,
+                       section="my", area=area, slug=slug, user=session['user'],
+                       device=g.device, view=g.view_mode, tickets=tickets)
+
+@app.get('/tecnico/<slug>/in-progress')
+def tech_in_progress(slug):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    area = _area_or_404(slug)
+    tickets = get_in_progress_tickets_for_user(session['user']['id'], area)
+    template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
+    return render_best(template_order,
+                       section="in_progress", area=area, slug=slug, user=session['user'],
+                       device=g.device, view=g.view_mode, tickets=tickets)
+
+@app.get('/tecnico/<slug>/list')
+def tech_available(slug):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    area = _area_or_404(slug)
+    only_unassigned = (request.args.get('unassigned', '1') == '1')
+    tickets = get_area_available_tickets(area, only_unassigned=only_unassigned)
+    template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
+    return render_best(template_order,
+                       section="available", area=area, slug=slug, user=session['user'],
+                       device=g.device, view=g.view_mode, tickets=tickets)
+
+@app.get('/tecnico/<slug>/history')
+def tech_history(slug):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    area = _area_or_404(slug)
+    days = request.args.get('days', type=int) or 7
+    tickets = get_history_tickets_for_user(session['user']['id'], area, days=days)
+    template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
+    return render_best(template_order,
+                       section="history", area=area, slug=slug, user=session['user'],
+                       device=g.device, view=g.view_mode, tickets=tickets, days=days)
+
+@app.get('/tecnico/<slug>/tools')
+def tech_tools(slug):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    area = _area_or_404(slug)
+
+    # Contenido “tools” por área (puedes reemplazar por datos desde DB)
+    tools = []
+    if area == "HOUSEKEEPING":
+        tools = [
+            ("Checklist de salida", "#"),
+            ("Mapa de carros / pisos", "#"),
+            ("Protocolo de textiles", "#"),
+            ("Señalética & Seguridad", "#"),
+            ("Reportes de pérdida", "#"),
+            ("Guía de amenities", "#"),
+        ]
+    elif area == "MANTENCION":
+        tools = [
+            ("Guía de circuitos eléctricos", "#"),
+            ("Planos y tableros", "#"),
+            ("Protocolo lock-out/tag-out", "#"),
+            ("Manual de calderas / bombas", "#"),
+            ("Inventario de repuestos", "#"),
+            ("Ficha de herramientas", "#"),
+        ]
+    elif area == "ROOMSERVICE":
+        tools = [
+            ("Menú actual & alérgenos", "#"),
+            ("Checklist de bandeja", "#"),
+            ("Rutas de entrega por piso", "#"),
+            ("Menú nocturno", "#"),
+            ("Stock de amenities/extras", "#"),
+            ("Protocolos de higiene", "#"),
+        ]
+
+    template_order = ["tecnico_mobile_tools.html", "tickets_mobile.html", "tickets.html"]
+    return render_best(template_order,
+                       area=area, slug=slug, user=session['user'],
+                       device=g.device, view=g.view_mode, tools=tools)
+
 
 # ---------------------------- tickets list & filters ----------------------------
 @app.route('/tickets')

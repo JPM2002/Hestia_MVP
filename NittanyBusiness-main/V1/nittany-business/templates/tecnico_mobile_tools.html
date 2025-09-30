@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% set A = (area or 'GENERAL') %}
+{% set is_hk = (A == 'HOUSEKEEPING') %}
+{% set is_mn = (A == 'MANTENCION') %}
+{% set is_rs = (A == 'ROOMSERVICE') %}
+{% set icon = '🧹' if is_hk else ('🛠️' if is_mn else ('🍽️' if is_rs else '🧰')) %}
+
+{% block title %}{{ icon }} {{ A|title }} — Herramientas{% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h5 mb-0">{{ icon }} {{ A|title }}</h1>
+    <div class="small text-muted">Herramientas</div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard') }}">Inicio</a>
+</header>
+
+<div class="list-group">
+  {% for label, href in (tools or []) %}
+    <a class="list-group-item list-group-item-action" href="{{ href }}">{{ label }}</a>
+  {% else %}
+    <div class="text-muted">No hay herramientas configuradas.</div>
+  {% endfor %}
+</div>
+
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('tech_available', slug=slug) }}">📋 Lista</a>
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+  </div>
+</nav>
+{% endblock %}
