@@ -172,6 +172,15 @@ def insert_and_get_id(query, params=()):
             except Exception: pass
 
 
+def date_key(v):
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v.date().isoformat()     # YYYY-MM-DD
+    return str(v)[:10]                  # por si viene como texto
+
+
+
 def is_critical(now: datetime, due_at) -> bool:
     """
     Accepts either ISO string (SQLite) or datetime (Postgres) for due_at.
@@ -418,9 +427,10 @@ def get_global_kpis():
     from collections import Counter
     cnt = Counter()
     for r in rows or []:
-        fa = r["finished_at"]
-        if fa:
-            cnt[fa[:10]] += 1
+        key = date_key(r["finished_at"])
+        if key:
+            cnt[key] += 1
+
     charts = {
         "resolved_last7": [{"date": d, "count": cnt[d]} for d in sorted(cnt.keys())]
     }   
