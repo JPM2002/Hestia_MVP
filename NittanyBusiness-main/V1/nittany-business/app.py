@@ -7,15 +7,49 @@ from datetime import datetime, timedelta
 import hashlib
 from functools import wraps
 import os
+# --- add for DSN normalization ---
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
 
 # 👇 ADD THESE TWO LINES
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
 
+# Friendly error if DB drops
+try:
+    from psycopg2 import OperationalError as PG_OperationalError
+except Exception:
+    PG_OperationalError = Exception
+
+@app.errorhandler(PG_OperationalError)
+def _db_down(e):
+    app.logger.error(f"DB error: {e}")
+    flash("Base de datos no disponible. Intenta de nuevo en unos segundos.", "error")
+    return redirect(url_for("login"))
+
+
 # --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
 DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
 DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
 USE_PG = bool(DATABASE_URL)
+
+# --- DSN helpers & pooler detection ---
+IS_SUPABASE_POOLER = bool(DATABASE_URL and "pooler.supabase.com" in DATABASE_URL)
+
+def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
+    """Ensure sslmode/connect_timeout exist in the DSN query string."""
+    if not dsn:
+        return dsn
+    parts = urlsplit(dsn)
+    q = dict(parse_qsl(parts.query, keep_blank_values=True))
+    q.setdefault("sslmode", "require")
+    q.setdefault("connect_timeout", "5")  # seconds
+    if extra:
+        q.update(extra)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
+
+
+
 
 # Try to import psycopg2; don't crash if missing (local SQLite dev may not need it)
 pg = None
@@ -35,40 +69,51 @@ def hp(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def _init_pg_pool():
-    """Create the global pool once. Raise with the real reason if it fails."""
+    """Create the global pool once. Keep pool tiny when using Supabase pgbouncer (6543)."""
     global PG_POOL
     if not USE_PG:
         return None
     if PG_POOL is not None:
         return PG_POOL
     if pg is None or pg_pool is None:
-        raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements.txt).")
+        raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements).")
     try:
-        PG_POOL = pg_pool.SimpleConnectionPool(
-            minconn=1,
-            maxconn=int(os.getenv('PG_POOL_MAX', '5')),
-            dsn=DATABASE_URL,
-        )
-        print("[BOOT] Postgres pool initialized.", flush=True)
+        dsn = _dsn_with_params(DATABASE_URL)
+        # very small pool if going through supabase pooler; larger otherwise
+        maxconn_default = '2' if IS_SUPABASE_POOLER else '5'
+        maxconn = int(os.getenv('PG_POOL_MAX', maxconn_default))
+        PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
+        print(f"[BOOT] Postgres pool initialized (maxconn={maxconn}).", flush=True)
         return PG_POOL
     except Exception as e:
         print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
         raise
 
+def _db_conn_with_retry(tries: int = 2):
+    """Retry once on transient pooler hiccups."""
+    last = None
+    for _ in range(tries):
+        try:
+            pool = _init_pg_pool()
+            return pool.getconn()
+        except Exception as e:
+            last = e
+    raise last
+
+
 def db():
     """
     Get a DB connection:
-      - Postgres (Supabase) when DATABASE_URL is set
+      - Postgres (Supabase) when DATABASE_URL is set (with tiny retry)
       - SQLite local file otherwise
     """
     if USE_PG:
-        pool = _init_pg_pool()  # will raise with true cause if it fails
-        return pool.getconn()
-    # SQLite path
+        return _db_conn_with_retry(tries=2)
     conn = sql.connect(DATABASE, check_same_thread=False)
     conn.row_factory = sql.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
 
 def _execute(conn, query, params=()):
     """Run a query on either backend. Converts '?' -> '%s' for Postgres."""
@@ -335,15 +380,19 @@ def login():
             (ident, ident)
         )
 
-        if row and hp(password) == row["password_hash"] and int(row["activo"]) == 1:
+        is_active = bool(row["activo"]) if row else False
+        is_super  = bool(row["is_superadmin"]) if row else False
+
+        if row and hp(password) == row["password_hash"] and is_active:
             session['user'] = {
                 'id': row['id'],
                 'name': row['username'],
                 'email': row['email'],
-                'role': row['role'],        # base role (legacy)
-                'area': row['area'],        # legacy single-area (we prefer OrgUserAreas)
-                'is_superadmin': int(row['is_superadmin']) == 1
+                'role': row['role'],
+                'area': row['area'],
+                'is_superadmin': is_super,
             }
+
 
             # Scope: from first membership or first org/hotel if superadmin
             ou = fetchone("""
@@ -1047,9 +1096,11 @@ def admin_org_members_add(org_id):
     # find or create user
     u = fetchone("SELECT id FROM Users WHERE email=?", (email,))
     if not u:
+        # Use real booleans for Postgres; SQLite will coerce them to 1/0.
         execute("""INSERT INTO Users(username,email,password_hash,role,area,telefono,activo,is_superadmin)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (username, email, hp(password), base_role, default_area, None, 1, 0))
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (username, email, hp(password), base_role, default_area, None, True, False))
+
         u = fetchone("SELECT id FROM Users WHERE email=?", (email,))
 
     # upsert membership
