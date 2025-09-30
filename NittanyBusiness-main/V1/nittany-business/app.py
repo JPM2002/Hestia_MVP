@@ -264,28 +264,62 @@ def current_scope():
 def is_superadmin():
     return bool(session.get('user', {}).get('is_superadmin'))
 
+
+
+# ---------------------------- RBAC defaults (safe fallback) ----------------------------
+DEFAULT_PERMS = {
+    "SUPERADMIN": {"*"},
+    "GERENTE": {
+        "ticket.view.all", "ticket.assign", "ticket.confirm", "ticket.create",
+        "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
+        "ticket.transition.resume", "ticket.transition.finish",
+    },
+    "SUPERVISOR": {
+        "ticket.view.area", "ticket.assign", "ticket.confirm", "ticket.create",
+        "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
+        "ticket.transition.resume", "ticket.transition.finish",
+    },
+    "RECEPCION": {
+        "ticket.view.area", "ticket.create", "ticket.confirm",
+    },
+    "TECNICO": {
+        "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
+        "ticket.transition.resume", "ticket.transition.finish",
+    },
+}
+
+
 # ---------------------------- RBAC helpers ----------------------------
 def role_effective_perms(role_code: str) -> set[str]:
     """
-    Resolve role -> permissions following inheritance (Roles.inherits_code).
-    If RBAC tables don't exist yet, return a permissive set for SUPERADMIN only.
+    Resolve role -> permissions via DB (RolePermissions + Roles.inherits_code).
+    If RBAC tables are missing or empty, fall back to DEFAULT_PERMS.
     """
     if not role_code:
         return set()
+
+    # Try to load from DB
     try:
         perms = set()
         seen = set()
         rc = role_code
         while rc and rc not in seen:
             seen.add(rc)
-            for r in fetchall("SELECT perm_code FROM RolePermissions WHERE role_code=? AND allow=1", (rc,)):
-                perms.add(r['perm_code'])
+            for r in fetchall("SELECT perm_code, allow FROM RolePermissions WHERE role_code=?", (rc,)):
+                if int(r.get("allow", 1)) == 1:
+                    perms.add(r["perm_code"])
             parent = fetchone("SELECT inherits_code FROM Roles WHERE code=?", (rc,))
-            rc = parent['inherits_code'] if parent else None
-        return perms
+            rc = parent["inherits_code"] if parent else None
+
+        if perms:
+            return perms
     except Exception:
-        # Fallback: allow everything if superadmin role, minimal otherwise (during migration)
-        return {"*"} if role_code == "SUPERADMIN" else set()
+        # If tables don’t exist yet, we’ll fall back below
+        pass
+
+    # Fallback defaults (keeps the app usable without RBAC rows)
+    return DEFAULT_PERMS.get(role_code, set())
+
 
 def current_org_role() -> str | None:
     """Return the OrgUsers.role for this user in current org, or SUPERADMIN."""
@@ -587,7 +621,13 @@ def dashboard():
         return render_template('dashboard_supervisor.html', user=user, kpis=kpis, tickets=tickets)
 
     if role == 'RECEPCION':
-        return redirect(url_for('recepcion_inbox'))
+        # Only send to inbox if they actually have permission AND org context
+        if has_perm('ticket.view.area') and session.get('org_id'):
+            return redirect(url_for('recepcion_inbox'))
+        # Otherwise avoid the loop: send them somewhere safe + explain
+        flash('No tienes permisos para ver el inbox o falta contexto de organización.', 'error')
+        return redirect(url_for('tickets'))
+
 
     # TECNICO / otros
     tickets = get_assigned_tickets(user['id'])
