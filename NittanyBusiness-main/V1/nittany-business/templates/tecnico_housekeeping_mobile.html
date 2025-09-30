@@ -2,29 +2,102 @@
 {% block title %}Housekeeping — Mi trabajo{% endblock %}
 
 {% block content %}
-<header class="d-flex justify-content-between align-items-center mb-2">
-  <h1 class="h4 mb-0">🧹 Housekeeping</h1>
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h5 mb-0">🧹 Housekeeping</h1>
+    <div class="small text-muted">Vista móvil</div>
+  </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tickets', estado='PENDIENTE', area='HOUSEKEEPING') }}">Todos</a>
-    <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('tickets', area='HOUSEKEEPING') }}">Todos</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    {% endif %}
   </div>
 </header>
 
+<!-- Quick Actions (6 buttons) -->
+<section class="mb-3">
+  <div class="row g-2 row-cols-2">
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tickets', area='HOUSEKEEPING', estado='EN_CURSO') }}">
+        <div class="fw-semibold">En curso</div>
+        <div class="small text-muted">lo que estoy haciendo</div>
+      </a>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tickets', area='HOUSEKEEPING') }}">
+        <div class="fw-semibold">Mis asignados</div>
+        <div class="small text-muted">todo lo mío</div>
+      </a>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tickets', area='HOUSEKEEPING', estado='PENDIENTE') }}">
+        <div class="fw-semibold">Lista</div>
+        <div class="small text-muted">disponibles del área</div>
+      </a>
+    </div>
+    <div class="col">
+      {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+        <a class="btn w-100 btn-light py-3 border rounded-3"
+           href="{{ url_for('ticket_create') }}">
+          <div class="fw-semibold">Nuevo</div>
+          <div class="small text-muted">crear ticket</div>
+        </a>
+      {% else %}
+        <button class="btn w-100 py-3 border rounded-3" disabled>
+          <div class="fw-semibold">Nuevo</div>
+          <div class="small text-muted">sin permiso</div>
+        </button>
+      {% endif %}
+    </div>
+    <div class="col">
+      <button class="btn w-100 btn-light py-3 border rounded-3"
+              data-bs-toggle="offcanvas" data-bs-target="#hkTools">
+        <div class="fw-semibold">Herramientas</div>
+        <div class="small text-muted">checklists y recursos</div>
+      </button>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tickets', area='HOUSEKEEPING', estado='RESUELTO', period='7d') }}">
+        <div class="fw-semibold">Historial</div>
+        <div class="small text-muted">últimos 7 días</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Optional small search for the preview list -->
 <div class="mb-2">
-  <input id="hk-search" class="form-control form-control-sm" placeholder="Buscar habitación / detalle..." />
+  <input id="hk-search" class="form-control form-control-sm"
+         placeholder="Buscar habitación / detalle..." />
 </div>
 
+<!-- Preview: Mis asignados (top 10) -->
+<h2 class="h6 text-muted mb-2">Mis asignados</h2>
 <ul id="hk-list" class="list-unstyled d-grid gap-2">
-  {% for t in (tickets or []) %}
-  <li class="card {% if t.is_critical %}border-warning{% endif %}" data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle)|lower }}">
+  {% set _items = (tickets or [])[:10] %}
+  {% for t in _items %}
+  <li class="card {% if t.is_critical %}border-warning{% endif %}"
+      data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle ~ ' ' ~ t.estado ~ ' ' ~ t.prioridad)|lower }}">
     <div class="card-body p-2">
       <div class="d-flex justify-content-between align-items-center">
-        <div>
-          <div class="fw-semibold">Habitación {{ t.ubicacion or '—' }}</div>
-          <div class="small text-muted text-truncate" style="max-width: 90vw">{{ t.detalle }}</div>
+        <div class="me-2">
+          <div class="fw-semibold">Hab. {{ t.ubicacion or '—' }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 70vw">{{ t.detalle }}</div>
         </div>
         <div class="text-end">
-          <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ t.prioridad }}</span>
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %}text-bg-danger
+            {% elif t.prioridad=='ALTA' %}text-bg-warning
+            {% elif t.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad }}
+          </span>
           <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
             {% if t.due_at %}vence {{ t.due_at }}{% else %}sin SLA{% endif %}
           </div>
@@ -33,18 +106,35 @@
 
       <div class="mt-2 d-flex flex-wrap gap-1">
         {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
-          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}"><button class="btn btn-sm btn-outline-primary">Aceptar</button></form>
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+          </form>
         {% endif %}
+
         {% if t.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}"><button class="btn btn-sm btn-dark">Iniciar</button></form>
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}"><input type="hidden" name="motivo" value="Esperando habitación"><button class="btn btn-sm btn-outline-warning">Pausa</button></form>
+          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-dark">Iniciar</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Esperando habitación">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
         {% endif %}
+
         {% if t.estado in ['EN_CURSO'] %}
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}"><input type="hidden" name="motivo" value="Pendiente insumos"><button class="btn btn-sm btn-outline-warning">Pausa</button></form>
-          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}"><button class="btn btn-sm btn-success">Finalizar</button></form>
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pendiente insumos">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-success">Finalizar</button>
+          </form>
         {% endif %}
+
         {% if t.estado in ['PAUSADO'] %}
-          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}"><button class="btn btn-sm btn-outline-secondary">Reanudar</button></form>
+          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+          </form>
         {% endif %}
       </div>
 
@@ -59,24 +149,49 @@
   {% endfor %}
 </ul>
 
+<!-- Bottom nav for quick access -->
 <nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
   <div class="container-fluid d-flex justify-content-around">
-    <a class="btn btn-link" href="{{ url_for('tickets', estado='PENDIENTE', area='HOUSEKEEPING') }}">📋 Lista</a>
-    <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    <a class="btn btn-link"
+       href="{{ url_for('tickets', area='HOUSEKEEPING') }}">📋 Lista</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    {% else %}
+      <span class="btn btn-link disabled">➕ Nuevo</span>
+    {% endif %}
     <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
   </div>
 </nav>
+
+<!-- Offcanvas: Herramientas -->
+<div class="offcanvas offcanvas-bottom" tabindex="-1" id="hkTools">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Herramientas — Housekeeping</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body small">
+    <div class="list-group">
+      <a href="#" class="list-group-item list-group-item-action">Checklist de salida</a>
+      <a href="#" class="list-group-item list-group-item-action">Reposición de amenities</a>
+      <a href="#" class="list-group-item list-group-item-action">Reporte Lost &amp; Found</a>
+      <a href="#" class="list-group-item list-group-item-action">Protocolos de limpieza</a>
+      <a href="#" class="list-group-item list-group-item-action">Comunicar habitación lista</a>
+    </div>
+    <div class="text-muted mt-2">*(enlaces de ejemplo; conectar cuando estén listos)*</div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Simple client-side filter for the preview list
   const search = document.getElementById('hk-search');
   const items  = Array.from(document.querySelectorAll('#hk-list > li.card'));
   search?.addEventListener('input', (e)=>{
-    const q = e.target.value.trim().toLowerCase();
+    const q = (e.target.value || '').trim().toLowerCase();
     items.forEach(li => {
       const key = li.getAttribute('data-key') || '';
-      li.style.display = (q==='' || key.includes(q)) ? '' : 'none';
+      li.style.display = (!q || key.includes(q)) ? '' : 'none';
     });
   });
 </script>
