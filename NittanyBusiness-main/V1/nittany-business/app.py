@@ -356,16 +356,18 @@ DEFAULT_PERMS = {
 }
 
 
+
 # ---------------------------- RBAC helpers ----------------------------
 def role_effective_perms(role_code: str) -> set[str]:
     """
-    Resolve role -> permissions via DB (RolePermissions + Roles.inherits_code).
-    If RBAC tables are missing or empty, fall back to DEFAULT_PERMS.
+    Resolve role -> permissions. We always include DEFAULT_PERMS as a base,
+    and then union any DB-defined permissions (RolePermissions + Roles.inherits_code).
+    This prevents accidental loss of core perms when DB rows are incomplete.
     """
     if not role_code:
         return set()
 
-    # Try to load from DB
+    base = set(DEFAULT_PERMS.get(role_code, set()))
     try:
         perms = set()
         seen = set()
@@ -373,16 +375,15 @@ def role_effective_perms(role_code: str) -> set[str]:
         while rc and rc not in seen:
             seen.add(rc)
             for r in fetchall("SELECT perm_code, allow FROM RolePermissions WHERE role_code=?", (rc,)):
-                if int(r.get("allow", 1)) == 1:
+                if bool(r.get("allow", 1)):
                     perms.add(r["perm_code"])
             parent = fetchone("SELECT inherits_code FROM Roles WHERE code=?", (rc,))
             rc = parent["inherits_code"] if parent else None
-
-        if perms:
-            return perms
+        return base | perms
     except Exception:
-        # If tables don’t exist yet, we’ll fall back below
-        pass
+        # If RBAC tables are missing, stick to defaults
+        return base
+
 
     # Fallback defaults (keeps the app usable without RBAC rows)
     return DEFAULT_PERMS.get(role_code, set())
