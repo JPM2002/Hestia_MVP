@@ -8,6 +8,10 @@ import hashlib
 from functools import wraps
 import os
 
+# 👇 ADD THESE TWO LINES
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
+
 # --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
 DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
 DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
@@ -26,6 +30,9 @@ if USE_PG:
         print(f"[BOOT] psycopg2 import failed: {e}", flush=True)
 
 PG_POOL = None  # created lazily on first use
+
+def hp(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def _init_pg_pool():
     """Create the global pool once. Raise with the real reason if it fails."""
