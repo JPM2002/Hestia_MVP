@@ -1122,7 +1122,7 @@ def tickets():
         })
 
     view = g.view_mode
-    
+
     return render_best(
         [f"tickets_{view}.html", "tickets.html"],
         user=session['user'], tickets=items,
@@ -1132,34 +1132,34 @@ def tickets():
 
 
 # ---------------------------- Recepción inbox (triage) ----------------------------
-@app.route('/recepcion/inbox')
-@require_perm('ticket.view.area')
-def recepcion_inbox():
-    org_id, _ = current_scope()
-    if not org_id:
-        flash('Sin contexto de organización.', 'error')
-        return redirect(url_for('dashboard'))
+    @app.route('/recepcion/inbox')
+    @require_perm('ticket.view.area')
+    def recepcion_inbox():
+        org_id, _ = current_scope()
+        if not org_id:
+            flash('Sin contexto de organización.', 'error')
+            return redirect(url_for('dashboard'))
 
-    # Inbox: pendientes (típicamente WA huésped o recepcion)
-    rows = fetchall("""
-        SELECT id, area, prioridad, estado, detalle, ubicacion, canal_origen, created_at
-        FROM Tickets
-        WHERE org_id=? AND estado='PENDIENTE'
-        ORDER BY created_at DESC
-    """, (org_id,))
-    view = g.view_mode
-    return render_best(
-        [f"tickets_{view}.html", "tickets.html"],
-        user=session['user'],
-        tickets=[{
-            "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
-            "detalle": r["detalle"], "ubicacion": r["ubicacion"],
-            "created_at": r["created_at"], "due_at": None, "is_critical": False,
-            "assigned_to": None, "canal": r["canal_origen"]
-        } for r in rows],
-        filters={"q":"", "area":"", "prioridad":"", "estado":"PENDIENTE", "period":"today"},
-        device=g.device, view=view
-    )
+        # Inbox: pendientes (típicamente WA huésped o recepcion)
+        rows = fetchall("""
+            SELECT id, area, prioridad, estado, detalle, ubicacion, canal_origen, created_at
+            FROM Tickets
+            WHERE org_id=? AND estado='PENDIENTE'
+            ORDER BY created_at DESC
+        """, (org_id,))
+        view = g.view_mode
+        return render_best(
+            [f"tickets_{view}.html", "tickets.html"],
+            user=session['user'],
+            tickets=[{
+                "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
+                "detalle": r["detalle"], "ubicacion": r["ubicacion"],
+                "created_at": r["created_at"], "due_at": None, "is_critical": False,
+                "assigned_to": None, "canal": r["canal_origen"]
+            } for r in rows],
+            filters={"q":"", "area":"", "prioridad":"", "estado":"PENDIENTE", "period":"today"},
+            device=g.device, view=view
+        )
 
 
 # ---------------------------- create & confirm ticket ----------------------------
