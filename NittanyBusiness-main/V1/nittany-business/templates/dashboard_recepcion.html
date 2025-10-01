@@ -94,9 +94,110 @@
 <audio id="ding" preload="auto">
   <source src="{{ url_for('static', filename='snd/new-ticket.mp3') }}" type="audio/mpeg">
 </audio>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar ticket <span id="edit-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="ticket_id" id="edit-ticket-id">
+        <div class="mb-2">
+          <label class="form-label">Detalle</label>
+          <textarea name="detalle" id="edit-detalle" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Prioridad</label>
+          <select name="prioridad" id="edit-prioridad" class="form-select">
+            <option value="">—</option>
+            <option>URGENTE</option>
+            <option>ALTA</option>
+            <option>MEDIA</option>
+            <option>BAJA</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Ubicación</label>
+          <input name="ubicacion" id="edit-ubicacion" class="form-control" />
+        </div>
+        <div class="small text-muted">Se registrará en el historial.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+
+<script>
+// Allow edit from list items
+const CAN_EDIT = true; // flip by RBAC on server if you want
+
+function liTicket(t){
+  const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
+                   t.prioridad==='ALTA'    ? 'text-bg-warning' :
+                   t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
+  const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
+  const sla  = t.is_critical ? `<span class="text-danger fw-semibold"> ⚠</span>` : '';
+  const editBtn = CAN_EDIT ? `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="openEdit(${t.id}, ${JSON.stringify((t.detalle||'')).replace(/"/g,'&quot;')}, '${t.prioridad||''}', '${(t.ubicacion||'').replace(/'/g,"&#39;")}')">Editar</button>` : '';
+
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        <div class="d-flex align-items-center">
+          <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>${t.area || '—'}${room}
+          ${editBtn}
+        </div>
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+      </div>
+      <div class="text-end small text-muted list-item-meta">
+        ${t.estado || ''}${sla}<br>
+        <span>${t.due_at ? ('Vence ' + t.due_at) : 'Sin SLA'}</span>
+      </div>
+    </div>
+  </li>`;
+}
+
+// Edit modal handlers
+let editModal, editForm;
+window.addEventListener('DOMContentLoaded', () => {
+  editModal = new bootstrap.Modal(document.getElementById('editModal'));
+  editForm  = document.getElementById('editForm');
+
+  editForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('edit-ticket-id').value;
+    const fd = new FormData(editForm);
+    const r = await fetch(`/tickets/${id}/edit`, { method:'POST', body: fd });
+    if (r.ok) {
+      editModal.hide();
+      // refresh lists/kpis/feed
+      await window.refreshAll?.();
+    } else {
+      alert('No se pudo guardar.');
+    }
+  });
+});
+
+window.openEdit = (id, detalle, prioridad, ubicacion) => {
+  document.getElementById('edit-id').textContent = `#${id}`;
+  document.getElementById('edit-ticket-id').value = id;
+  document.getElementById('edit-detalle').value = detalle || '';
+  document.getElementById('edit-prioridad').value = (prioridad || '').toUpperCase();
+  document.getElementById('edit-ubicacion').value = ubicacion || '';
+  editModal.show();
+};
+</script>
+
+
 <script>
 /* ===== Countdown + refresh hook for Críticos ===== */
 (function () {

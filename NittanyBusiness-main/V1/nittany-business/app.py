@@ -1127,6 +1127,42 @@ def tickets():
         device=g.device, view=view
     )
 
+# ---------- Editar ticket (Recepción/Supervisor/Gerente) ----------
+@app.post('/tickets/<int:ticket_id>/edit')
+@require_perm('ticket.update')  # or a custom check for roles RECEPCION/SUPERVISOR/GERENTE
+def ticket_edit(ticket_id):
+    user = session.get('user') or {}
+    org_id, _ = current_scope()
+    if not org_id:
+        return jsonify({"ok": False, "error": "Sin contexto de organización"}), 400
+
+    detalle   = (request.form.get('detalle') or '').strip()
+    prioridad = (request.form.get('prioridad') or '').strip().upper() or None
+    ubicacion = (request.form.get('ubicacion') or '').strip() or None
+
+    # sanitize prioridad
+    valid_prios = {'URGENTE','ALTA','MEDIA','BAJA'}
+    if prioridad and prioridad not in valid_prios:
+        return jsonify({"ok": False, "error": "Prioridad inválida"}), 400
+
+    # update
+    execute(
+        ("UPDATE Tickets SET detalle=%s, prioridad=%s, ubicacion=%s WHERE id=%s AND org_id=%s")
+        if using_pg() else
+        ("UPDATE Tickets SET detalle=?,  prioridad=?,  ubicacion=?  WHERE id=? AND org_id=?"),
+        (detalle or None, prioridad, ubicacion, ticket_id, org_id)
+    )
+
+    # history
+    execute(
+        ("INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s,%s,%s,%s,%s)")
+        if using_pg() else
+        ("INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?,?,?,?,?)"),
+        (ticket_id, user.get('id'), "EDITADO", None, datetime.now().isoformat())
+    )
+
+    return jsonify({"ok": True})
+
 
 # ---------------------------- Recepción inbox (triage) ----------------------------
 @app.route('/recepcion/inbox')
