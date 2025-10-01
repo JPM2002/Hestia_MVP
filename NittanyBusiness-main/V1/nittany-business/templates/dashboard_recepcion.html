@@ -2,15 +2,6 @@
 {% block title %}Recepción — Dashboard{% endblock %}
 
 {% block content %}
-
-<style>
-  /* enable safe wrapping inside the two-column flex row */
-  .list-item-flex{ display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
-  .list-item-main{ min-width:0; } /* critical for wrapping within flex */
-  .list-item-detail{ white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
-  .list-item-meta{ flex:0 0 auto; max-width:30%; } /* right column won’t steal space */
-</style>
-
 <header class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h4 mb-0">📟 Recepción</h1>
   <div class="d-flex gap-2">
@@ -48,14 +39,12 @@
 </div>
 
 <!-- Críticos -->
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h5 class="mb-0">🔥 Críticos (pendientes/en curso con SLA en riesgo)</h5>
-  <div class="d-flex align-items-center gap-2 small text-muted">
-    <span id="crit-timer">Actualizando en 10s</span>
-    <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
+<div class="card mb-3">
+  <div class="card-header py-2">
+    🔥 Críticos (pendientes/en curso con SLA en riesgo)
   </div>
+  <ul id="list-critical" class="list-group list-group-flush small"></ul>
 </div>
-
 
 <div class="row g-3">
   <!-- Pendientes -->
@@ -94,52 +83,6 @@
 {% endblock %}
 
 {% block scripts %}
-
-<script>
-(function () {
-  const EVERY = 10;           // seconds
-  let secs = EVERY;
-  const label = document.getElementById('crit-timer');
-  const busy  = document.getElementById('crit-busy');
-
-  async function refreshCriticos() {
-    try {
-      busy.hidden = false;
-
-      // 👇 Call your existing refresh function here.
-      // If you already reload *all* lists on a timer, swap for that:
-      if (window.loadCriticos) {
-        await window.loadCriticos();        // redraw only the critical list
-      } else if (window.refreshAll) {
-        await window.refreshAll();          // global poller for the dashboard
-      } else {
-        // no-op fallback
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-    } finally {
-      busy.hidden = true;
-      secs = EVERY;
-      label.textContent = 'Actualizado';
-      setTimeout(() => { label.textContent = `Actualizando en ${secs}s`; }, 800);
-    }
-  }
-
-  setInterval(() => {
-    secs -= 1;
-    if (secs <= 0) {
-      refreshCriticos();
-    } else if (label) {
-      label.textContent = `Actualizando en ${secs}s`;
-    }
-  }, 1000);
-
-  // Optional: let your existing data fetch reset the timer after it finishes
-  window.resetCritTimer = () => { secs = EVERY; if (label) label.textContent = `Actualizando en ${secs}s`; };
-})();
-</script>
-
-
 <script>
 const el = {
   kpiPending:  document.getElementById('kpi-pending'),
@@ -165,24 +108,19 @@ function liTicket(t){
                    t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
   const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
   const sla  = t.is_critical ? `<span class="text-danger fw-semibold"> ⚠</span>` : '';
-
   return `<li class="list-group-item">
-    <div class="list-item-flex">
-      <div class="list-item-main">
-        <div>
-          <span class="badge ${priClass} me-1">${t.prioridad||'—'}</span>${t.area||'—'}${room}
-        </div>
-        <!-- WRAPS instead of truncates -->
-        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+    <div class="d-flex justify-content-between">
+      <div>
+        <div><span class="badge ${priClass} me-1">${t.prioridad||'—'}</span>${t.area}${room}</div>
+        <div class="text-muted text-truncate" style="max-width:70vw">${t.detalle||''}</div>
       </div>
-      <div class="text-end small text-muted list-item-meta">
-        ${t.estado||''}${sla}<br>
-        <span>${t.due_at ? ('Vence ' + t.due_at) : 'Sin SLA'}</span>
+      <div class="text-end small text-muted">
+        ${t.estado}${sla}<br>
+        <span>${t.due_at ? 'Vence ' + t.due_at : 'Sin SLA'}</span>
       </div>
     </div>
   </li>`;
 }
-
 
 function liFeed(x){
   const who = x.actor || 'sistema';
