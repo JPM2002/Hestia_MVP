@@ -1276,29 +1276,40 @@ def api_feed_recent():
     org_id, _ = current_scope()
     if not org_id:
         return jsonify({"items": []})
+
     rows = fetchall("""
-        SELECT th.ticket_id, th.action, th.motivo, th.at,
-               t.area, t.ubicacion, u.name AS actor
-        FROM TicketHistory th
-        LEFT JOIN Tickets t ON t.id = th.ticket_id
-        LEFT JOIN Users u ON u.id = th.actor_user_id
-        WHERE t.org_id=? 
+        SELECT
+            th.ticket_id,
+            th.action,
+            th.motivo,
+            th.at,
+            t.area,
+            t.ubicacion,
+            COALESCE(
+              u.username,
+              u.email,
+              'user#' || CAST(th.actor_user_id AS TEXT),
+              'sistema'
+            ) AS actor
+        FROM tickethistory th
+        LEFT JOIN tickets t ON t.id = th.ticket_id
+        LEFT JOIN users   u ON u.id = th.actor_user_id
+        WHERE t.org_id = ?
         ORDER BY th.at DESC
         LIMIT 12
     """, (org_id,))
-    items = []
-    for r in rows:
-        items.append({
-            "ticket_id": r["ticket_id"],
-            "action": r["action"],
-            "motivo": r.get("motivo"),
-            "at": r["at"],
-            "area": r.get("area"),
-            "ubicacion": r.get("ubicacion"),
-            "actor": r.get("actor") or "sistema",
-        })
-    return jsonify({"items": items})
 
+    items = [{
+        "ticket_id": r["ticket_id"],
+        "action": r["action"],
+        "motivo": r.get("motivo"),
+        "at": r["at"],
+        "area": r.get("area"),
+        "ubicacion": r.get("ubicacion"),
+        "actor": r.get("actor") or "sistema",
+    } for r in rows]
+
+    return jsonify({"items": items})
 
 
 # ---------------------------- create & confirm ticket ----------------------------
