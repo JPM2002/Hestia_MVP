@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Recepción — Dashboard{% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">📟 Recepción</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-accent" href="{{ url_for('ticket_create') }}">Nuevo ticket</a>
+    <a class="btn btn-outline-dark" href="{{ url_for('tickets') }}">Ver todos</a>
+  </div>
+</header>
+
+<!-- KPIs -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card"><div class="card-body">
+      <div class="text-muted">Pendientes</div>
+      <div id="kpi-pending" class="h3 mb-0">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card"><div class="card-body">
+      <div class="text-muted">En curso</div>
+      <div id="kpi-inprogress" class="h3 mb-0">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card"><div class="card-body">
+      <div class="text-muted">Resueltos (hoy)</div>
+      <div id="kpi-resolved" class="h3 mb-0">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-danger"><div class="card-body">
+      <div class="text-danger">Críticos</div>
+      <div id="kpi-critical" class="h3 mb-0">—</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- Críticos -->
+<div class="card mb-3">
+  <div class="card-header py-2">
+    🔥 Críticos (pendientes/en curso con SLA en riesgo)
+  </div>
+  <ul id="list-critical" class="list-group list-group-flush small"></ul>
+</div>
+
+<div class="row g-3">
+  <!-- Pendientes -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header py-2">📥 Pendientes</div>
+      <ul id="list-pending" class="list-group list-group-flush small"></ul>
+    </div>
+  </div>
+  <!-- En curso -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header py-2">⏳ En curso</div>
+      <ul id="list-progress" class="list-group list-group-flush small"></ul>
+    </div>
+  </div>
+  <!-- Resueltos (hoy) -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header py-2">✅ Resueltos (hoy)</div>
+      <ul id="list-resolved" class="list-group list-group-flush small"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- Feed -->
+<div class="card mt-3">
+  <div class="card-header py-2">📰 Últimos movimientos</div>
+  <ul id="feed" class="list-group list-group-flush small"></ul>
+</div>
+
+<!-- Ding -->
+<audio id="ding" preload="auto">
+  <source src="{{ url_for('static', filename='snd/new-ticket.mp3') }}" type="audio/mpeg">
+</audio>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const el = {
+  kpiPending:  document.getElementById('kpi-pending'),
+  kpiInProg:   document.getElementById('kpi-inprogress'),
+  kpiResolved: document.getElementById('kpi-resolved'),
+  kpiCritical: document.getElementById('kpi-critical'),
+  listCrit:    document.getElementById('list-critical'),
+  listPend:    document.getElementById('list-pending'),
+  listProg:    document.getElementById('list-progress'),
+  listRes:     document.getElementById('list-resolved'),
+  feed:        document.getElementById('feed'),
+  ding:        document.getElementById('ding'),
+};
+
+let prev = {
+  pendingCount: 0,
+  pendingIds: new Set(),
+};
+
+function liTicket(t){
+  const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
+                   t.prioridad==='ALTA'    ? 'text-bg-warning' :
+                   t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
+  const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
+  const sla  = t.is_critical ? `<span class="text-danger fw-semibold"> ⚠</span>` : '';
+  return `<li class="list-group-item">
+    <div class="d-flex justify-content-between">
+      <div>
+        <div><span class="badge ${priClass} me-1">${t.prioridad||'—'}</span>${t.area}${room}</div>
+        <div class="text-muted text-truncate" style="max-width:70vw">${t.detalle||''}</div>
+      </div>
+      <div class="text-end small text-muted">
+        ${t.estado}${sla}<br>
+        <span>${t.due_at ? 'Vence ' + t.due_at : 'Sin SLA'}</span>
+      </div>
+    </div>
+  </li>`;
+}
+
+function liFeed(x){
+  const who = x.actor || 'sistema';
+  const room = x.ubicacion ? ` · ${x.ubicacion}` : '';
+  return `<li class="list-group-item">
+    <span class="text-muted">${x.at}</span> — Ticket #${x.ticket_id} ${x.action} por ${who} (${x.area||'—'}${room})
+    ${x.motivo ? ` · <span class="text-muted">${x.motivo}</span>` : ''}
+  </li>`;
+}
+
+async function loadKPIs(){
+  const r = await fetch('/api/recepcion/kpis');
+  if(!r.ok) return;
+  const j = await r.json();
+  el.kpiPending.textContent  = j.pending ?? '0';
+  el.kpiInProg.textContent   = j.in_progress ?? '0';
+  el.kpiResolved.textContent = j.resolved_today ?? '0';
+  el.kpiCritical.textContent = j.critical ?? '0';
+
+  // ding when pending grows or a new pending id shows up (handled in loadLists)
+}
+
+async function loadLists(){
+  // Pending
+  const [p, e, r] = await Promise.all([
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=100'),
+    fetch('/api/recepcion/list?estado=EN_CURSO&period=7d&limit=100'),
+    fetch('/api/recepcion/list?estado=RESUELTO&period=today&limit=100'),
+  ]);
+  const jp = p.ok ? await p.json() : {items:[]};
+  const je = e.ok ? await e.json() : {items:[]};
+  const jr = r.ok ? await r.json() : {items:[]};
+
+  // Critical card = subset of pending + en curso with is_critical
+  const criticalItems = [...(jp.items||[]), ...(je.items||[])].filter(x=>x.is_critical);
+  el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicket).join('') || '<li class="list-group-item text-muted">Sin críticos</li>';
+
+  // Pending + ding detection
+  const ids = new Set((jp.items||[]).map(x=>x.id));
+  const pendingGrew = ids.size > prev.pendingIds.size;
+  const newId = [...ids].find(id => !prev.pendingIds.has(id));
+  if ((pendingGrew || newId) && el.ding) {
+    try { el.ding.currentTime = 0; el.ding.play().catch(()=>{}); } catch(e){}
+  }
+  prev.pendingIds = ids;
+  prev.pendingCount = ids.size;
+  el.listPend.innerHTML = (jp.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
+
+  // En curso
+  el.listProg.innerHTML = (je.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
+
+  // Resueltos
+  el.listRes.innerHTML = (jr.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
+}
+
+async function loadFeed(){
+  const r = await fetch('/api/feed/recent');
+  if(!r.ok) return;
+  const j = await r.json();
+  el.feed.innerHTML = (j.items||[]).map(liFeed).join('') || '<li class="list-group-item text-muted">Sin movimientos</li>';
+}
+
+function tick(){
+  loadKPIs();
+  loadLists();
+  loadFeed();
+}
+
+tick();
+setInterval(tick, 8000); // 8s
+</script>
+{% endblock %}
