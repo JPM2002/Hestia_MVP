@@ -21,6 +21,19 @@ except Exception:
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 # ----------------------------- Config -----------------------------
+
+# --- Auto-asignación / Notificaciones a técnicos ---
+ASSIGNEE_MANTENCION_PHONE = os.getenv("ASSIGNEE_MANTENCION_PHONE", "+56956326272")  # Andrés
+ASSIGNEE_HOUSEKEEPING_PHONE = os.getenv("ASSIGNEE_HOUSEKEEPING_PHONE", "+56983001018")  # Pedro
+ASSIGNEE_ROOMSERVICE_PHONE = os.getenv("ASSIGNEE_ROOMSERVICE_PHONE", "")  # opcional
+
+# Si quieres pegar link al ticket en el mensaje:
+APP_BASE_URL = os.getenv("APP_BASE_URL", "")  # ej: "https://hestia-mvp.onrender.com"
+
+# (Opcional) asignar en DB al crear (además de notificar)
+AUTO_ASSIGN_ON_CREATE = os.getenv("AUTO_ASSIGN_ON_CREATE", "false").lower() in ("1","true","yes","y")
+
+
 PORT = int(os.getenv("PORT", "5000"))  # <- default 5000
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SQLITE_PATH = os.getenv("DATABASE_PATH", "hestia_V2.db")
@@ -71,6 +84,106 @@ def _meta_get_media_url(media_id: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 # ----------------------------- DB helpers -----------------------------
+def _only_digits(s: str) -> str:
+    return re.sub(r"\D", "", s or "")
+
+def _find_user_id_by_phone(phone: str) -> Optional[int]:
+    """
+    Try to find a users.id by matching digits-only phone.
+    Works in both PG/SQLite (we normalize in Python).
+    """
+    try:
+        # pull minimal set
+        rows = []
+        if using_pg():
+            rows = fetchall("SELECT id, telefono FROM users WHERE activo = TRUE", ())
+        else:
+            rows = fetchall("SELECT id, telefono FROM users WHERE activo = 1", ())
+
+        target = _only_digits(phone)
+        for r in rows or []:
+            if _only_digits(r.get("telefono")) == target:
+                return int(r["id"])
+    except Exception as e:
+        print(f"[WARN] _find_user_id_by_phone failed: {e}", flush=True)
+    return None
+
+def _ticket_link(ticket_id: int) -> str:
+    if APP_BASE_URL:
+        base = APP_BASE_URL.rstrip("/")
+        return f"{base}/tickets/{ticket_id}"
+    return ""
+
+def _notify_tech(phone: str, ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
+    summary = (
+        f"🔔 Nuevo ticket #{ticket_id}\n"
+        f"Área: {area}\n"
+        f"Prioridad: {prioridad}\n"
+        f"Ubicación: {ubicacion or '—'}\n"
+        f"Detalle: {detalle or '—'}"
+    )
+    link = _ticket_link(ticket_id)
+    if link:
+        summary += f"\nAbrir: {link}"
+    send_whatsapp(phone, summary)
+
+def _auto_assign_and_notify(ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
+    """
+    - Choose a technician by area (phones from env).
+    - (Optional) Assign in DB to that user if we can match by phone.
+    - Always WhatsApp the technician with summary.
+    - Log TicketHistory 'ASIGNADO_AUTO' when assigned.
+    """
+    area_u = (area or "").upper()
+    to_phone = None
+
+    if area_u == "MANTENCION":
+        to_phone = ASSIGNEE_MANTENCION_PHONE or None
+    elif area_u == "HOUSEKEEPING":
+        to_phone = ASSIGNEE_HOUSEKEEPING_PHONE or None
+    elif area_u == "ROOMSERVICE":
+        to_phone = ASSIGNEE_ROOMSERVICE_PHONE or None
+
+    if not to_phone:
+        return  # no mapping → do nothing
+
+    # Optional DB assignment
+    assigned_user_id = None
+    if AUTO_ASSIGN_ON_CREATE:
+        uid = _find_user_id_by_phone(to_phone)
+        if uid:
+            try:
+                if using_pg():
+                    execute("UPDATE Tickets SET assigned_to=%s WHERE id=%s", (uid, ticket_id))
+                    execute(
+                        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s,%s,%s,%s,%s)",
+                        (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat())
+                    )
+                else:
+                    execute("UPDATE Tickets SET assigned_to=? WHERE id=?", (uid, ticket_id))
+                    execute(
+                        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?,?,?,?,?)",
+                        (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat())
+                    )
+                assigned_user_id = uid
+            except Exception as e:
+                print(f"[WARN] auto-assign failed: {e}", flush=True)
+
+    # Notify tech by WhatsApp
+    prefix = "📌 Asignado a ti.\n" if assigned_user_id else ""
+    body = (
+        f"{prefix}🔔 Nuevo ticket #{ticket_id}\n"
+        f"Área: {area}\n"
+        f"Prioridad: {prioridad}\n"
+        f"Ubicación: {ubicacion or '—'}\n"
+        f"Detalle: {detalle or '—'}"
+    )
+    link = _ticket_link(ticket_id)
+    if link:
+        body += f"\nAbrir: {link}"
+    send_whatsapp(to_phone, body)
+
+
 def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
     if not dsn:
         return dsn
@@ -474,9 +587,23 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
             "qr_required": False,
         }
         ticket_id = create_ticket(payload)
+
+        # 🔔 auto-notify (and optionally auto-assign) based on area
+        try:
+            _auto_assign_and_notify(
+                ticket_id=ticket_id,
+                area=s["area"],
+                prioridad=s["prioridad"],
+                detalle=s["detalle"],
+                ubicacion=s.get("room"),
+            )
+        except Exception as e:
+            print(f"[WARN] notify/assign failed: {e}", flush=True)
+
         send_whatsapp(from_phone, f"✅ Ticket #{ticket_id} creado.\n¡Gracias! Avisaremos al equipo.")
         session_clear(from_phone)
         return {"ok": True, "ticket_id": ticket_id}
+
 
     if cmd_upper in ("NO", "N"):
         send_whatsapp(from_phone,
