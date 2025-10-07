@@ -657,15 +657,22 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     cmd = (text or "").strip()
     cmd_upper = cmd.upper()
 
-    # Ask guest name once if unknown and message is not a command
+   # Ask guest name once if unknown and message is not a command
     if not s.get("guest_name"):
         if text and not looks_like_command(text):
-            # naive name capture (first message that isn't a command)
+            # store name, greet, and stop processing further
             s["guest_name"] = text.strip()
             session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                f"Encantado, *{s['guest_name']}*. 😊 ¿Podrías contarme qué necesitas o qué ocurrió?"
+            )
+            return jsonify({"ok": True}), 200
         else:
+            # first contact: ask for name
             send_whatsapp(from_phone, txt("ask_name"))
-            return {"ok": True, "pending": True}
+            return jsonify({"ok": True}), 200
+
 
 
     # Quick edits
