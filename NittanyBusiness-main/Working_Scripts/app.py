@@ -25,35 +25,40 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 # ----------------------------- Copy (5-star tone) -----------------------------
 COPY = {
     "ask_name": (
-        "¡Hola! ¿Con quién tengo el gusto? 😊\n"
-        "Por favor indícame *tu nombre* y *número de habitación*."
+        "🌟 ¡Bienvenido/a a nuestro servicio! ¿Con quién tengo el gusto? 😊\n"
+        "Por favor indícame *tu nombre* y *número de habitación* para poder ayudarte."
     ),
     "confirm_draft": (
-        "Voy a crear este ticket, ¿está correcto?\n\n{summary}\n\n"
+        "📝 Voy a registrar tu solicitud, ¿es correcto?\n\n{summary}\n\n"
         "Responde *SI* para confirmar o *NO* para editar.\n"
-        "Comandos rápidos: AREA/PRIORIDAD/HAB/DETALLE …"
+        "_Comandos rápidos_: AREA / PRIORIDAD / HAB / DETALLE …"
     ),
     "need_more_for_ticket": (
-        "Me faltan datos para crear el ticket. Por favor envía el *detalle* nuevamente."
+        "🙏 Me faltan algunos datos para crear el ticket. ¿Podrías enviar nuevamente el *detalle* o *habitación*, por favor?"
     ),
     "edit_help": (
-        "Entendido. Puedes corregir con:\n"
-        "• AREA <mantencion|housekeeping|roomservice>\n"
-        "• PRIORIDAD <urgente|alta|media|baja>\n"
+        "Perfecto ✍️ Puedes corregir usando:\n"
+        "• AREA <mantención | housekeeping | roomservice>\n"
+        "• PRIORIDAD <urgente | alta | media | baja>\n"
         "• HAB <número>\n"
         "• DETALLE <texto>\n"
-        "Cuando esté listo, responde: *SI*."
+        "Cuando esté listo, responde *SI* para confirmarlo."
     ),
-    "ticket_created": "✅ Ticket #{ticket_id} creado. ¡Gracias! Avisaremos al equipo.",
+    "ticket_created": (
+        "✅ ¡Gracias, {guest}! Hemos registrado el ticket #{ticket_id}.\n"
+        "Nuestro equipo ya está atendiendo tu solicitud. 🌟"
+    ),
     "guest_final": (
-        "✅ ¡Listo, {name}! Tu solicitud (ticket #{ticket_id}) ha sido *resuelta*.\n"
-        "Gracias por confiar en nosotros. Si necesitas algo más, aquí estoy. 🌟"
+        "✨ ¡Listo, {name}! Tu solicitud (ticket #{ticket_id}) ha sido *resuelta*.\n"
+        "Gracias por confiar en nosotros. Si necesitas algo más, aquí estaré para ayudarte. 💫"
     ),
     "tech_assignment": (
         "{prefix}🔔 Nuevo ticket #{ticket_id}\n"
-        "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\nDetalle: {detalle}\n{link}"
+        "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\n"
+        "Detalle: {detalle}\n{link}"
     ),
 }
+
 
 def txt(key: str, **kwargs) -> str:
     s = COPY.get(key, "")
@@ -713,7 +718,7 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
         except Exception as e:
             print(f"[WARN] notify/assign failed: {e}", flush=True)
 
-        send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
+        send_whatsapp(from_phone, txt("ticket_created", guest=s.get("guest_name"), ticket_id=ticket_id))
         session_clear(from_phone)
         return {"ok": True, "ticket_id": ticket_id}
 
@@ -837,7 +842,7 @@ def webhook():
         s["detalle"] = (text or "").split(" ", 1)[1] if " " in (text or "") else ""
 
     # --- Confirm / cancel ---
-    if cmd in ("SI", "SÍ", "YES", "Y"):
+    if cmd in ("SI", "SÍ", "YES", "Y","Si"):
         if not all(k in s for k in ("area", "prioridad", "detalle")):
             send_whatsapp(from_phone, txt("need_more_for_ticket"))
             return jsonify({"ok": True}), 200
@@ -857,7 +862,7 @@ def webhook():
         }
         try:
             ticket_id = create_ticket(payload)
-            send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
+            send_whatsapp(from_phone, txt("ticket_created", guest=s.get("guest_name"), ticket_id=ticket_id))
             session_clear(from_phone)
             return jsonify({"ok": True, "ticket_id": ticket_id}), 200
         except Exception as e:
@@ -886,70 +891,6 @@ def webhook():
     summary = _render_summary(area, prioridad, room, detalle)
     send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
     return jsonify({"ok": True}), 200
-
-
-
-
-    # Inline edits
-    if cmd.startswith("AREA "):
-        s["area"] = cmd.split(" ", 1)[1].strip()
-    elif cmd.startswith("PRIORIDAD "):
-        s["prioridad"] = cmd.split(" ", 1)[1].strip()
-    elif cmd.startswith("HAB ") or cmd.startswith("ROOM "):
-        s["room"] = re.sub(r"\D", "", cmd.split(" ", 1)[1])
-    elif cmd.startswith("DETALLE "):
-        s["detalle"] = (text or "").split(" ", 1)[1] if " " in (text or "") else ""
-
-    if cmd in ("SI", "SÍ", "YES", "Y"):
-        if not all(k in s for k in ("area", "prioridad", "detalle")):
-            send_whatsapp(from_phone, txt("need_more_for_ticket"))
-            return jsonify({"ok": True})
-        payload = {
-            "org_id": s.get("org_id", ORG_ID_DEFAULT),
-            "hotel_id": s.get("hotel_id", HOTEL_ID_DEFAULT),
-            "area": s["area"],
-            "prioridad": s["prioridad"],
-            "detalle": s["detalle"],
-            "ubicacion": s.get("room"),
-            "huesped_id": from_phone,
-            "canal_origen": "huesped_whatsapp",
-            "confidence_score": s.get("confidence", 0.85),
-            "qr_required": False,
-            "huesped_phone": from_phone,
-            "huesped_nombre": s.get("guest_name"),
-        }
-        try:
-            ticket_id = create_ticket(payload)
-            send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
-            session_clear(from_phone)
-            return jsonify({"ok": True, "ticket_id": ticket_id})
-        except Exception as e:
-            print(f"[ERR] webhook processing: {e}", flush=True)
-            send_whatsapp(from_phone, f"❌ Error creando ticket: {e}")
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    if cmd in ("NO", "N"):
-        send_whatsapp(from_phone, txt("edit_help"))
-        session_set(from_phone, s)
-        return jsonify({"ok": True})
-
-    # Build draft from content
-    text_for_parse = text or ""
-    if audio_url:
-        text_for_parse += f" {audio_url}"
-
-    area = s.get("area") or guess_area(text_for_parse)
-    prioridad = s.get("prioridad") or guess_priority(text_for_parse)
-    room = s.get("room") or guess_room(text_for_parse)
-    detalle = s.get("detalle") or (text or (f"Audio: {audio_url}" if audio_url else ""))
-
-    s.update({"area": area, "prioridad": prioridad, "room": room, "detalle": detalle})
-    session_set(from_phone, s)
-
-    summary = _render_summary(area, prioridad, room, detalle)
-    send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
-
-    return jsonify({"ok": True})
 
 
 # Simple local simulator (no Meta)
