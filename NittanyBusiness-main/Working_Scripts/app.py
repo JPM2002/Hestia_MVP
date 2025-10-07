@@ -814,9 +814,15 @@ def webhook():
 
     s = session_get(from_phone)
 
-    # If audio only: transcribe
+    # --- Audio handling with proper greeting flow ---
     if audio_url and not text:
+        # If we don’t yet know the guest, treat first audio as greeting
+        if not s.get("guest_name"):
+            send_whatsapp(from_phone, txt("ask_name"))
+            return {"ok": True, "pending": True}
+        # Otherwise, transcribe and continue normally
         text = transcribe_audio(audio_url)
+
 
     cmd = (text or "").strip().upper()
 
