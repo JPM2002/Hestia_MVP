@@ -22,6 +22,50 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 # ----------------------------- Config -----------------------------
 
+# ----------------------------- Copy (5-star tone) -----------------------------
+COPY = {
+    "ask_name": (
+        "¡Hola! ¿Con quién tengo el gusto? 😊\n"
+        "Por favor indícame *tu nombre* y *número de habitación*."
+    ),
+    "confirm_draft": (
+        "Voy a crear este ticket, ¿está correcto?\n\n{summary}\n\n"
+        "Responde *SI* para confirmar o *NO* para editar.\n"
+        "Comandos rápidos: AREA/PRIORIDAD/HAB/DETALLE …"
+    ),
+    "need_more_for_ticket": (
+        "Me faltan datos para crear el ticket. Por favor envía el *detalle* nuevamente."
+    ),
+    "edit_help": (
+        "Entendido. Puedes corregir con:\n"
+        "• AREA <mantencion|housekeeping|roomservice>\n"
+        "• PRIORIDAD <urgente|alta|media|baja>\n"
+        "• HAB <número>\n"
+        "• DETALLE <texto>\n"
+        "Cuando esté listo, responde: *SI*."
+    ),
+    "ticket_created": "✅ Ticket #{ticket_id} creado. ¡Gracias! Avisaremos al equipo.",
+    "guest_final": (
+        "✅ ¡Listo, {name}! Tu solicitud (ticket #{ticket_id}) ha sido *resuelta*.\n"
+        "Gracias por confiar en nosotros. Si necesitas algo más, aquí estoy. 🌟"
+    ),
+    "tech_assignment": (
+        "{prefix}🔔 Nuevo ticket #{ticket_id}\n"
+        "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\nDetalle: {detalle}\n{link}"
+    ),
+}
+
+def txt(key: str, **kwargs) -> str:
+    s = COPY.get(key, "")
+    try:
+        return s.format(**kwargs)
+    except Exception:
+        return s
+    
+
+# Internal A→B auth (optional, used by /notify/*)
+INTERNAL_NOTIFY_TOKEN = os.getenv("INTERNAL_NOTIFY_TOKEN", "")
+
 # --- Auto-asignación / Notificaciones a técnicos ---
 ASSIGNEE_MANTENCION_PHONE = os.getenv("ASSIGNEE_MANTENCION_PHONE", "+56956326272")  # Andrés
 ASSIGNEE_HOUSEKEEPING_PHONE = os.getenv("ASSIGNEE_HOUSEKEEPING_PHONE", "+56983001018")  # Pedro
@@ -263,6 +307,30 @@ def insert_and_get_id(sql: str, params=()):
         try: conn.close()
         except Exception: pass
 
+def _table_has_column_sqlite(table: str, col: str) -> bool:
+    try:
+        conn = db_conn()
+        cur = conn.execute(f"PRAGMA table_info({table});")
+        cols = [row[1].lower() for row in cur.fetchall()]
+        conn.close()
+        return col.lower() in cols
+    except Exception:
+        return False
+
+def _table_has_column_pg(table: str, col: str) -> bool:
+    try:
+        r = fetchone(
+            "SELECT 1 FROM information_schema.columns WHERE table_name=%s AND column_name=%s",
+            (table.lower(), col.lower())
+        ) if using_pg() else None
+        return bool(r)
+    except Exception:
+        return False
+
+def table_has_column(table: str, col: str) -> bool:
+    return _table_has_column_pg(table, col) if using_pg() else _table_has_column_sqlite(table, col)
+
+
 # ----------------------------- NLP-ish parsing helpers -----------------------------
 AREA_KEYWORDS = {
     "MANTENCION": ["ducha", "baño", "grifo", "llave", "aire", "ac", "fuga", "luz", "enchufe", "televisor", "tv", "puerta", "ventana", "calefaccion", "calefacción"],
@@ -294,6 +362,14 @@ def guess_room(text: str) -> Optional[str]:
 
 def clean_text(s: Optional[str]) -> str:
     return (s or "").strip()
+
+# ----------------------------- Command detection -----------------------------
+COMMAND_PREFIXES = ("AREA ", "PRIORIDAD ", "HAB ", "ROOM ", "DETALLE ", "SI", "SÍ", "YES", "Y", "NO", "N")
+
+def looks_like_command(s: str) -> bool:
+    u = (s or "").strip().upper()
+    return any(u.startswith(p) for p in COMMAND_PREFIXES)
+
 
 # ----------------------------- SLA helpers -----------------------------
 def sla_minutes(area: str, prioridad: str) -> Optional[int]:
@@ -422,7 +498,6 @@ def session_clear(phone: str):
     if phone in PENDING:
         del PENDING[phone]
 
-# ----------------------------- Ticket creation -----------------------------
 def create_ticket(payload: Dict[str, Any]) -> int:
     now = datetime.now()
     due_dt = compute_due(now, payload["area"], payload["prioridad"])
@@ -459,9 +534,31 @@ def create_ticket(payload: Dict[str, Any]) -> int:
             None,   # assigned_to
             None,   # created_by
             float(payload.get("confidence_score", 0.85)),
-            bool(payload.get("qr_required", False)),  # <-- BOOLEAN, not 0/1
+            bool(payload.get("qr_required", False)),  # BOOLEAN, not 0/1
         )
     )
+
+    # --- best-effort persist guest phone/name if columns exist ---
+    guest_phone = payload.get("huesped_phone") or payload.get("huesped_id")  # use WA phone
+    guest_name  = payload.get("huesped_nombre")
+
+    try:
+        sets = []
+        params = []
+        if guest_phone and table_has_column("Tickets", "huesped_phone"):
+            sets.append("huesped_phone=%s" if using_pg() else "huesped_phone=?")
+            params.append(guest_phone)
+        if guest_name and table_has_column("Tickets", "huesped_nombre"):
+            sets.append("huesped_nombre=%s" if using_pg() else "huesped_nombre=?")
+            params.append(guest_name)
+
+        if sets:
+            params.append(new_id)
+            sql = f"UPDATE Tickets SET {', '.join(sets)} WHERE id=%s" if using_pg() else \
+                  f"UPDATE Tickets SET {', '.join(sets)} WHERE id=?"
+            execute(sql, tuple(params))
+    except Exception as e:
+        print(f"[WARN] could not persist guest phone/name: {e}", flush=True)
 
     execute(
         "INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
@@ -470,6 +567,7 @@ def create_ticket(payload: Dict[str, Any]) -> int:
         (new_id, None, "CREADO", "via whatsapp", now.isoformat())
     )
     return new_id
+
 
 
 # ----------------------------- Inbound normalization -----------------------------
@@ -559,6 +657,17 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     cmd = (text or "").strip()
     cmd_upper = cmd.upper()
 
+    # Ask guest name once if unknown and message is not a command
+    if not s.get("guest_name"):
+        if text and not looks_like_command(text):
+            # naive name capture (first message that isn't a command)
+            s["guest_name"] = text.strip()
+            session_set(from_phone, s)
+        else:
+            send_whatsapp(from_phone, txt("ask_name"))
+            return {"ok": True, "pending": True}
+
+
     # Quick edits
     if cmd_upper.startswith("AREA "):
         s["area"] = cmd_upper.split(" ", 1)[1].strip()
@@ -572,7 +681,7 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     # Confirm / Cancel
     if cmd_upper in ("SI", "SÍ", "YES", "Y"):
         if not all(k in s for k in ("area", "prioridad", "detalle")):
-            send_whatsapp(from_phone, "Me faltan datos para crear el ticket. Envía el detalle otra vez, por favor.")
+            send_whatsapp(from_phone, txt("need_more_for_ticket"))
             return {"ok": True, "pending": True}
         payload = {
             "org_id": s.get("org_id", ORG_ID_DEFAULT),
@@ -585,6 +694,8 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
             "canal_origen": "huesped_whatsapp",
             "confidence_score": s.get("confidence", 0.85),
             "qr_required": False,
+            "huesped_phone": from_phone,
+            "huesped_nombre": s.get("guest_name"),
         }
         ticket_id = create_ticket(payload)
 
@@ -600,7 +711,7 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
         except Exception as e:
             print(f"[WARN] notify/assign failed: {e}", flush=True)
 
-        send_whatsapp(from_phone, f"✅ Ticket #{ticket_id} creado.\n¡Gracias! Avisaremos al equipo.")
+        send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
         session_clear(from_phone)
         return {"ok": True, "ticket_id": ticket_id}
 
@@ -629,14 +740,17 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     s.update({"area": area, "prioridad": prio, "room": room, "detalle": detalle})
     session_set(from_phone, s)
 
-    send_whatsapp(
-        from_phone,
-        "Voy a crear este ticket, ¿está correcto?\n\n" +
-        _render_summary(area, prio, room, detalle) +
-        "\n\nResponde *SI* para confirmar o *NO* para editar.\n" +
-        "Comandos: AREA/PRIORIDAD/HAB/DETALLE ..."
-    )
+    summary = _render_summary(area, prio, room, detalle)
+    send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+
     return {"ok": True, "pending": True}
+
+def _auth_ok(req) -> bool:
+    if not INTERNAL_NOTIFY_TOKEN:
+        return True  # allow when not configured (demo)
+    auth = req.headers.get("Authorization", "")
+    return auth == f"Bearer {INTERNAL_NOTIFY_TOKEN}"
+
 
 # ----------------------------- Routes -----------------------------
 @app.get("/")
@@ -699,6 +813,16 @@ def webhook():
 
     cmd = (text or "").strip().upper()
 
+    # Ask guest name once if unknown and message is not a command
+    if not s.get("guest_name"):
+        if text and not looks_like_command(text):
+            s["guest_name"] = text.strip()
+            session_set(from_phone, s)
+        else:
+            send_whatsapp(from_phone, txt("ask_name"))
+            return jsonify({"ok": True}), 200
+
+
     # Inline edits
     if cmd.startswith("AREA "):
         s["area"] = cmd.split(" ", 1)[1].strip()
@@ -711,7 +835,7 @@ def webhook():
 
     if cmd in ("SI", "SÍ", "YES", "Y"):
         if not all(k in s for k in ("area", "prioridad", "detalle")):
-            send_whatsapp(from_phone, "Me faltan datos para crear el ticket. Por favor envía el detalle nuevamente.")
+            send_whatsapp(from_phone, txt("need_more_for_ticket"))
             return jsonify({"ok": True})
         payload = {
             "org_id": s.get("org_id", ORG_ID_DEFAULT),
@@ -724,10 +848,12 @@ def webhook():
             "canal_origen": "huesped_whatsapp",
             "confidence_score": s.get("confidence", 0.85),
             "qr_required": False,
+            "huesped_phone": from_phone,
+            "huesped_nombre": s.get("guest_name"),
         }
         try:
             ticket_id = create_ticket(payload)
-            send_whatsapp(from_phone, f"✅ Ticket #{ticket_id} creado.\n¡Gracias! Avisaremos al equipo.")
+            send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
             session_clear(from_phone)
             return jsonify({"ok": True, "ticket_id": ticket_id})
         except Exception as e:
@@ -736,15 +862,7 @@ def webhook():
             return jsonify({"ok": False, "error": str(e)}), 500
 
     if cmd in ("NO", "N"):
-        send_whatsapp(
-            from_phone,
-            "Entendido. Puedes corregir con:\n"
-            "• AREA <mantencion|housekeeping|roomservice>\n"
-            "• PRIORIDAD <urgente|alta|media|baja>\n"
-            "• HAB <número>\n"
-            "• DETALLE <texto>\n"
-            "Cuando esté listo, responde: *SI*."
-        )
+        send_whatsapp(from_phone, txt("edit_help"))
         session_set(from_phone, s)
         return jsonify({"ok": True})
 
@@ -762,12 +880,8 @@ def webhook():
     session_set(from_phone, s)
 
     summary = _render_summary(area, prioridad, room, detalle)
-    send_whatsapp(
-        from_phone,
-        "Voy a crear este ticket, ¿está correcto?\n\n" + summary +
-        "\n\nResponde *SI* para confirmar o *NO* para editar.\n"
-        "Comandos: AREA/PRIORIDAD/HAB/DETALLE ..."
-    )
+    send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+
     return jsonify({"ok": True})
 
 
@@ -792,6 +906,53 @@ def simulate():
     except Exception as e:
         print(f"[ERR] simulate: {e}", flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
+    
+
+@app.post("/notify/guest/final")
+def notify_guest_final():
+    if not _auth_ok(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    data = request.get_json(force=True)
+    to_phone = clean_text(data.get("to_phone"))
+    ticket_id = data.get("ticket_id")
+    guest_name = clean_text(data.get("huesped_nombre")) or "¡gracias!"
+    if not (to_phone and ticket_id):
+        return jsonify({"ok": False, "error": "missing fields"}), 400
+    body = txt("guest_final", name=guest_name, ticket_id=ticket_id)
+    send_whatsapp(to_phone, body)
+    return jsonify({"ok": True})
+
+@app.post("/notify/tech/assignment")
+def notify_tech_assignment():
+    if not _auth_ok(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    data = request.get_json(force=True)
+    to_phone = clean_text(data.get("to_phone"))
+    ticket_id = int(data.get("ticket_id", 0))
+    area = data.get("area") or ""
+    prioridad = data.get("prioridad") or ""
+    detalle = data.get("detalle") or ""
+    ubicacion = data.get("ubicacion")
+    if not (to_phone and ticket_id):
+        return jsonify({"ok": False, "error": "missing fields"}), 400
+
+    # Reuse existing formatter logic
+    link = _ticket_link(ticket_id)
+    body = txt(
+        "tech_assignment",
+        prefix="📌 Asignado a ti.\n",
+        ticket_id=ticket_id,
+        area=area,
+        prioridad=prioridad,
+        habitacion=ubicacion or "—",
+        detalle=detalle or "—",
+        link=(f"Abrir: {link}" if link else "")
+    )
+    send_whatsapp(to_phone, body)
+    return jsonify({"ok": True})
+
+
+
 
 # ----------------------------- Main -----------------------------
 if __name__ == "__main__":
