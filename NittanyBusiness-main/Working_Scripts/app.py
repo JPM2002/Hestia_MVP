@@ -657,25 +657,21 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     cmd = (text or "").strip()
     cmd_upper = cmd.upper()
 
-   # Ask guest name once if unknown and message is not a command
+    # --- Greeting flow ---
     if not s.get("guest_name"):
         if text and not looks_like_command(text):
-            # store name, greet, and stop processing further
             s["guest_name"] = text.strip()
             session_set(from_phone, s)
             send_whatsapp(
                 from_phone,
                 f"Encantado, *{s['guest_name']}*. 😊 ¿Podrías contarme qué necesitas o qué ocurrió?"
             )
-            return jsonify({"ok": True}), 200
+            return {"ok": True, "pending": True}
         else:
-            # first contact: ask for name
             send_whatsapp(from_phone, txt("ask_name"))
-            return jsonify({"ok": True}), 200
+            return {"ok": True, "pending": True}
 
-
-
-    # Quick edits
+    # --- Quick edits ---
     if cmd_upper.startswith("AREA "):
         s["area"] = cmd_upper.split(" ", 1)[1].strip()
     elif cmd_upper.startswith("PRIORIDAD "):
@@ -685,11 +681,12 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     elif cmd_upper.startswith("DETALLE "):
         s["detalle"] = cmd.split(" ", 1)[1]
 
-    # Confirm / Cancel
+    # --- Confirm / Cancel ---
     if cmd_upper in ("SI", "SÍ", "YES", "Y"):
         if not all(k in s for k in ("area", "prioridad", "detalle")):
             send_whatsapp(from_phone, txt("need_more_for_ticket"))
             return {"ok": True, "pending": True}
+
         payload = {
             "org_id": s.get("org_id", ORG_ID_DEFAULT),
             "hotel_id": s.get("hotel_id", HOTEL_ID_DEFAULT),
@@ -705,8 +702,6 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
             "huesped_nombre": s.get("guest_name"),
         }
         ticket_id = create_ticket(payload)
-
-        # 🔔 auto-notify (and optionally auto-assign) based on area
         try:
             _auto_assign_and_notify(
                 ticket_id=ticket_id,
@@ -722,19 +717,12 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
         session_clear(from_phone)
         return {"ok": True, "ticket_id": ticket_id}
 
-
     if cmd_upper in ("NO", "N"):
-        send_whatsapp(from_phone,
-            "Entendido. Puedes corregir con:\n"
-            "• AREA <mantencion|housekeeping|roomservice>\n"
-            "• PRIORIDAD <urgente|alta|media|baja>\n"
-            "• HAB <número>\n"
-            "• DETALLE <texto>\n"
-            "Cuando esté listo, responde: *SI*.")
+        send_whatsapp(from_phone, txt("edit_help"))
         session_set(from_phone, s)
         return {"ok": True, "pending": True}
 
-    # New draft / update draft
+    # --- Default draft ---
     text_for_parse = text or ""
     if audio_url:
         text_for_parse += f" {audio_url}"
@@ -749,8 +737,8 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
 
     summary = _render_summary(area, prio, room, detalle)
     send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
-
     return {"ok": True, "pending": True}
+
 
 def _auth_ok(req) -> bool:
     if not INTERNAL_NOTIFY_TOKEN:
@@ -809,7 +797,6 @@ def webhook():
 
     from_phone, text, audio_url = _normalize_inbound(request)
     if not from_phone:
-        # Unknown payload shape (don’t error out—Meta retries on non-200)
         return jsonify({"ok": True, "ignored": True}), 200
 
     s = session_get(from_phone)
@@ -819,21 +806,88 @@ def webhook():
         # If we don’t yet know the guest, treat first audio as greeting
         if not s.get("guest_name"):
             send_whatsapp(from_phone, txt("ask_name"))
-            return {"ok": True, "pending": True}
+            return jsonify({"ok": True, "pending": True}), 200
         # Otherwise, transcribe and continue normally
         text = transcribe_audio(audio_url)
 
-
     cmd = (text or "").strip().upper()
 
-    # Ask guest name once if unknown and message is not a command
+    # --- Greeting flow ---
     if not s.get("guest_name"):
         if text and not looks_like_command(text):
             s["guest_name"] = text.strip()
             session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                f"Encantado, *{s['guest_name']}*. 😊 ¿Podrías contarme qué necesitas o qué ocurrió?"
+            )
+            return jsonify({"ok": True, "pending": True}), 200
         else:
             send_whatsapp(from_phone, txt("ask_name"))
+            return jsonify({"ok": True, "pending": True}), 200
+
+    # --- Inline edits ---
+    if cmd.startswith("AREA "):
+        s["area"] = cmd.split(" ", 1)[1].strip()
+    elif cmd.startswith("PRIORIDAD "):
+        s["prioridad"] = cmd.split(" ", 1)[1].strip()
+    elif cmd.startswith("HAB ") or cmd.startswith("ROOM "):
+        s["room"] = re.sub(r"\D", "", cmd.split(" ", 1)[1])
+    elif cmd.startswith("DETALLE "):
+        s["detalle"] = (text or "").split(" ", 1)[1] if " " in (text or "") else ""
+
+    # --- Confirm / cancel ---
+    if cmd in ("SI", "SÍ", "YES", "Y"):
+        if not all(k in s for k in ("area", "prioridad", "detalle")):
+            send_whatsapp(from_phone, txt("need_more_for_ticket"))
             return jsonify({"ok": True}), 200
+        payload = {
+            "org_id": s.get("org_id", ORG_ID_DEFAULT),
+            "hotel_id": s.get("hotel_id", HOTEL_ID_DEFAULT),
+            "area": s["area"],
+            "prioridad": s["prioridad"],
+            "detalle": s["detalle"],
+            "ubicacion": s.get("room"),
+            "huesped_id": from_phone,
+            "canal_origen": "huesped_whatsapp",
+            "confidence_score": s.get("confidence", 0.85),
+            "qr_required": False,
+            "huesped_phone": from_phone,
+            "huesped_nombre": s.get("guest_name"),
+        }
+        try:
+            ticket_id = create_ticket(payload)
+            send_whatsapp(from_phone, txt("ticket_created", ticket_id=ticket_id))
+            session_clear(from_phone)
+            return jsonify({"ok": True, "ticket_id": ticket_id}), 200
+        except Exception as e:
+            print(f"[ERR] webhook processing: {e}", flush=True)
+            send_whatsapp(from_phone, f"❌ Error creando ticket: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    if cmd in ("NO", "N"):
+        send_whatsapp(from_phone, txt("edit_help"))
+        session_set(from_phone, s)
+        return jsonify({"ok": True}), 200
+
+    # --- Default: Build draft ---
+    text_for_parse = text or ""
+    if audio_url:
+        text_for_parse += f" {audio_url}"
+
+    area = s.get("area") or guess_area(text_for_parse)
+    prioridad = s.get("prioridad") or guess_priority(text_for_parse)
+    room = s.get("room") or guess_room(text_for_parse)
+    detalle = s.get("detalle") or (text or (f"Audio: {audio_url}" if audio_url else ""))
+
+    s.update({"area": area, "prioridad": prioridad, "room": room, "detalle": detalle})
+    session_set(from_phone, s)
+
+    summary = _render_summary(area, prioridad, room, detalle)
+    send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+    return jsonify({"ok": True}), 200
+
+
 
 
     # Inline edits
