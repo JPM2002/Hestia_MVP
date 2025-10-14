@@ -104,7 +104,88 @@
     </table>
   </div>
 </div>
+
+<!-- ===== Gerencia: Indicadores en tiempo real (30d) ===== -->
+<div class="row g-3 mt-3">
+  <div class="col-xl-3 col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <div class="text-muted">TTR promedio (30d)</div>
+      <div id="g-avg-ttr" class="display-6 fw-bold">—</div>
+      <div class="small text-muted">minutos</div>
+    </div></div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <div class="text-muted">Abiertos</div>
+      <div id="g-open" class="display-6 fw-bold">—</div>
+      <div class="small text-muted">en toda la organización</div>
+    </div></div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <div class="text-muted">Sin asignar</div>
+      <div id="g-unassigned" class="display-6 fw-bold">—</div>
+      <div class="small text-muted">pendientes por asignar</div>
+    </div></div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="card h-100 border-warning"><div class="card-body">
+      <div class="text-warning">% SLA (real)</div>
+      <div id="g-sla-real" class="display-6 fw-bold">—</div>
+      <div class="small text-muted">promedio por área (30d)</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-xl-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">SLA real vs objetivo</div>
+      <div class="card-body" style="height:300px"><canvas id="g-sla-vs"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">TTR promedio por área (min)</div>
+      <div class="card-body" style="height:300px"><canvas id="g-ttr-area"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-xl-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Mix de incidencias (últimos 30d)</div>
+      <div class="card-body" style="height:300px"><canvas id="g-mix-area"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Tickets por día (30d)</div>
+      <div class="card-body" style="height:300px"><canvas id="g-ts-30"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-header bg-white fw-semibold">Tickets abiertos (asignado · transcurrido)</div>
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>Área</th><th>Prioridad</th><th>Detalle</th><th>Asignado</th><th>Transcurrido</th><th>Vence</th>
+        </tr>
+      </thead>
+      <tbody id="g-open-tbody">
+        <tr><td colspan="7" class="text-center text-muted py-3">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {% endblock %}
+
+
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -157,4 +238,84 @@
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
   });
 </script>
+
+<script>
+(async function(){
+  // re-use palette
+  const css = getComputedStyle(document.documentElement);
+  const BRAND    = css.getPropertyValue('--brand').trim()    || '#16242D';
+  const ACCENT   = css.getPropertyValue('--accent').trim()   || '#41D4A8';
+  const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
+  const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
+
+  const r = await fetch("{{ url_for('api_gerencia_summary') }}");
+  if(!r.ok) return;
+  const j = await r.json();
+
+  // KPI tiles
+  document.getElementById('g-avg-ttr').textContent = (j.avg_ttr_30d ?? 0);
+  document.getElementById('g-open').textContent = (j.snapshot?.open_total ?? 0);
+  document.getElementById('g-unassigned').textContent = (j.snapshot?.open_unassigned ?? 0);
+
+  // SLA (avg across areas)
+  const slaVals = Object.values(j.sla_by_area || {});
+  const avgSla  = slaVals.length ? (slaVals.reduce((a,b)=>a+b,0)/slaVals.length) : 0;
+  document.getElementById('g-sla-real').textContent = (avgSla || 0).toFixed(1) + '%';
+
+  // SLA vs target (grouped bar)
+  const areas = (j.sla_vs_target || []).map(x => x.area);
+  const real  = (j.sla_vs_target || []).map(x => x.real);
+  const goal  = (j.sla_vs_target || []).map(x => x.objetivo);
+  new Chart(document.getElementById('g-sla-vs'), {
+    type: 'bar',
+    data: { labels: areas, datasets: [
+      { label:'Real', data: real, backgroundColor: ACCENT },
+      { label:'Objetivo', data: goal, backgroundColor: WARNING }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100 } }, plugins:{ legend:{ position:'bottom' } } }
+  });
+
+  // TTR by area (bar)
+  const ttrAreas = Object.keys(j.ttr_by_area || {});
+  const ttrVals  = ttrAreas.map(a => j.ttr_by_area[a]);
+  new Chart(document.getElementById('g-ttr-area'), {
+    type:'bar',
+    data:{ labels:ttrAreas, datasets:[{ label:'min', data:ttrVals, backgroundColor: BRAND }]},
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  // Mix by area (pie)
+  const mixAreas = Object.keys(j.mix_by_area || {});
+  const mixVals  = mixAreas.map(a => j.mix_by_area[a]);
+  new Chart(document.getElementById('g-mix-area'), {
+    type:'doughnut',
+    data:{ labels:mixAreas, datasets:[{ data:mixVals, backgroundColor:[ACCENT, WARNING, BRAND, CRITICAL] }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  });
+
+  // Tickets per day (line)
+  const tsLabels = (j.tickets_per_day || []).map(x=>x.date);
+  const tsVals   = (j.tickets_per_day || []).map(x=>x.count);
+  new Chart(document.getElementById('g-ts-30'), {
+    type:'line',
+    data:{ labels:tsLabels, datasets:[{ label:'Tickets', data:tsVals, borderColor:ACCENT, backgroundColor:ACCENT+'33', fill:true, tension:.35, pointRadius:2 }]},
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  // Open table with assigned + elapsed
+  const T = document.getElementById('g-open-tbody');
+  const rows = (j.open_items || []).slice(0, 30).map(t => `
+    <tr class="${t.due_at && t.elapsed_min ? '' : ''}">
+      <td>#${t.id}</td>
+      <td>${t.area || '—'}</td>
+      <td>${t.prioridad || '—'}</td>
+      <td class="text-truncate" style="max-width:380px">${t.detalle || ''}</td>
+      <td>${t.assigned_name || '(sin asignar)'}</td>
+      <td>${t.elapsed_min != null ? (t.elapsed_min + ' min') : '—'}</td>
+      <td><small>${t.due_at || '—'}</small></td>
+    </tr>`).join('');
+  T.innerHTML = rows || `<tr><td colspan="7" class="text-center text-muted py-3">Sin abiertos</td></tr>`;
+})();
+</script>
+
 {% endblock %}

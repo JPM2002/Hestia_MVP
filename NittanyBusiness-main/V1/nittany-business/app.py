@@ -1929,6 +1929,166 @@ def admin_hotels():
     hotels = fetchall("SELECT h.id, h.name, o.name AS org FROM Hotels h JOIN Orgs o ON o.id=h.org_id ORDER BY h.id DESC")
     return render_template('admin_hotels.html', orgs=orgs, hotels=hotels)
 
+
+# ---------------------------- Gerencia summary API (30d window) ----------------------------
+from math import isfinite
+
+def _minutes_between(a_iso, b_iso):
+    try:
+        a = datetime.fromisoformat(str(a_iso))
+        b = datetime.fromisoformat(str(b_iso))
+        return max(0, int((b - a).total_seconds() // 60))
+    except Exception:
+        return None
+
+@app.get('/api/gerencia/summary')
+def api_gerencia_summary():
+    """Org-level metrics for last 30 days + open snapshot."""
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    now = datetime.now()
+    since = (now - timedelta(days=30)).isoformat()
+
+    # ---- Open snapshot
+    open_rows = fetchall("""
+        SELECT t.id, t.area, t.prioridad, t.estado, t.detalle, t.ubicacion,
+               t.created_at, t.due_at, t.assigned_to,
+               u.username AS assigned_name
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+        ORDER BY t.created_at DESC
+    """, (org_id,))
+
+    snapshot = {
+        "open_total": len(open_rows),
+        "open_unassigned": sum(1 for r in open_rows if not r.get("assigned_to")),
+        "by_tech": {},
+    }
+    from collections import defaultdict, Counter
+    by_tech = defaultdict(int)
+    for r in open_rows:
+        tech = r.get("assigned_name") or "(sin asignar)"
+        by_tech[tech] += 1
+    snapshot["by_tech"] = dict(sorted(by_tech.items(), key=lambda kv: kv[1], reverse=True))
+
+    # ---- Resolved last 30d for TTR + SLA rate
+    resolved = fetchall("""
+        SELECT id, area, prioridad, created_at, finished_at, due_at, ubicacion
+        FROM Tickets
+        WHERE org_id=? AND estado='RESUELTO' AND finished_at >= ?
+    """, (org_id, since))
+
+    # TTR per area (avg minutes); SLA compliance per area (% finished_on_time)
+    ttr_sum = Counter()
+    ttr_n   = Counter()
+    sla_hit = Counter()
+    sla_n   = Counter()
+
+    # "Reincidents" heuristic: same ubicacion with >1 tickets in 30d
+    by_loc = defaultdict(int)
+
+    for r in resolved:
+        if r.get("ubicacion"):
+            by_loc[r["ubicacion"]] += 1
+
+        area = r.get("area") or "GENERAL"
+        ttr = _minutes_between(r.get("created_at"), r.get("finished_at"))
+        if ttr is not None:
+            ttr_sum[area] += ttr
+            ttr_n[area]   += 1
+
+        # SLA hit if finished_at <= due_at (when due_at exists)
+        da = r.get("due_at")
+        if da:
+            sla_n[area] += 1
+            d = _minutes_between(r.get("created_at"), r.get("finished_at"))
+            # compare using datetimes (more robust)
+            try:
+                finished = datetime.fromisoformat(str(r.get("finished_at")))
+                due      = datetime.fromisoformat(str(da))
+                if finished <= due:
+                    sla_hit[area] += 1
+            except Exception:
+                pass
+
+    ttr_by_area = {a: int(round(ttr_sum[a] / ttr_n[a])) for a in ttr_n.keys() if ttr_n[a] > 0}
+    sla_rate_by_area = {a: round(100.0 * (sla_hit[a] / sla_n[a]), 1) if sla_n[a] > 0 else 0.0 for a in set(list(sla_n.keys()) + list(sla_hit.keys()))}
+
+    # Reincidents (rooms with more than one ticket)
+    reincidents_total = sum(1 for _, c in by_loc.items() if c > 1)
+    reincidents_by_area = {}
+    if resolved:
+        # coarse split: count locations that had >1 tickets, grouped by area of those tickets
+        multi_locs = {loc for loc, c in by_loc.items() if c > 1}
+        for r in resolved:
+            if r.get("ubicacion") in multi_locs:
+                reincidents_by_area[r.get("area") or "GENERAL"] = reincidents_by_area.get(r.get("area") or "GENERAL", 0) + 1
+
+    # Incident mix by area (counts, last 30d, any estado)
+    mix_rows = fetchall("""
+        SELECT area, COUNT(1) c
+        FROM Tickets
+        WHERE org_id=? AND created_at >= ?
+        GROUP BY area
+    """, (org_id, since))
+    mix_by_area = {r["area"] or "GENERAL": r["c"] for r in mix_rows}
+
+    # Tickets per day (last 30d, any estado)
+    ts_rows = fetchall("""
+        SELECT created_at FROM Tickets
+        WHERE org_id=? AND created_at >= ?
+    """, (org_id, since))
+    by_day = Counter()
+    for r in ts_rows:
+        k = date_key(r.get("created_at"))
+        if k: by_day[k] += 1
+    ts = [{"date": d, "count": by_day[d]} for d in sorted(by_day.keys())]
+
+    # Overall avg resolution (TTR) last 30d
+    all_ttr_vals = []
+    for r in resolved:
+        t = _minutes_between(r.get("created_at"), r.get("finished_at"))
+        if t is not None:
+            all_ttr_vals.append(t)
+    avg_ttr_30d = int(round(sum(all_ttr_vals)/len(all_ttr_vals))) if all_ttr_vals else 0
+
+    # SLA vs target (default 90% target, overridable by env SLA_TARGET)
+    sla_target = float(os.getenv("SLA_TARGET", "0.90")) * 100.0
+    sla_vs_target = [{"area": a, "real": sla_rate_by_area.get(a, 0.0), "objetivo": round(sla_target, 1)} for a in sorted(sla_rate_by_area.keys())]
+
+    return jsonify({
+        "at": now.isoformat(),
+        "snapshot": snapshot,
+        "ttr_by_area": ttr_by_area,
+        "sla_by_area": sla_rate_by_area,
+        "reincidents_total": reincidents_total,
+        "reincidents_by_area": reincidents_by_area,
+        "mix_by_area": mix_by_area,
+        "tickets_per_day": ts,
+        "avg_ttr_30d": avg_ttr_30d,
+        "sla_vs_target": sla_vs_target,
+        # optional: brief list of open items for a table with elapsed
+        "open_items": [{
+            "id": r["id"],
+            "area": r["area"],
+            "prioridad": r["prioridad"],
+            "estado": r["estado"],
+            "detalle": r["detalle"],
+            "ubicacion": r["ubicacion"],
+            "assigned_to": r.get("assigned_to"),
+            "assigned_name": r.get("assigned_name"),
+            "created_at": r["created_at"],
+            "due_at": r["due_at"],
+            "elapsed_min": _minutes_between(r["created_at"], now.isoformat())
+        } for r in open_rows]
+    })
+
+
 # ---------------------------- run ----------------------------
 if __name__ == '__main__':
     app.run(debug=True)
