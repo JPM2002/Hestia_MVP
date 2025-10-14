@@ -13,6 +13,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 # Device detection
 from user_agents import parse as parse_ua
 from flask import g
+from flask import abort 
 from jinja2 import TemplateNotFound
 
 # 👇 ADD THESE TWO LINES
@@ -445,17 +446,28 @@ DEFAULT_PERMS = {
 # ---------------------------- RBAC helpers ----------------------------
 
 def _require_area_manage(area: str):
-    """Allow GERENTE everywhere. SUPERVISOR only inside their area."""
+    """
+    Supervisors may only act within their own area. Raises 403 otherwise.
+    Safe if area is None/empty; will try to infer from session.
+    """
     u = session.get('user') or {}
-    role = u.get('role')
-    if role == 'GERENTE':
-        return  # ok
-    if role == 'SUPERVISOR':
-        # adjust key if your session stores the area under another name
-        sup_area = (u.get('area') or u.get('team_area') or '').upper()
-        if sup_area and area and sup_area == str(area).upper():
-            return
-    abort(403)  # forbidden
+    role = (u.get('role') or '').upper()
+
+    # Only constrain supervisors
+    if role != 'SUPERVISOR':
+        return
+
+    # Normalize allowed area from session (support several possible keys)
+    allowed = (u.get('area') or u.get('team_area') or '').strip().upper()
+    incoming = (area or '').strip().upper()
+
+    # If no area was passed, assume supervisor’s own area
+    if not incoming and allowed:
+        return  # allow: the caller will use their own area
+
+    if not allowed or incoming != allowed:
+        abort(403)
+
 
 
 def role_effective_perms(role_code: str) -> set[str]:
@@ -1916,27 +1928,10 @@ def api_sup_open_by_priority():
 # ---------------------------- Supervisor: team performance (30d) ----------------------------
 @app.get('/api/supervisor/team_stats')
 def api_supervisor_team_stats():
-    if 'user' not in session:
-        return jsonify({"error": "unauthorized"}), 401
-
-    org_id, hotel_id = current_scope()
-    if not org_id:
-        return jsonify({"error": "no org"}), 400
-
-    # Area in focus: same logic you already use to render dashboard_supervisor
-    area = request.args.get('area') or request.args.get('A') or request.args.get('a')
-    if not area:
-        # fall back to area stored for the supervisor in the session-provided kpis,
-        # or infer from open tickets assigned to team on this page
-        # safest fallback: area = 'MANTENCION'
-        area = 'MANTENCION'
-
-    now = datetime.now()
-    since = (now - timedelta(days=30)).isoformat()
-
-@app.get('/api/sup/open_by_type')
-def api_sup_open_by_type():
-    """Abiertos por tipo (usamos canal_origen como 'tipo') para un área dada."""
+    """
+    Lightweight team summary for the supervisor’s area.
+    Returns counts of open/critical/resolved_today to feed small KPI blocks or sanity checks.
+    """
     if 'user' not in session:
         return jsonify({"error": "unauthorized"}), 401
 
@@ -1944,35 +1939,75 @@ def api_sup_open_by_type():
     if not org_id:
         return jsonify({"error": "no org"}), 400
 
+    u = session.get('user') or {}
+    area = (request.args.get('area') or u.get('area') or u.get('team_area') or '').strip()
+    if not area:
+        # Fallback to a harmless empty result if still missing
+        return jsonify({"area": None, "open": 0, "critical": 0, "resolved_today": 0})
+
+    _require_area_manage(area)
+
+    # Open tickets (area)
+    open_rows = fetchall("""
+        SELECT prioridad, is_critical, created_at FROM Tickets
+        WHERE org_id=? AND area=? AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+    """, (org_id, area))
+
+    # Critical
+    critical = sum(1 for r in open_rows if (r.get('is_critical') in (True, 1, 't', 'true')))
+
+    # Resolved today (area)
+    start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    resolved_today = fetchval("""
+        SELECT COUNT(1) FROM Tickets
+        WHERE org_id=? AND area=? AND estado='RESUELTO' AND finished_at >= ?
+    """, (org_id, area, start_day)) or 0
+
+    return jsonify({
+        "area": area,
+        "open": len(open_rows),
+        "critical": int(critical),
+        "resolved_today": int(resolved_today)
+    })
+
+
+@app.get('/api/sup/open_by_type')
+@app.get('/api/sup/open_by_type')
+def api_sup_open_by_type():
+    """
+    Open tickets grouped by 'tipo' (we'll approximate with canal_origen since you don't store 'tipo').
+    Falls back to supervisor area from session if ?area is missing.
+    """
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    # Params and fallback
     area = (request.args.get('area') or '').strip()
     if not area:
-        # intentar inferir del usuario (para supervisores)
         u = session.get('user') or {}
         area = (u.get('area') or u.get('team_area') or '').strip()
 
-    # Seguridad: si es SUPERVISOR, debe consultar su propia área
-    role = current_org_role()
-    if role == 'SUPERVISOR':
-        _require_area_manage(area)
+    # RBAC
+    _require_area_manage(area)
 
-    # Estados "abiertos"
-    OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
-
-    rows = fetchall(f"""
-        SELECT COALESCE(NULLIF(TRIM(canal_origen), ''), 'OTRO') AS tipo,
-               COUNT(1) AS c
-        FROM Tickets
-        WHERE org_id=?
-          AND area=?
-          AND estado IN ({','.join(['?']*len(OPEN_STATES))})
-        GROUP BY tipo
-        ORDER BY c DESC, tipo ASC
-    """, (org_id, area, *OPEN_STATES))
+    # Group by canal_origen as “tipo” proxy
+    rows = fetchall("""
+        SELECT COALESCE(t.canal_origen, 'DESCONOCIDO') AS tipo, COUNT(1) AS c
+        FROM Tickets t
+        WHERE t.org_id=? AND t.area=? AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+        GROUP BY COALESCE(t.canal_origen, 'DESCONOCIDO')
+        ORDER BY c DESC
+    """, (org_id, area))
 
     labels = [r['tipo'] for r in rows]
-    values = [r['c']    for r in rows]
+    values = [r['c'] for r in rows]
 
-    return jsonify({"labels": labels, "values": values, "area": area})
+    return jsonify({"area": area, "labels": labels, "values": values})
+
 
 
     # Open tickets in this area (snapshot)
