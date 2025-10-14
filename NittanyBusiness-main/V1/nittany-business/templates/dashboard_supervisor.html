@@ -52,6 +52,40 @@
   </div>
 </div>
 
+<!-- row: tipo + performance -->
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Incidencias por tipo (abiertos)</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="typeChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Desempeño del equipo (últimos 30 días)</div>
+      <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Usuario</th>
+              <th>Abiertos</th>
+              <th>Resueltos</th>
+              <th>% SLA</th>
+              <th>TTR (min)</th>
+            </tr>
+          </thead>
+          <tbody id="sup-perf-tbody">
+            <tr><td colspan="5" class="text-center text-muted py-3">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Table -->
 <div class="card mt-3">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -231,5 +265,44 @@
   });
 })();
 </script>
+
+<script>
+  // Existing: backlog_by_tech and open_by_priority ...
+
+  // NEW: incidencias por tipo (abiertos, área actual)
+  fetch("{{ url_for('api_sup_open_by_type') }}?area={{ kpis.area|urlencode }}")
+    .then(r => r.json())
+    .then(byType => {
+      const el = document.getElementById('typeChart');
+      if (!el) return;
+      new Chart(el, {
+        type: 'doughnut',
+        data: {
+          labels: byType.labels || [],
+          datasets: [{ data: byType.values || [], backgroundColor: [ACCENT, WARNING, BRAND, '#999', '#555'] }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+      });
+    });
+
+  // NEW: desempeño del equipo (30d)
+  fetch("{{ url_for('api_sup_performance_by_user') }}?area={{ kpis.area|urlencode }}")
+    .then(r => r.json())
+    .then(perf => {
+      const T = document.getElementById('sup-perf-tbody');
+      if (!T) return;
+      const rows = (perf.rows || []).map(x => `
+        <tr>
+          <td>${x.user}</td>
+          <td>${x.open_now}</td>
+          <td>${x.resolved}</td>
+          <td>${(x.sla_pct ?? 0).toFixed(1)}%</td>
+          <td>${x.ttr_avg_min ?? 0}</td>
+        </tr>
+      `).join('');
+      T.innerHTML = rows || `<tr><td colspan="5" class="text-center text-muted py-3">Sin datos (30d)</td></tr>`;
+    });
+</script>
+
 
 {% endblock %}

@@ -442,6 +442,21 @@ DEFAULT_PERMS = {
 
 
 # ---------------------------- RBAC helpers ----------------------------
+
+def _require_area_manage(area: str):
+    """Allow GERENTE everywhere. SUPERVISOR only inside their area."""
+    u = session.get('user') or {}
+    role = u.get('role')
+    if role == 'GERENTE':
+        return  # ok
+    if role == 'SUPERVISOR':
+        # adjust key if your session stores the area under another name
+        sup_area = (u.get('area') or u.get('team_area') or '').upper()
+        if sup_area and area and sup_area == str(area).upper():
+            return
+    abort(403)  # forbidden
+
+
 def role_effective_perms(role_code: str) -> set[str]:
     """
     Resolve role -> permissions. We always include DEFAULT_PERMS as a base,
@@ -471,6 +486,8 @@ def role_effective_perms(role_code: str) -> set[str]:
 
     # Fallback defaults (keeps the app usable without RBAC rows)
     return DEFAULT_PERMS.get(role_code, set())
+
+
 
 
 def current_org_role() -> str | None:
@@ -1573,25 +1590,33 @@ def hk_shift_end():
 @app.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
-    """Recepción confirma / Gerente/Supervisor también pueden confirmar; dispara asignación."""
-    if 'user' not in session: return redirect(url_for('login'))
+    """Recepción confirma / Gerente y Supervisor también; dispara asignación."""
+    if 'user' not in session: 
+        return redirect(url_for('login'))
+
     t = fetchone("SELECT id, org_id, area, estado FROM Tickets WHERE id=?", (id,))
     if not t:
-        flash('Ticket no encontrado.', 'error'); return redirect(url_for('tickets'))
+        flash('Ticket no encontrado.', 'error')
+        return redirect(url_for('tickets'))
+
     if t['estado'] != 'PENDIENTE':
-        flash('Solo puedes confirmar tickets pendientes.', 'error'); return redirect(url_for('tickets'))
+        flash('Solo puedes confirmar tickets pendientes.', 'error')
+        return redirect(url_for('tickets'))
 
-    # Scope: supervisor solo su(s) área(s)
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    # SUPERVISOR: solo su área
+    if current_org_role() == 'SUPERVISOR':
+        _require_area_manage(t['area'])
 
-    # Simple assignment engine MVP (técnicos del área en la org con menor backlog)
+    # Asignación simple (menor backlog del área)
     assignee = pick_assignee(t['org_id'], t['area'])
-    fields = {"estado":"ASIGNADO"}
-    if assignee: fields["assigned_to"] = assignee
+    fields = {"estado": "ASIGNADO"}
+    if assignee:
+        fields["assigned_to"] = assignee
+
     _update_ticket(id, fields, "CONFIRMADO")
     flash('Ticket confirmado y asignado.' if assignee else 'Ticket confirmado (sin asignar).', 'success')
     return redirect(url_for('tickets'))
+
 
 def pick_assignee(org_id: int, area: str) -> int | None:
     """
@@ -1647,110 +1672,172 @@ def _get_ticket_or_abort(id: int):
 @app.post('/tickets/<int:id>/accept')
 @require_perm('ticket.transition.accept')
 def ticket_accept(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    # Técnico solo si es el asignado
-    if current_org_role() == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        flash('Solo puedes aceptar tus tickets.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
 
-    # Supervisor debe estar en su área
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    role = current_org_role()
 
-    _update_ticket(id, {"estado":"ACEPTADO", "accepted_at": datetime.now().isoformat(),
-                        "assigned_to": t['assigned_to'] or session['user']['id']}, "ACEPTADO")
+    # Técnico: solo si es el asignado (o se autoasigna si no hay asignado)
+    if role == 'TECNICO' and t['assigned_to'] and t['assigned_to'] != session['user']['id']:
+        flash('Solo puedes aceptar tus tickets.', 'error')
+        return redirect(url_for('tickets'))
+
+    # Supervisor: solo su área
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {
+            "estado": "ACEPTADO",
+            "accepted_at": datetime.now().isoformat(),
+            "assigned_to": t['assigned_to'] or session['user']['id']
+        },
+        "ACEPTADO"
+    )
     flash('Ticket aceptado.', 'success')
     return redirect(url_for('tickets'))
+
 
 @app.post('/tickets/<int:id>/start')
 @require_perm('ticket.transition.start')
 def ticket_start(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    if current_org_role() == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        flash('Solo puedes iniciar tus tickets.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
 
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    role = current_org_role()
 
-    _update_ticket(id, {"estado":"EN_CURSO", "started_at": datetime.now().isoformat()}, "INICIADO")
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        flash('Solo puedes iniciar tus tickets.', 'error')
+        return redirect(url_for('tickets'))
+
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {"estado": "EN_CURSO", "started_at": datetime.now().isoformat()},
+        "INICIADO"
+    )
     flash('Ticket iniciado.', 'success')
     return redirect(url_for('tickets'))
+
 
 @app.post('/tickets/<int:id>/pause')
 @require_perm('ticket.transition.pause')
 def ticket_pause(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    if current_org_role() == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        flash('Solo puedes pausar tus tickets.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
 
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    role = current_org_role()
 
-    motivo = request.form.get('motivo') or ''
-    _update_ticket(id, {"estado":"PAUSADO"}, "PAUSADO", motivo)
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        flash('Solo puedes pausar tus tickets.', 'error')
+        return redirect(url_for('tickets'))
+
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    motivo = (request.form.get('motivo') or '').strip()
+    _update_ticket(id, {"estado": "PAUSADO"}, "PAUSADO", motivo)
     flash('Ticket en pausa.', 'success')
     return redirect(url_for('tickets'))
+
 
 @app.post('/tickets/<int:id>/resume')
 @require_perm('ticket.transition.resume')
 def ticket_resume(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    if current_org_role() == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        flash('Solo puedes reanudar tus tickets.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
 
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    role = current_org_role()
 
-    _update_ticket(id, {"estado":"EN_CURSO"}, "REANUDADO")
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        flash('Solo puedes reanudar tus tickets.', 'error')
+        return redirect(url_for('tickets'))
+
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(id, {"estado": "EN_CURSO"}, "REANUDADO")
     flash('Ticket reanudado.', 'success')
     return redirect(url_for('tickets'))
+
 
 @app.post('/tickets/<int:id>/reassign')
 @require_perm('ticket.assign')
 def ticket_reassign(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    # Gerente puede reasignar libre en la org; Supervisor sólo su(s) áreas
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
+
+    role = current_org_role()
+
+    # Gerente: libre; Supervisor: solo su área
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
 
     to_user = request.form.get('assigned_to', type=int)
     if not to_user:
-        flash('Falta destino.', 'error'); return redirect(url_for('tickets'))
-    _update_ticket(id, {"assigned_to": int(to_user), "estado":"ASIGNADO"}, "REASIGNADO",
-                   request.form.get('motivo') or '')
+        flash('Falta destino.', 'error')
+        return redirect(url_for('tickets'))
+
+    motivo = (request.form.get('motivo') or '').strip()
+    _update_ticket(
+        id,
+        {"assigned_to": int(to_user), "estado": "ASIGNADO"},
+        "REASIGNADO",
+        motivo
+    )
     flash('Ticket reasignado.', 'success')
     return redirect(url_for('tickets'))
 
 @app.post('/tickets/<int:id>/finish')
 @require_perm('ticket.transition.finish')
 def ticket_finish(id):
-    if 'user' not in session: return redirect(url_for('login'))
-    t = _get_ticket_or_abort(id); ifnot = (t is None)
-    if ifnot: return redirect(url_for('tickets'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    if current_org_role() == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        flash('Solo puedes finalizar tus tickets.', 'error'); return redirect(url_for('tickets'))
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return redirect(url_for('tickets'))
 
-    if current_org_role() == 'SUPERVISOR' and not ensure_ticket_area_scope(t):
-        flash('Fuera de tu área.', 'error'); return redirect(url_for('tickets'))
+    role = current_org_role()
 
-    _update_ticket(id, {"estado":"RESUELTO", "finished_at": datetime.now().isoformat()}, "RESUELTO")
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        flash('Solo puedes finalizar tus tickets.', 'error')
+        return redirect(url_for('tickets'))
+
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
+        "RESUELTO"
+    )
     flash('Ticket resuelto.', 'success')
     return redirect(url_for('tickets'))
+
 
 # ---------------------------- PMS (read) ----------------------------
 @app.get('/pms/guest')
