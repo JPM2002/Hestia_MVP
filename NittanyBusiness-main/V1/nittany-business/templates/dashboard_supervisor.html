@@ -271,6 +271,8 @@
 
   // NEW: incidencias por tipo (abiertos, área actual)
   fetch("{{ url_for('api_sup_open_by_type') }}?area={{ kpis.area|urlencode }}")
+  //fetch("{{ url_for('api_sup_open_by_priority') }}?area={{ kpis.area|urlencode }}")
+
     .then(r => r.json())
     .then(byType => {
       const el = document.getElementById('typeChart');

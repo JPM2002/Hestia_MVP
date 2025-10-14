@@ -441,6 +441,7 @@ DEFAULT_PERMS = {
 
 
 
+
 # ---------------------------- RBAC helpers ----------------------------
 
 def _require_area_manage(area: str):
@@ -1932,6 +1933,47 @@ def api_supervisor_team_stats():
 
     now = datetime.now()
     since = (now - timedelta(days=30)).isoformat()
+
+@app.get('/api/sup/open_by_type')
+def api_sup_open_by_type():
+    """Abiertos por tipo (usamos canal_origen como 'tipo') para un área dada."""
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    area = (request.args.get('area') or '').strip()
+    if not area:
+        # intentar inferir del usuario (para supervisores)
+        u = session.get('user') or {}
+        area = (u.get('area') or u.get('team_area') or '').strip()
+
+    # Seguridad: si es SUPERVISOR, debe consultar su propia área
+    role = current_org_role()
+    if role == 'SUPERVISOR':
+        _require_area_manage(area)
+
+    # Estados "abiertos"
+    OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+
+    rows = fetchall(f"""
+        SELECT COALESCE(NULLIF(TRIM(canal_origen), ''), 'OTRO') AS tipo,
+               COUNT(1) AS c
+        FROM Tickets
+        WHERE org_id=?
+          AND area=?
+          AND estado IN ({','.join(['?']*len(OPEN_STATES))})
+        GROUP BY tipo
+        ORDER BY c DESC, tipo ASC
+    """, (org_id, area, *OPEN_STATES))
+
+    labels = [r['tipo'] for r in rows]
+    values = [r['c']    for r in rows]
+
+    return jsonify({"labels": labels, "values": values, "area": area})
+
 
     # Open tickets in this area (snapshot)
     open_rows = fetchall("""
