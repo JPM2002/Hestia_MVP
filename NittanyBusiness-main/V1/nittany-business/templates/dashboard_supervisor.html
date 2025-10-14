@@ -105,6 +105,52 @@
     </table>
   </div>
 </div>
+
+<!-- Desempeño del equipo (30d) -->
+<div class="card mt-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span>Desempeño del equipo (30 días)</span>
+    <small class="text-muted">SLA y TTR por usuario</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Usuario</th>
+          <th class="text-center">Asignados abiertos</th>
+          <th class="text-center">En curso</th>
+          <th class="text-center">Resueltos (30d)</th>
+          <th class="text-center">TTR prom. (min)</th>
+          <th class="text-center">SLA (30d)</th>
+        </tr>
+      </thead>
+      <tbody id="sup-team-tbody">
+        <tr><td colspan="6" class="text-center text-muted py-3">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Ranking por SLA (30d)</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="sup-rank-bar"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Incidencias por prioridad (30d)</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="sup-prio-donut"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 {% endblock %}
 
 {% block scripts %}
@@ -136,4 +182,54 @@
       });
     });
 </script>
+
+<script>
+(async function(){
+  const css = getComputedStyle(document.documentElement);
+  const BRAND    = css.getPropertyValue('--brand').trim()    || '#16242D';
+  const ACCENT   = css.getPropertyValue('--accent').trim()   || '#41D4A8';
+  const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
+  const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
+
+  // Use the same area that page was rendered with
+  const area = "{{ kpis.area or '' }}";
+  const url  = new URL("{{ url_for('api_supervisor_team_stats') }}", window.location.origin);
+  if (area) url.searchParams.set('area', area);
+  const r = await fetch(url);
+  if(!r.ok) return;
+  const j = await r.json();
+
+  // ----- Table
+  const T = document.getElementById('sup-team-tbody');
+  T.innerHTML = (j.rows || []).map(x => `
+    <tr>
+      <td class="fw-semibold">${x.username || '(sin asignar)'}</td>
+      <td class="text-center">${x.assigned_open || 0}</td>
+      <td class="text-center">${x.in_progress || 0}</td>
+      <td class="text-center">${x.resolved_30d || 0}</td>
+      <td class="text-center">${x.avg_ttr_min || 0}</td>
+      <td class="text-center">${(x.sla_rate ?? 0).toFixed(1)}%</td>
+    </tr>
+  `).join('') || `<tr><td colspan="6" class="text-center text-muted py-3">Sin datos</td></tr>`;
+
+  // ----- Ranking bar (by SLA desc)
+  const rank = (j.ranking || []);
+  const labels = rank.map(x => x.username);
+  const values = rank.map(x => x.sla_rate);
+  new Chart(document.getElementById('sup-rank-bar'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label:'SLA (30d) %', data: values, backgroundColor: ACCENT }] },
+    options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100, ticks:{ precision:0 } } }, plugins:{ legend:{ display:false } } }
+  });
+
+  // ----- Donut incidencias por prioridad (30d)
+  const p = j.prio || {labels:[], values:[]};
+  new Chart(document.getElementById('sup-prio-donut'), {
+    type: 'doughnut',
+    data: { labels: p.labels, datasets: [{ data: p.values, backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  });
+})();
+</script>
+
 {% endblock %}

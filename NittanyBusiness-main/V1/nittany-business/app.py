@@ -1765,6 +1765,129 @@ def api_sup_open_by_priority():
         "values": [r['c'] for r in rows],
     })
 
+# ---------------------------- Supervisor: team performance (30d) ----------------------------
+@app.get('/api/supervisor/team_stats')
+def api_supervisor_team_stats():
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+
+    org_id, hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    # Area in focus: same logic you already use to render dashboard_supervisor
+    area = request.args.get('area') or request.args.get('A') or request.args.get('a')
+    if not area:
+        # fall back to area stored for the supervisor in the session-provided kpis,
+        # or infer from open tickets assigned to team on this page
+        # safest fallback: area = 'MANTENCION'
+        area = 'MANTENCION'
+
+    now = datetime.now()
+    since = (now - timedelta(days=30)).isoformat()
+
+    # Open tickets in this area (snapshot)
+    open_rows = fetchall("""
+        SELECT t.id, t.estado, t.prioridad, t.created_at, t.due_at,
+               t.assigned_to, u.username AS assigned_name
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+    """, (org_id, area))
+
+    # Resolved tickets last 30d in this area
+    res_rows = fetchall("""
+        SELECT t.id, t.assigned_to, u.username AS assigned_name,
+               t.created_at, t.finished_at, t.due_at, t.prioridad
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+    """, (org_id, area, since))
+
+    # Team list: all techs that appear in either open or resolved set
+    from collections import defaultdict, Counter
+    team = {}
+    for r in open_rows + res_rows:
+        uid = r.get('assigned_to')
+        name = r.get('assigned_name') or '(sin asignar)'
+        if uid is not None:
+            team[uid] = name
+
+    def minutes_between(a_iso, b_iso):
+        try:
+            a = datetime.fromisoformat(str(a_iso))
+            b = datetime.fromisoformat(str(b_iso))
+            return max(0, int((b - a).total_seconds() // 60))
+        except Exception:
+            return None
+
+    # Per-user aggregates
+    assigned_open  = Counter()   # count of open assigned tickets
+    in_progress    = Counter()   # count of EN_CURSO for visibility
+    ttr_sum        = Counter()
+    ttr_n          = Counter()
+    sla_hit        = Counter()
+    sla_n          = Counter()
+
+    for r in open_rows:
+        uid = r.get('assigned_to')
+        if uid is None:
+            continue
+        assigned_open[uid] += 1
+        if r.get('estado') == 'EN_CURSO':
+            in_progress[uid] += 1
+
+    for r in res_rows:
+        uid = r.get('assigned_to')
+        if uid is None:
+            continue
+        ttr = minutes_between(r.get('created_at'), r.get('finished_at'))
+        if ttr is not None:
+            ttr_sum[uid] += ttr
+            ttr_n[uid]   += 1
+
+        if r.get('due_at'):
+            sla_n[uid] += 1
+            try:
+                f = datetime.fromisoformat(str(r.get('finished_at')))
+                d = datetime.fromisoformat(str(r.get('due_at')))
+                if f <= d:
+                    sla_hit[uid] += 1
+            except Exception:
+                pass
+
+    rows = []
+    for uid, name in sorted(team.items(), key=lambda kv: (kv[1] or '').lower()):
+        avg_ttr = int(round(ttr_sum[uid]/ttr_n[uid])) if ttr_n[uid] else 0
+        sla_pct = round(100.0 * (sla_hit[uid]/sla_n[uid]), 1) if sla_n[uid] else 0.0
+        rows.append({
+            "user_id": uid,
+            "username": name,
+            "assigned_open": assigned_open[uid],
+            "in_progress": in_progress[uid],
+            "resolved_30d": ttr_n[uid],
+            "avg_ttr_min": avg_ttr,
+            "sla_rate": sla_pct,
+        })
+
+    # Ranking by SLA (desc), then by lower TTR
+    ranking = sorted(rows, key=lambda x: (-x["sla_rate"], x["avg_ttr_min"] or 10**9, -x["resolved_30d"]))
+
+    # "Incidencias por tipo": we will use PRIORIDAD within this area for the last 30 days
+    prio_mix = Counter()
+    for r in res_rows:
+        prio_mix[r.get('prioridad') or '—'] += 1
+    labels = ['URGENTE', 'ALTA', 'MEDIA', 'BAJA']
+    values = [prio_mix[l] for l in labels]
+
+    return jsonify({
+        "area": area,
+        "rows": rows,
+        "ranking": ranking,
+        "prio": {"labels": labels, "values": values}
+    })
+
+
 # ---------------------------- Superadmin dashboard ----------------------------
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_super():
