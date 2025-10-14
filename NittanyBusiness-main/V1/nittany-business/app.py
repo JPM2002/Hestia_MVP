@@ -2160,8 +2160,10 @@ def api_gerencia_summary():
     snapshot["by_tech"] = dict(sorted(by_tech.items(), key=lambda kv: kv[1], reverse=True))
 
     # ---- Resolved last 30d for TTR + SLA rate
+    # NOTE: your DB has no "tipo"; we reuse canal_origen AS tipo.
     resolved = fetchall("""
-        SELECT id, area, prioridad, created_at, finished_at, due_at, ubicacion
+        SELECT id, area, prioridad, canal_origen AS tipo,
+               created_at, finished_at, due_at, ubicacion
         FROM Tickets
         WHERE org_id=? AND estado='RESUELTO' AND finished_at >= ?
     """, (org_id, since))
@@ -2172,6 +2174,10 @@ def api_gerencia_summary():
     sla_hit = Counter()
     sla_n   = Counter()
 
+    # SLA by "tipo" (alias of canal_origen)
+    sla_hit_by_type = Counter()
+    sla_n_by_type   = Counter()
+
     # "Reincidents" heuristic: same ubicacion with >1 tickets in 30d
     by_loc = defaultdict(int)
 
@@ -2180,6 +2186,7 @@ def api_gerencia_summary():
             by_loc[r["ubicacion"]] += 1
 
         area = r.get("area") or "GENERAL"
+
         ttr = _minutes_between(r.get("created_at"), r.get("finished_at"))
         if ttr is not None:
             ttr_sum[area] += ttr
@@ -2189,8 +2196,6 @@ def api_gerencia_summary():
         da = r.get("due_at")
         if da:
             sla_n[area] += 1
-            d = _minutes_between(r.get("created_at"), r.get("finished_at"))
-            # compare using datetimes (more robust)
             try:
                 finished = datetime.fromisoformat(str(r.get("finished_at")))
                 due      = datetime.fromisoformat(str(da))
@@ -2199,18 +2204,32 @@ def api_gerencia_summary():
             except Exception:
                 pass
 
+            # by type (tipo)
+            tipo = (r.get("tipo") or "—")
+            sla_n_by_type[tipo] += 1
+            try:
+                finished = datetime.fromisoformat(str(r.get("finished_at")))
+                due      = datetime.fromisoformat(str(da))
+                if finished <= due:
+                    sla_hit_by_type[tipo] += 1
+            except Exception:
+                pass
+
     ttr_by_area = {a: int(round(ttr_sum[a] / ttr_n[a])) for a in ttr_n.keys() if ttr_n[a] > 0}
-    sla_rate_by_area = {a: round(100.0 * (sla_hit[a] / sla_n[a]), 1) if sla_n[a] > 0 else 0.0 for a in set(list(sla_n.keys()) + list(sla_hit.keys()))}
+    sla_rate_by_area = {a: round(100.0 * (sla_hit[a] / sla_n[a]), 1) if sla_n[a] > 0 else 0.0
+                        for a in set(list(sla_n.keys()) + list(sla_hit.keys()))}
+    sla_rate_by_type = {t: round(100.0 * (sla_hit_by_type[t] / sla_n_by_type[t]), 1) if sla_n_by_type[t] > 0 else 0.0
+                        for t in set(list(sla_n_by_type.keys()) + list(sla_hit_by_type.keys()))}
 
     # Reincidents (rooms with more than one ticket)
     reincidents_total = sum(1 for _, c in by_loc.items() if c > 1)
     reincidents_by_area = {}
     if resolved:
-        # coarse split: count locations that had >1 tickets, grouped by area of those tickets
         multi_locs = {loc for loc, c in by_loc.items() if c > 1}
         for r in resolved:
             if r.get("ubicacion") in multi_locs:
-                reincidents_by_area[r.get("area") or "GENERAL"] = reincidents_by_area.get(r.get("area") or "GENERAL", 0) + 1
+                a = r.get("area") or "GENERAL"
+                reincidents_by_area[a] = reincidents_by_area.get(a, 0) + 1
 
     # Incident mix by area (counts, last 30d, any estado)
     mix_rows = fetchall("""
@@ -2219,7 +2238,7 @@ def api_gerencia_summary():
         WHERE org_id=? AND created_at >= ?
         GROUP BY area
     """, (org_id, since))
-    mix_by_area = {r["area"] or "GENERAL": r["c"] for r in mix_rows}
+    mix_by_area = { (r["area"] or "GENERAL"): r["c"] for r in mix_rows }
 
     # Tickets per day (last 30d, any estado)
     ts_rows = fetchall("""
@@ -2242,20 +2261,43 @@ def api_gerencia_summary():
 
     # SLA vs target (default 90% target, overridable by env SLA_TARGET)
     sla_target = float(os.getenv("SLA_TARGET", "0.90")) * 100.0
-    sla_vs_target = [{"area": a, "real": sla_rate_by_area.get(a, 0.0), "objetivo": round(sla_target, 1)} for a in sorted(sla_rate_by_area.keys())]
+    sla_vs_target = [{"area": a, "real": sla_rate_by_area.get(a, 0.0), "objetivo": round(sla_target, 1)}
+                     for a in sorted(sla_rate_by_area.keys())]
+
+    # Recurrentes (30d): mismas (tipo, ubicacion) 2+ veces
+    rec_rows = fetchall("""
+        SELECT COALESCE(canal_origen, '—') AS tipo,
+               COALESCE(ubicacion, '—')    AS ubicacion,
+               COUNT(1) AS c,
+               MAX(created_at) AS last_seen
+        FROM Tickets
+        WHERE org_id=? AND created_at >= ?
+        GROUP BY canal_origen, ubicacion
+        HAVING COUNT(1) >= 2
+        ORDER BY c DESC, last_seen DESC
+        LIMIT 50
+    """, (org_id, since))
+    recurrentes = [{
+        "tipo": r["tipo"],
+        "ubicacion": r["ubicacion"],
+        "count": int(r["c"] or 0),
+        "last_seen": str(r["last_seen"]) if r.get("last_seen") else None
+    } for r in rec_rows]
 
     return jsonify({
         "at": now.isoformat(),
         "snapshot": snapshot,
         "ttr_by_area": ttr_by_area,
         "sla_by_area": sla_rate_by_area,
+        "sla_by_type_tipo": sla_rate_by_type,   # <— NEW for % SLA por tipo
         "reincidents_total": reincidents_total,
         "reincidents_by_area": reincidents_by_area,
+        "recurrentes": recurrentes,             # <— NEW for table of recurrent tickets
         "mix_by_area": mix_by_area,
         "tickets_per_day": ts,
         "avg_ttr_30d": avg_ttr_30d,
         "sla_vs_target": sla_vs_target,
-        # optional: brief list of open items for a table with elapsed
+        # brief list of open items for the table with elapsed
         "open_items": [{
             "id": r["id"],
             "area": r["area"],
@@ -2270,7 +2312,6 @@ def api_gerencia_summary():
             "elapsed_min": _minutes_between(r["created_at"], now.isoformat())
         } for r in open_rows]
     })
-
 
 # ---------------------------- run ----------------------------
 if __name__ == '__main__':
