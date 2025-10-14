@@ -2076,6 +2076,156 @@ def api_sup_open_by_type():
         "prio": {"labels": labels, "values": values}
     })
 
+# ---------- Supervisor: performance by user (last N days) ----------
+@app.get('/api/sup/performance_by_user')
+def api_sup_performance_by_user():
+    """
+    KPIs por usuario (técnico) dentro de un área, para los últimos N días.
+    Devuelve: tickets totales (30d), resueltos (30d), %SLA (30d), TTR promedio (min).
+    """
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    # Parámetros
+    area = (request.args.get('area') or '').strip()
+    days = request.args.get('days', type=int) or 30
+
+    # Si no llega área, intentamos inferirla del usuario (caso supervisor)
+    if not area:
+        u = session.get('user') or {}
+        area = (u.get('area') or u.get('team_area') or '').strip()
+
+    # RBAC: si es SUPERVISOR, sólo su(s) área(s)
+    role = current_org_role()
+    if role == 'SUPERVISOR':
+        _require_area_manage(area)
+
+    since_dt = datetime.now() - timedelta(days=days)
+    since = since_dt.isoformat()
+
+    # Estados "abiertos"
+    OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+
+    # 1) Tickets creados en el periodo, por assigned_to (para "totales 30d")
+    created_rows = fetchall("""
+        SELECT t.assigned_to, u.username, COUNT(1) AS c
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.created_at >= ?
+        GROUP BY t.assigned_to, u.username
+    """, (org_id, area, since))
+
+    # 2) Tickets resueltos en el periodo, por assigned_to
+    resolved_rows = fetchall("""
+        SELECT t.assigned_to, u.username, COUNT(1) AS c
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+        GROUP BY t.assigned_to, u.username
+    """, (org_id, area, since))
+
+    # 3) SLA hits / count en resueltos (finished_at <= due_at)
+    sla_rows = fetchall("""
+        SELECT t.assigned_to, u.username,
+               SUM(CASE WHEN t.due_at IS NOT NULL AND t.finished_at IS NOT NULL AND t.finished_at <= t.due_at THEN 1 ELSE 0 END) AS sla_hit,
+               SUM(CASE WHEN t.due_at IS NOT NULL AND t.finished_at IS NOT NULL THEN 1 ELSE 0 END) AS sla_n
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+        GROUP BY t.assigned_to, u.username
+    """, (org_id, area, since))
+
+    # 4) TTR promedio de resueltos (minutos) por usuario
+    #    Traemos created_at/finished_at y lo calculamos en Python para robustez.
+    ttr_rows = fetchall("""
+        SELECT t.assigned_to, u.username, t.created_at, t.finished_at
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+    """, (org_id, area, since))
+
+    # --- Agregación ---
+    from collections import defaultdict
+
+    users = {}  # user_id -> {"user_id","username","total","resolved","sla_hit","sla_n","ttr_sum","ttr_n"}
+
+    def ensure(uid, uname):
+        if uid not in users:
+            users[uid] = {
+                "user_id": uid,
+                "username": uname or "(sin asignar)",
+                "total": 0,
+                "resolved": 0,
+                "sla_hit": 0,
+                "sla_n": 0,
+                "ttr_sum": 0,
+                "ttr_n": 0
+            }
+        return users[uid]
+
+    for r in created_rows:
+        u = ensure(r["assigned_to"], r["username"])
+        u["total"] += r["c"] or 0
+
+    for r in resolved_rows:
+        u = ensure(r["assigned_to"], r["username"])
+        u["resolved"] += r["c"] or 0
+
+    for r in sla_rows:
+        u = ensure(r["assigned_to"], r["username"])
+        u["sla_hit"] += r["sla_hit"] or 0
+        u["sla_n"]   += r["sla_n"] or 0
+
+    for r in ttr_rows:
+        uid = r["assigned_to"]
+        u = ensure(uid, r["username"])
+        t = _minutes_between(r.get("created_at"), r.get("finished_at"))
+        if t is not None:
+            u["ttr_sum"] += t
+            u["ttr_n"]   += 1
+
+    # Compute rates/averages and produce arrays also useful for charts
+    rows_out = []
+    labels, totals, resolved, sla, ttr = [], [], [], [], []
+
+    # order by resolved desc, then total desc
+    def sort_key(item):
+        return (-item[1]["resolved"], -item[1]["total"], (item[1]["username"] or ""))
+
+    for uid, u in sorted(users.items(), key=sort_key):
+        sla_rate = round(100.0 * u["sla_hit"]/u["sla_n"], 1) if u["sla_n"] > 0 else 0.0
+        ttr_avg  = int(round(u["ttr_sum"]/u["ttr_n"])) if u["ttr_n"] > 0 else 0
+        rows_out.append({
+            "user_id": uid,
+            "username": u["username"],
+            "tickets_total": u["total"],
+            "tickets_resueltos": u["resolved"],
+            "sla_rate": sla_rate,
+            "ttr_avg_min": ttr_avg
+        })
+        labels.append(u["username"])
+        totals.append(u["total"])
+        resolved.append(u["resolved"])
+        sla.append(sla_rate)
+        ttr.append(ttr_avg)
+
+    return jsonify({
+        "area": area,
+        "period_days": days,
+        "users": rows_out,
+        # arrays útiles si gráficas
+        "labels": labels,
+        "totals": totals,
+        "resolved": resolved,
+        "sla": sla,
+        "ttr": ttr
+    })
+
+
 
 # ---------------------------- Superadmin dashboard ----------------------------
 @app.route('/admin', methods=['GET', 'POST'])
