@@ -2125,8 +2125,9 @@ def _minutes_between(a_iso, b_iso):
         return None
 
 @app.get('/api/gerencia/summary')
+@app.get('/api/gerencia/summary')
 def api_gerencia_summary():
-    """Org-level metrics for last 30 days + open snapshot."""
+    """Org-level metrics for last 30 days + open snapshot (+ type metrics + per-scope SLA targets)."""
     if 'user' not in session:
         return jsonify({"error": "unauthorized"}), 401
     org_id, _hotel_id = current_scope()
@@ -2134,11 +2135,12 @@ def api_gerencia_summary():
         return jsonify({"error": "no org"}), 400
 
     now = datetime.now()
-    since = (now - timedelta(days=30)).isoformat()
+    since_dt = now - timedelta(days=30)
+    since = since_dt.isoformat()
 
-    # ---- Open snapshot
+    # --- Open snapshot
     open_rows = fetchall("""
-        SELECT t.id, t.area, t.prioridad, t.estado, t.detalle, t.ubicacion,
+        SELECT t.id, t.area, t.prioridad, t.estado, t.detalle, t.ubicacion, t.canal_origen,
                t.created_at, t.due_at, t.assigned_to,
                u.username AS assigned_name
         FROM Tickets t
@@ -2159,79 +2161,82 @@ def api_gerencia_summary():
         by_tech[tech] += 1
     snapshot["by_tech"] = dict(sorted(by_tech.items(), key=lambda kv: kv[1], reverse=True))
 
-    # ---- Resolved last 30d for TTR + SLA rate
-    # NOTE: your DB has no "tipo"; we reuse canal_origen AS tipo.
+    # --- Resolved last 30d
     resolved = fetchall("""
-        SELECT id, area, prioridad, canal_origen AS tipo,
-               created_at, finished_at, due_at, ubicacion
+        SELECT id, area, prioridad, canal_origen, created_at, finished_at, due_at, ubicacion
         FROM Tickets
         WHERE org_id=? AND estado='RESUELTO' AND finished_at >= ?
     """, (org_id, since))
 
-    # TTR per area (avg minutes); SLA compliance per area (% finished_on_time)
-    ttr_sum = Counter()
-    ttr_n   = Counter()
-    sla_hit = Counter()
-    sla_n   = Counter()
+    # ---- Aggregations
+    ttr_sum_area = Counter(); ttr_n_area = Counter()
+    ttr_sum_tipo = Counter(); ttr_n_tipo = Counter()
+    sla_hit_area = Counter(); sla_n_area = Counter()
+    sla_hit_tipo = Counter(); sla_n_tipo = Counter()
+    by_loc = Counter()  # for reincidentes (ubicacion)
 
-    # SLA by "tipo" (alias of canal_origen)
-    sla_hit_by_type = Counter()
-    sla_n_by_type   = Counter()
-
-    # "Reincidents" heuristic: same ubicacion with >1 tickets in 30d
-    by_loc = defaultdict(int)
+    def safe_tipo(row):
+        # We treat "tipo" as canal_origen for now.
+        return (row.get("canal_origen") or "OTROS").upper()
 
     for r in resolved:
-        if r.get("ubicacion"):
-            by_loc[r["ubicacion"]] += 1
-
         area = r.get("area") or "GENERAL"
+        tipo = safe_tipo(r)
+        if r.get("ubicacion"): by_loc[r["ubicacion"]] += 1
 
+        # TTR
         ttr = _minutes_between(r.get("created_at"), r.get("finished_at"))
         if ttr is not None:
-            ttr_sum[area] += ttr
-            ttr_n[area]   += 1
+            ttr_sum_area[area] += ttr;  ttr_n_area[area] += 1
+            ttr_sum_tipo[tipo] += ttr;  ttr_n_tipo[tipo] += 1
 
-        # SLA hit if finished_at <= due_at (when due_at exists)
+        # SLA hit if finished_at <= due_at
         da = r.get("due_at")
         if da:
-            sla_n[area] += 1
+            sla_n_area[area] += 1
+            sla_n_tipo[tipo] += 1
             try:
                 finished = datetime.fromisoformat(str(r.get("finished_at")))
                 due      = datetime.fromisoformat(str(da))
                 if finished <= due:
-                    sla_hit[area] += 1
+                    sla_hit_area[area] += 1
+                    sla_hit_tipo[tipo] += 1
             except Exception:
                 pass
 
-            # by type (tipo)
-            tipo = (r.get("tipo") or "—")
-            sla_n_by_type[tipo] += 1
-            try:
-                finished = datetime.fromisoformat(str(r.get("finished_at")))
-                due      = datetime.fromisoformat(str(da))
-                if finished <= due:
-                    sla_hit_by_type[tipo] += 1
-            except Exception:
-                pass
+    ttr_by_area = {a: int(round(ttr_sum_area[a] / ttr_n_area[a])) for a in ttr_n_area if ttr_n_area[a] > 0}
+    ttr_by_type = {t: int(round(ttr_sum_tipo[t] / ttr_n_tipo[t])) for t in ttr_n_tipo if ttr_n_tipo[t] > 0}
 
-    ttr_by_area = {a: int(round(ttr_sum[a] / ttr_n[a])) for a in ttr_n.keys() if ttr_n[a] > 0}
-    sla_rate_by_area = {a: round(100.0 * (sla_hit[a] / sla_n[a]), 1) if sla_n[a] > 0 else 0.0
-                        for a in set(list(sla_n.keys()) + list(sla_hit.keys()))}
-    sla_rate_by_type = {t: round(100.0 * (sla_hit_by_type[t] / sla_n_by_type[t]), 1) if sla_n_by_type[t] > 0 else 0.0
-                        for t in set(list(sla_n_by_type.keys()) + list(sla_hit_by_type.keys()))}
+    sla_rate_by_area = {
+        a: round(100.0 * (sla_hit_area[a] / sla_n_area[a]), 1) if sla_n_area[a] > 0 else 0.0
+        for a in set(list(sla_n_area.keys()) + list(sla_hit_area.keys()))
+    }
+    sla_rate_by_tipo = {
+        t: round(100.0 * (sla_hit_tipo[t] / sla_n_tipo[t]), 1) if sla_n_tipo[t] > 0 else 0.0
+        for t in set(list(sla_n_tipo.keys()) + list(sla_hit_tipo.keys()))
+    }
 
-    # Reincidents (rooms with more than one ticket)
-    reincidents_total = sum(1 for _, c in by_loc.items() if c > 1)
-    reincidents_by_area = {}
-    if resolved:
-        multi_locs = {loc for loc, c in by_loc.items() if c > 1}
-        for r in resolved:
-            if r.get("ubicacion") in multi_locs:
-                a = r.get("area") or "GENERAL"
-                reincidents_by_area[a] = reincidents_by_area.get(a, 0) + 1
+    # Reincidents (rooms with >1 tickets in 30d), list top tuples by (tipo, ubicacion)
+    # Build (tipo, ubicacion) counters using resolved+created>=since (use all tickets in 30d)
+    recent_rows = fetchall("""
+        SELECT canal_origen, ubicacion, MAX(created_at) AS last_seen, COUNT(1) AS c
+        FROM Tickets
+        WHERE org_id=? AND created_at >= ? AND ubicacion IS NOT NULL
+        GROUP BY canal_origen, ubicacion
+        HAVING COUNT(1) > 1
+        ORDER BY c DESC, last_seen DESC
+        LIMIT 50
+    """, (org_id, since))
+    recurrentes = [{
+        "tipo": (r.get("canal_origen") or "OTROS").upper(),
+        "ubicacion": r.get("ubicacion"),
+        "count": r.get("c"),
+        "last_seen": r.get("last_seen"),
+    } for r in recent_rows]
 
-    # Incident mix by area (counts, last 30d, any estado)
+    reincidents_total = sum(1 for _ in by_loc.items() if _[1] > 1)
+
+    # Mix by area (counts, last 30d, any estado)
     mix_rows = fetchall("""
         SELECT area, COUNT(1) c
         FROM Tickets
@@ -2255,63 +2260,201 @@ def api_gerencia_summary():
     all_ttr_vals = []
     for r in resolved:
         t = _minutes_between(r.get("created_at"), r.get("finished_at"))
-        if t is not None:
-            all_ttr_vals.append(t)
+        if t is not None: all_ttr_vals.append(t)
     avg_ttr_30d = int(round(sum(all_ttr_vals)/len(all_ttr_vals))) if all_ttr_vals else 0
 
-    # SLA vs target (default 90% target, overridable by env SLA_TARGET)
-    sla_target = float(os.getenv("SLA_TARGET", "0.90")) * 100.0
-    sla_vs_target = [{"area": a, "real": sla_rate_by_area.get(a, 0.0), "objetivo": round(sla_target, 1)}
-                     for a in sorted(sla_rate_by_area.keys())]
+    # ---- SLA targets (per area / per tipo) from optional table slarules
+    # Fallback to env SLA_TARGET if no rule.
+    def _get_sla_target(area=None, tipo=None):
+        # Try (area,tipo) -> area -> tipo -> env default
+        args = []
+        where = ["org_id=?"]; args.append(org_id)
+        clauses = []
+        if area is not None: clauses.append("(scope='area' AND area=?)") or args.append(area)
+        if tipo is not None: clauses.append("(scope='tipo' AND tipo=?)") or args.append(tipo)
+        if area is not None and tipo is not None:
+            clauses.insert(0, "(scope='area_tipo' AND area=? AND tipo=?)")
+            args.insert(1, area); args.insert(2, tipo)
 
-    # Recurrentes (30d): mismas (tipo, ubicacion) 2+ veces
-    rec_rows = fetchall("""
-        SELECT COALESCE(canal_origen, '—') AS tipo,
-               COALESCE(ubicacion, '—')    AS ubicacion,
-               COUNT(1) AS c,
-               MAX(created_at) AS last_seen
-        FROM Tickets
-        WHERE org_id=? AND created_at >= ?
-        GROUP BY canal_origen, ubicacion
-        HAVING COUNT(1) >= 2
-        ORDER BY c DESC, last_seen DESC
-        LIMIT 50
-    """, (org_id, since))
-    recurrentes = [{
-        "tipo": r["tipo"],
+        # If the table doesn't exist, this will throw; catch and fall back.
+        try:
+            rows = fetchall(f"""
+                SELECT scope, area, tipo, target
+                FROM slarules
+                WHERE {" OR ".join(clauses)} AND org_id=?
+                ORDER BY CASE scope
+                    WHEN 'area_tipo' THEN 1
+                    WHEN 'area' THEN 2
+                    WHEN 'tipo' THEN 3
+                    ELSE 9
+                END
+                LIMIT 1
+            """, tuple(args))
+            if rows: return float(rows[0]["target"]) * 100.0
+        except Exception:
+            pass
+        return float(os.getenv("SLA_TARGET", "0.90")) * 100.0
+
+    # sla_vs_target by area
+    areas_sorted = sorted(sla_rate_by_area.keys())
+    sla_vs_target_area = [{
+        "area": a,
+        "real": sla_rate_by_area.get(a, 0.0),
+        "objetivo": round(_get_sla_target(area=a), 1)
+    } for a in areas_sorted]
+
+    # sla_vs_target by tipo
+    tipos_sorted = sorted(sla_rate_by_tipo.keys())
+    sla_vs_target_tipo = [{
+        "tipo": t,
+        "real": sla_rate_by_tipo.get(t, 0.0),
+        "objetivo": round(_get_sla_target(tipo=t), 1)
+    } for t in tipos_sorted]
+
+    # Open items (with elapsed)
+    open_items = [{
+        "id": r["id"],
+        "area": r["area"],
+        "prioridad": r["prioridad"],
+        "estado": r["estado"],
+        "detalle": r["detalle"],
         "ubicacion": r["ubicacion"],
-        "count": int(r["c"] or 0),
-        "last_seen": str(r["last_seen"]) if r.get("last_seen") else None
-    } for r in rec_rows]
+        "tipo": (r.get("canal_origen") or "OTROS").upper(),
+        "assigned_to": r.get("assigned_to"),
+        "assigned_name": r.get("assigned_name"),
+        "created_at": r["created_at"],
+        "due_at": r["due_at"],
+        "elapsed_min": _minutes_between(r["created_at"], now.isoformat())
+    } for r in open_rows]
 
     return jsonify({
         "at": now.isoformat(),
         "snapshot": snapshot,
         "ttr_by_area": ttr_by_area,
+        "ttr_by_type": ttr_by_type,                 # NEW
         "sla_by_area": sla_rate_by_area,
-        "sla_by_type_tipo": sla_rate_by_type,   # <— NEW for % SLA por tipo
+        "sla_by_type_tipo": sla_rate_by_tipo,       # NEW (named to match your JS)
         "reincidents_total": reincidents_total,
-        "reincidents_by_area": reincidents_by_area,
-        "recurrentes": recurrentes,             # <— NEW for table of recurrent tickets
+        "recurrentes": recurrentes,                  # NEW (table data)
         "mix_by_area": mix_by_area,
         "tickets_per_day": ts,
         "avg_ttr_30d": avg_ttr_30d,
-        "sla_vs_target": sla_vs_target,
-        # brief list of open items for the table with elapsed
-        "open_items": [{
+        "sla_vs_target_area": sla_vs_target_area,    # NEW (per area rule-aware)
+        "sla_vs_target_tipo": sla_vs_target_tipo,    # NEW (per tipo rule-aware)
+        "open_items": open_items
+    })
+
+@app.get('/api/gerencia/sin_asignar')
+def api_gerencia_sin_asignar():
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    rows = fetchall("""
+        SELECT t.id, t.area, t.prioridad, t.estado, t.detalle, t.ubicacion, t.created_at, t.due_at
+        FROM Tickets t
+        WHERE t.org_id=? AND t.assigned_to IS NULL
+          AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+        ORDER BY
+          CASE t.prioridad
+            WHEN 'URGENTE' THEN 1
+            WHEN 'ALTA'    THEN 2
+            WHEN 'MEDIA'   THEN 3
+            ELSE 4
+          END ASC,
+          t.created_at ASC
+        LIMIT 200
+    """, (org_id,))
+    now = datetime.now().isoformat()
+    out = []
+    for r in rows:
+        out.append({
             "id": r["id"],
             "area": r["area"],
             "prioridad": r["prioridad"],
             "estado": r["estado"],
             "detalle": r["detalle"],
             "ubicacion": r["ubicacion"],
-            "assigned_to": r.get("assigned_to"),
-            "assigned_name": r.get("assigned_name"),
             "created_at": r["created_at"],
             "due_at": r["due_at"],
-            "elapsed_min": _minutes_between(r["created_at"], now.isoformat())
-        } for r in open_rows]
+            "elapsed_min": _minutes_between(r["created_at"], now)
+        })
+    return jsonify({"items": out, "count": len(out)})
+
+@app.get('/api/gerencia/performance')
+def api_gerencia_performance():
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    org_id, _hotel_id = current_scope()
+    if not org_id:
+        return jsonify({"error": "no org"}), 400
+
+    group_by = (request.args.get('group_by') or 'area').lower()
+    if group_by not in ('user', 'supervisor', 'area'):
+        return jsonify({"error": "bad group_by"}), 400
+
+    since = (datetime.now() - timedelta(days=30)).isoformat()
+
+    # Base resolved set (last 30d)
+    base = fetchall("""
+        SELECT t.id, t.area, t.assigned_to, t.created_at, t.finished_at, t.due_at,
+               u.username AS user_name,
+               u.supervisor_id,
+               s.username AS supervisor_name
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        LEFT JOIN Users s ON s.id = u.supervisor_id
+        WHERE t.org_id=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+    """, (org_id, since))
+
+    from collections import defaultdict, Counter
+    # buckets
+    agg = defaultdict(lambda: {
+        "count": 0, "ttr_sum": 0, "ttr_n": 0, "sla_n": 0, "sla_hit": 0
     })
+
+    def key_of(row):
+        if group_by == 'user':
+            return row.get("user_name") or "(sin asignar)"
+        if group_by == 'supervisor':
+            return row.get("supervisor_name") or "(sin supervisor)"
+        return row.get("area") or "GENERAL"
+
+    for r in base:
+        k = key_of(r)
+        a = agg[k]
+        a["count"] += 1
+
+        # TTR
+        ttr = _minutes_between(r.get("created_at"), r.get("finished_at"))
+        if ttr is not None:
+            a["ttr_sum"] += ttr; a["ttr_n"] += 1
+
+        # SLA
+        if r.get("due_at"):
+            a["sla_n"] += 1
+            try:
+                finished = datetime.fromisoformat(str(r.get("finished_at")))
+                due      = datetime.fromisoformat(str(r.get("due_at")))
+                if finished <= due:
+                    a["sla_hit"] += 1
+            except Exception:
+                pass
+
+    # Convert to rows
+    rows = []
+    for k, a in agg.items():
+        ttr = int(round(a["ttr_sum"] / a["ttr_n"])) if a["ttr_n"] > 0 else 0
+        sla = round(100.0 * a["sla_hit"] / a["sla_n"], 1) if a["sla_n"] > 0 else 0.0
+        rows.append({"key": k, "tickets": a["count"], "ttr_avg_min": ttr, "sla_pct": sla})
+
+    # Sort: SLA desc, then TTR asc, then tickets desc
+    rows.sort(key=lambda r: (-r["sla_pct"], r["ttr_avg_min"], -r["tickets"]))
+    return jsonify({"group_by": group_by, "rows": rows, "since": since})
+
+
 
 # ---------------------------- run ----------------------------
 if __name__ == '__main__':

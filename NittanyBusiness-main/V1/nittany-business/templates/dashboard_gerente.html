@@ -218,6 +218,24 @@
   </div>
 </div>
 
+<!-- No asignados -->
+<div class="card mt-3">
+  <div class="card-header bg-white fw-semibold">No asignados</div>
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>Área</th><th>Prioridad</th><th>Detalle</th><th>Ubicación</th><th>Creado</th><th>Vence</th><th>Espera</th>
+        </tr>
+      </thead>
+      <tbody id="g-unassigned-tbody">
+        <tr><td colspan="8" class="text-center text-muted py-3">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
 {% endblock %}
 
 
@@ -286,6 +304,63 @@
   const r = await fetch("{{ url_for('api_gerencia_summary') }}");
   if(!r.ok) return;
   const j = await r.json();
+
+    // --- TTR por tipo (min)
+  if (j.ttr_by_type) {
+    const tiposTT = Object.keys(j.ttr_by_type || {});
+    const valsTT  = tiposTT.map(k => j.ttr_by_type[k]);
+    const el = document.getElementById('g-ttr-tipo');
+    if (el) {
+      new Chart(el, {
+        type: 'bar',
+        data: { labels: tiposTT, datasets: [{ label: 'min', data: valsTT, backgroundColor: BRAND }] },
+        options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
+      });
+    }
+  }
+
+  // --- SLA vs Objetivo por tipo (usa reglas slarules si existen; fallback a env)
+  if (j.sla_vs_target_tipo) {
+    const lbls = j.sla_vs_target_tipo.map(x => x.tipo);
+    const real = j.sla_vs_target_tipo.map(x => x.real);
+    const obj  = j.sla_vs_target_tipo.map(x => x.objetivo);
+    const el = document.getElementById('g-sla-vs-tipo');
+    if (el) {
+      new Chart(el, {
+        type: 'bar',
+        data: { labels: lbls, datasets: [
+          { label:'Real', data: real, backgroundColor: ACCENT },
+          { label:'Objetivo', data: obj, backgroundColor: WARNING }
+        ]},
+        options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100 } }, plugins:{ legend:{ position:'bottom' } } }
+      });
+    }
+  }
+
+  // --- No asignados table
+  try {
+    const r2 = await fetch("{{ url_for('api_gerencia_sin_asignar') }}");
+    if (r2.ok) {
+      const u = await r2.json();
+      const Tu = document.getElementById('g-unassigned-tbody');
+      if (Tu) {
+        const rows = (u.items || []).map(t => `
+          <tr>
+            <td>#${t.id}</td>
+            <td>${t.area || '—'}</td>
+            <td>${t.prioridad || '—'}</td>
+            <td class="text-truncate" style="max-width:380px">${t.detalle || ''}</td>
+            <td>${t.ubicacion || '—'}</td>
+            <td><small>${t.created_at || '—'}</small></td>
+            <td><small>${t.due_at || '—'}</small></td>
+            <td>${t.elapsed_min != null ? (t.elapsed_min + ' min') : '—'}</td>
+          </tr>
+        `).join('');
+        Tu.innerHTML = rows || `<tr><td colspan="8" class="text-center text-muted py-3">Sin no asignados</td></tr>`;
+      }
+    }
+  } catch (_) {}
+
 
   // KPI tiles
   document.getElementById('g-avg-ttr').textContent = (j.avg_ttr_30d ?? 0);
