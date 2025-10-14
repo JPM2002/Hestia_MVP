@@ -12,7 +12,6 @@
   @media (max-width:420px){ .tk-meta{ max-width:46%; } }
 </style>
 
-
 <header class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h1 class="h5 mb-0">🧹 Housekeeping</h1>
@@ -207,7 +206,6 @@
         </div>
       </div>
 
-
       <div class="mt-2 d-flex flex-wrap gap-1">
         {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
           <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
@@ -341,7 +339,7 @@
       if (!isNaN(created)) spanFeat.textContent = fmtDHMS(now - created);
     }
 
-    // list items
+    // list items (optional hook)
     document.querySelectorAll('.hk-wait').forEach(el=>{
       const created = Date.parse(el.getAttribute('data-created') || '');
       if (!isNaN(created)) el.textContent = fmtDHMS(now - created);

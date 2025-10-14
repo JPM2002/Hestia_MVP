@@ -1510,6 +1510,66 @@ def ticket_create():
     return render_template('ticket_create.html', user=session['user'],
                            areas=areas, prioridades=prioridades, canales=canales)
 
+# -------------------- HK: Shift (MVP, session-based) --------------------
+from datetime import datetime, timezone, timedelta
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+@app.get('/api/hk/shift')
+def api_hk_shift_status():
+    s = session.get('hk_shift') or {}
+    # compute elapsed (not counting paused time for MVP simplicity)
+    started = s.get('started_at')
+    paused  = s.get('paused', False)
+    if started:
+        try:
+            dt = datetime.fromisoformat(started)
+            elapsed = int((datetime.now(timezone.utc) - dt).total_seconds())
+        except Exception:
+            elapsed = 0
+    else:
+        elapsed = 0
+    return jsonify({
+        "active": bool(started) and not s.get('ended_at'),
+        "started_at": started,
+        "paused": paused,
+        "ended_at": s.get('ended_at'),
+        "elapsed": elapsed
+    })
+
+@app.post('/hk/shift/start')
+def hk_shift_start():
+    session['hk_shift'] = {
+        "started_at": _now_iso(),
+        "paused": False,
+        "ended_at": None
+    }
+    session.modified = True
+    return ('', 204)
+
+@app.post('/hk/shift/pause')
+def hk_shift_pause():
+    s = session.get('hk_shift') or {}
+    if not s.get('started_at'):
+        return ('', 204)
+    s['paused'] = not s.get('paused', False)  # toggle
+    session['hk_shift'] = s
+    session.modified = True
+    return ('', 204)
+
+@app.post('/hk/shift/end')
+def hk_shift_end():
+    s = session.get('hk_shift') or {}
+    if not s.get('started_at'):
+        return ('', 204)
+    s['ended_at'] = _now_iso()
+    s['paused'] = False
+    session['hk_shift'] = s
+    session.modified = True
+    return ('', 204)
+
+
 @app.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
