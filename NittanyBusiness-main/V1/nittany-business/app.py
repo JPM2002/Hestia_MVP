@@ -1928,50 +1928,55 @@ def api_sup_open_by_priority():
 # ---------------------------- Supervisor: team performance (30d) ----------------------------
 @app.get('/api/supervisor/team_stats')
 def api_supervisor_team_stats():
-    """
-    Lightweight team summary for the supervisor’s area.
-    Returns counts of open/critical/resolved_today to feed small KPI blocks or sanity checks.
-    """
     if 'user' not in session:
-        return jsonify({"error": "unauthorized"}), 401
+        return jsonify({"ok": False}), 401
 
     org_id, _hotel_id = current_scope()
-    if not org_id:
-        return jsonify({"error": "no org"}), 400
+    area = request.args.get('area')
+    if not area or area == 'None':
+        area = _user_primary_area(org_id, session['user']['id'])
 
-    u = session.get('user') or {}
-    area = (request.args.get('area') or u.get('area') or u.get('team_area') or '').strip()
-    if not area:
-        # Fallback to a harmless empty result if still missing
-        return jsonify({"area": None, "open": 0, "critical": 0, "resolved_today": 0})
+    # RBAC: supervisor must manage the area (if we have one)
+    if current_org_role() == 'SUPERVISOR' and area:
+        if not _user_has_area(area):
+            return jsonify({"error": "forbidden"}), 403
 
-    _require_area_manage(area)
-
-    # Open tickets (area)
+    # Open snapshot (priority mix + “critical” computed from due_at)
     open_rows = fetchall("""
-        SELECT prioridad, is_critical, created_at FROM Tickets
+        SELECT prioridad, due_at, estado, created_at
+        FROM Tickets
         WHERE org_id=? AND area=? AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
-    """, (org_id, area))
+    """, (org_id, area or ""))
 
-    # Critical
-    critical = sum(1 for r in open_rows if (r.get('is_critical') in (True, 1, 't', 'true')))
+    now = datetime.now()
 
-    # Resolved today (area)
-    start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    resolved_today = fetchval("""
-        SELECT COUNT(1) FROM Tickets
-        WHERE org_id=? AND area=? AND estado='RESUELTO' AND finished_at >= ?
-    """, (org_id, area, start_day)) or 0
+    def _is_critical(due_at):
+        if not due_at:
+            return False
+        try:
+            d = datetime.fromisoformat(str(due_at))
+            return d <= now
+        except Exception:
+            return False
+
+    critical_open = sum(1 for r in open_rows if _is_critical(r.get("due_at")))
+    prio_counts = {"URGENTE": 0, "ALTA": 0, "MEDIA": 0, "BAJA": 0}
+    for r in open_rows:
+        p = (r.get("prioridad") or "MEDIA").upper()
+        if p not in prio_counts:
+            prio_counts[p] = 0
+        prio_counts[p] += 1
 
     return jsonify({
         "area": area,
-        "open": len(open_rows),
-        "critical": int(critical),
-        "resolved_today": int(resolved_today)
+        "critical_open": critical_open,
+        "open_by_priority": {
+            "labels": list(prio_counts.keys()),
+            "values": [prio_counts[k] for k in prio_counts.keys()]
+        }
     })
 
 
-@app.get('/api/sup/open_by_type')
 @app.get('/api/sup/open_by_type')
 def api_sup_open_by_type():
     """

@@ -188,6 +188,26 @@
 {% endblock %}
 
 {% block scripts %}
+
+<script>
+  // Area from server; empty string if None
+  const AREA = {{ (kpis.area or '') | tojson }};
+
+  // Update your fetches to pass AREA:
+  fetch(`{{ url_for('api_sup_open_by_type') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {labels:[],values:[]})
+    .then(j => {/* draw chart */});
+
+  fetch(`{{ url_for('api_sup_performance_by_user') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {items:[]})
+    .then(j => {/* fill table */});
+
+  fetch(`{{ url_for('api_supervisor_team_stats') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {})
+    .then(j => {/* use j.open_by_priority / j.critical_open */});
+</script>
+
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   const css = getComputedStyle(document.documentElement);
@@ -305,6 +325,8 @@
       T.innerHTML = rows || `<tr><td colspan="5" class="text-center text-muted py-3">Sin datos (30d)</td></tr>`;
     });
 </script>
+
+
 
 
 {% endblock %}
