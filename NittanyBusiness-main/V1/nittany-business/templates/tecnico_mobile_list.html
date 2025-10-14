@@ -9,6 +9,17 @@
 {% block title %}{{ icon }} {{ A|title }} — {{ 'Mis asignados' if S=='my' else ('En curso' if S=='in_progress' else ('Disponibles' if S=='available' else ('Historial' if S=='history' else 'Listado'))) }}{% endblock %}
 
 {% block content %}
+
+<style>
+  /* keep right column inside card on small screens */
+  .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .tk-main { min-width:0; } /* allow text to wrap */
+  .tk-meta { flex:0 0 auto; max-width:40%; text-align:right; }
+  .tk-meta .small { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.1; }
+  .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
+  @media (max-width:420px){ .tk-meta{ max-width:46%; } }
+</style>
+
 <header class="d-flex justify-content-between align-items-center mb-2">
   <div>
     <h1 class="h5 mb-0">{{ icon }} {{ A|title }}</h1>
@@ -41,7 +52,7 @@
             {{ 'Hab. ' if is_hk or is_rs else '' }}{{ t.ubicacion or '—' }}
             {% if is_rs %}<span class="small text-muted">({{ t.canal or 'canal desconocido' }})</span>{% endif %}
           </div>
-          <div class="small text-muted text-truncate" style="max-width: 75vw">{{ t.detalle }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 60vw">{{ t.detalle }}</div>
         </div>
         <div class="text-end">
           <span class="badge
