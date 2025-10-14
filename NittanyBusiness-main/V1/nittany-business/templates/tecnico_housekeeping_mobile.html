@@ -2,6 +2,17 @@
 {% block title %}Housekeeping — Mi trabajo{% endblock %}
 
 {% block content %}
+<style>
+  /* keep right column inside card on small screens */
+  .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .tk-main { min-width:0; } /* allow text to wrap */
+  .tk-meta { flex:0 0 auto; max-width:40%; text-align:right; }
+  .tk-meta .small { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.1; }
+  .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
+  @media (max-width:420px){ .tk-meta{ max-width:46%; } }
+</style>
+
+
 <header class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h1 class="h5 mb-0">🧹 Housekeeping</h1>
@@ -15,6 +26,16 @@
     {% endif %}
   </div>
 </header>
+
+<!-- Shift controls -->
+<section class="mb-3">
+  <div class="d-flex gap-2">
+    <button id="btn-shift-start" class="btn btn-success flex-fill">Iniciar turno</button>
+    <button id="btn-shift-pause" class="btn btn-outline-warning flex-fill">Pausa</button>
+    <button id="btn-shift-stop"  class="btn btn-outline-danger flex-fill">Cerrar turno</button>
+  </div>
+  <div class="small text-muted mt-1" id="shift-status">Turno: inactivo</div>
+</section>
 
 <!-- Quick Actions (6 buttons) -->
 <section class="mb-3">
@@ -71,39 +92,121 @@
   </div>
 </section>
 
-
-<!-- Optional small search for the preview list -->
+<!-- Optional small search for the list -->
 <div class="mb-2">
   <input id="hk-search" class="form-control form-control-sm"
          placeholder="Buscar habitación / detalle..." />
 </div>
 
-<!-- Preview: Mis asignados (top 10) -->
-<h2 class="h6 text-muted mb-2">Mis asignados</h2>
-<ul id="hk-list" class="list-unstyled d-grid gap-2">
-  {% set _items = (tickets or [])[:10] %}
-  {% for t in _items %}
-  <li class="card {% if t.is_critical %}border-warning{% endif %}"
-      data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle ~ ' ' ~ t.estado ~ ' ' ~ t.prioridad)|lower }}">
-    <div class="card-body p-2">
-      <div class="d-flex justify-content-between align-items-center">
-        <div class="me-2">
-          <div class="fw-semibold">Hab. {{ t.ubicacion or '—' }}</div>
-          <div class="small text-muted text-truncate" style="max-width: 70vw">{{ t.detalle }}</div>
+<!-- Featured: en curso o lo más urgente pendiente -->
+{% set ns = namespace(featured=None) %}
+{% for t in (tickets or []) %}
+  {% if t.estado in ['EN_CURSO','ACEPTADO','ASIGNADO'] and ns.featured is none %}
+    {% set ns.featured = t %}
+  {% endif %}
+{% endfor %}
+
+{% if ns.featured %}
+  <h2 class="h6 text-muted mb-2">🟢 Ticket en foco</h2>
+  <div class="card border-2 border-success mb-3" id="hk-featured"
+       data-created="{{ ns.featured.created_at }}">
+    <div class="card-body p-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="me-3">
+          <div class="fw-semibold">
+            Ticket {{ '%03d' % ns.featured.id }} · Hab. {{ ns.featured.ubicacion or '—' }}
+          </div>
+          <div class="small text-muted list-item-detail" style="max-width: 75vw">
+            {{ ns.featured.detalle }}
+          </div>
+          <div class="small mt-1">
+            Estado: <span class="fw-semibold">{{ ns.featured.estado|nice_state }}</span>
+            · Creado: {{ ns.featured.created_at|short_dt }}
+            {% if ns.featured.due_at %} · SLA: {{ ns.featured.due_at|short_dt }}{% endif %}
+          </div>
+          {% if ns.featured.estado in ['PENDIENTE','ASIGNADO','ACEPTADO'] %}
+          <div class="small text-muted mt-1">
+            ⏱ Esperando inicio: <span id="hk-wait-timer">—</span>
+          </div>
+          {% endif %}
         </div>
         <div class="text-end">
+          <span class="badge
+            {% if ns.featured.prioridad=='URGENTE' %}text-bg-danger
+            {% elif ns.featured.prioridad=='ALTA' %}text-bg-warning
+            {% elif ns.featured.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ ns.featured.prioridad or '—' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="mt-3 d-grid gap-2">
+        {% if ns.featured.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=ns.featured.id) }}">
+            <button class="btn btn-lg btn-primary w-100">Aceptar</button>
+          </form>
+        {% endif %}
+
+        {% if ns.featured.estado in ['ACEPTADO'] %}
+          <form method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}">
+            <button class="btn btn-lg btn-dark w-100">Iniciar</button>
+          </form>
+        {% endif %}
+
+        {% if ns.featured.estado in ['ACEPTADO','EN_CURSO'] %}
+          <div class="d-flex gap-2">
+            <form class="flex-fill" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}">
+              <input type="hidden" name="motivo" value="Esperando habitación">
+              <button class="btn btn-lg btn-outline-warning w-100">Pausar</button>
+            </form>
+            <form class="flex-fill" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}">
+              <button class="btn btn-lg btn-danger w-100">Finalizar</button>
+            </form>
+          </div>
+        {% endif %}
+
+        {% if ns.featured.estado == 'PAUSADO' %}
+          <form method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}">
+            <button class="btn btn-lg btn-outline-secondary w-100">Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<!-- En espera / pendientes (lista compacta) -->
+<h2 class="h6 text-muted mb-2">En espera</h2>
+<ul id="hk-list" class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) if t.id != (ns.featured.id if ns.featured else -1) %}
+  <li class="card {% if t.is_critical %}border-warning{% endif %}"
+      data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle ~ ' ' ~ t.estado ~ ' ' ~ t.prioridad)|lower }}"
+      data-created="{{ t.created_at }}">
+    <div class="card-body p-2">
+      <div class="tk-row">
+        <div class="tk-main">
+          <div class="fw-semibold">{{ t.ubicacion or 'Ubicación' }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 90vw">{{ t.detalle }}</div>
+        </div>
+        <div class="tk-meta">
           <span class="badge
             {% if t.prioridad=='URGENTE' %}text-bg-danger
             {% elif t.prioridad=='ALTA' %}text-bg-warning
             {% elif t.prioridad=='MEDIA' %}text-bg-primary
             {% else %}text-bg-secondary{% endif %}">
-            {{ t.prioridad }}
+            {{ t.prioridad or '—' }}
           </span>
-          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-            {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
-          </div>
+          {% if t.due_at %}
+            <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+              vence {{ t.due_at|short_dt }}
+            </div>
+          {% else %}
+            <div class="small text-muted">Sin SLA</div>
+          {% endif %}
         </div>
       </div>
+
 
       <div class="mt-2 d-flex flex-wrap gap-1">
         {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
@@ -111,7 +214,6 @@
             <button class="btn btn-sm btn-outline-primary">Aceptar</button>
           </form>
         {% endif %}
-
         {% if t.estado in ['ACEPTADO'] %}
           <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
             <button class="btn btn-sm btn-dark">Iniciar</button>
@@ -121,17 +223,15 @@
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
         {% endif %}
-
         {% if t.estado in ['EN_CURSO'] %}
           <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
             <input type="hidden" name="motivo" value="Pendiente insumos">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
           <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
-            <button class="btn btn-sm btn-success">Finalizar</button>
+            <button class="btn btn-sm btn-danger">Finalizar</button>
           </form>
         {% endif %}
-
         {% if t.estado in ['PAUSADO'] %}
           <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
             <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
@@ -146,7 +246,7 @@
     </div>
   </li>
   {% else %}
-    <li class="text-center text-muted py-4">No tienes tickets asignados.</li>
+    <li class="text-center text-muted py-4">No tienes tickets en espera.</li>
   {% endfor %}
 </ul>
 
@@ -185,15 +285,70 @@
 
 {% block scripts %}
 <script>
-  // Simple client-side filter for the preview list
+  // ========== Shift controls ==========
+  const shiftStatus = document.getElementById('shift-status');
+  async function shift(action){
+    const fd = new FormData(); fd.append('action', action);
+    const r = await fetch('/api/tech/shift', { method:'POST', body: fd });
+    if(!r.ok) return;
+    const j = await r.json();
+    if (j.active) {
+      try {
+        const d = new Date(j.started_at);
+        shiftStatus.textContent = `Turno: activo desde ${d.toLocaleString()}`;
+      } catch(_) {
+        shiftStatus.textContent = 'Turno: activo';
+      }
+    } else {
+      shiftStatus.textContent = 'Turno: inactivo';
+    }
+  }
+  document.getElementById('btn-shift-start')?.addEventListener('click', ()=>shift('start'));
+  document.getElementById('btn-shift-pause')?.addEventListener('click', ()=>shift('pause'));
+  document.getElementById('btn-shift-stop') ?.addEventListener('click', ()=>shift('stop'));
+
+  // ========== Search filter for list ==========
   const search = document.getElementById('hk-search');
-  const items  = Array.from(document.querySelectorAll('#hk-list > li.card'));
+  const listItems  = Array.from(document.querySelectorAll('#hk-list > li.card'));
   search?.addEventListener('input', (e)=>{
     const q = (e.target.value || '').trim().toLowerCase();
-    items.forEach(li => {
+    listItems.forEach(li => {
       const key = li.getAttribute('data-key') || '';
       li.style.display = (!q || key.includes(q)) ? '' : 'none';
     });
   });
+
+  // ========== Live "waiting to start" timers ==========
+  function fmtDHMS(ms){
+    if (!ms || ms < 0) return '—';
+    const s = Math.floor(ms/1000);
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const sec = s%60;
+    if (h>0) return `${h}h ${m}m ${sec}s`;
+    if (m>0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+
+  function tickTimers(){
+    const now = Date.now();
+
+    // featured
+    const feat = document.getElementById('hk-featured');
+    const spanFeat = document.getElementById('hk-wait-timer');
+    if (feat && spanFeat) {
+      const created = Date.parse(feat.getAttribute('data-created') || '');
+      if (!isNaN(created)) spanFeat.textContent = fmtDHMS(now - created);
+    }
+
+    // list items
+    document.querySelectorAll('.hk-wait').forEach(el=>{
+      const created = Date.parse(el.getAttribute('data-created') || '');
+      if (!isNaN(created)) el.textContent = fmtDHMS(now - created);
+    });
+  }
+
+  tickTimers();
+  setInterval(tickTimers, 1000);
 </script>
 {% endblock %}
