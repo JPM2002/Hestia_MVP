@@ -67,11 +67,11 @@
           <td>{{ t.id }}</td>
           <td>{{ t.area }}</td>
           <td>{{ t.prioridad }}</td>
-          <td>{{ t.estado }}</td>
+          <td>{{ t.estado|nice_state }}</td>
           <td class="text-truncate" style="max-width: 340px">{{ t.detalle }}</td>
           <td>{{ t.ubicacion }}</td>
-          <td><small>{{ t.created_at }}</small></td>
-          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at or '-' }}</small></td>
+          <td><small>{{ t.created_at|short_dt }}</small></td>
+          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at|short_dt if t.due_at else '-' }}</small></td>
           <td class="text-nowrap">
             {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
               <form class="d-inline" method="post" action="{{ url_for('ticket_accept', id=t.id) }}">

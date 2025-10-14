@@ -100,7 +100,7 @@
             {{ t.prioridad }}
           </span>
           <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-            {% if t.due_at %}vence {{ t.due_at }}{% else %}sin SLA{% endif %}
+            {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
           </div>
         </div>
       </div>
@@ -140,8 +140,8 @@
       </div>
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
-        <span>Estado: {{ t.estado }}</span>
-        <span>Creado: {{ t.created_at }}</span>
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
       </div>
     </div>
   </li>

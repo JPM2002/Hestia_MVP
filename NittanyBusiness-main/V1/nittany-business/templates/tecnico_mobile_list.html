@@ -53,9 +53,9 @@
           </span>
           <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
             {% if S == 'history' %}
-              {% if t.finished_at %}resuelto {{ t.finished_at }}{% else %}resuelto{% endif %}
+              {% if t.finished_at %}resuelto {{ t.finished_at|short_dt }}{% else %}resuelto{% endif %}
             {% else %}
-              {% if t.due_at %}vence {{ t.due_at }}{% else %}sin SLA{% endif %}
+              {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
             {% endif %}
           </div>
         </div>
@@ -105,8 +105,12 @@
       {% endif %}
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
-        <span>Estado: {{ t.estado }}</span>
-        <span>{{ 'Creado' if S!='history' else 'Resuelto' }}: {{ (t.created_at if S!='history' else (t.finished_at or t.created_at)) }}</span>
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>
+          {{ 'Creado' if S!='history' else 'Resuelto' }}:
+          {{ (t.created_at if S!='history' else (t.finished_at or t.created_at))|short_dt }}
+        </span>
+
       </div>
     </div>
   </li>

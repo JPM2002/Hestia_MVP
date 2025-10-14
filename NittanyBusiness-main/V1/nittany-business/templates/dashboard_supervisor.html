@@ -70,11 +70,13 @@
         <tr class="{% if t.is_critical %}table-warning{% endif %}">
           <td class="fw-semibold">{{ t.id }}</td>
           <td>{{ t.prioridad }}</td>
-          <td>{{ t.estado }}</td>
+          <td>{{ t.estado|nice_state }}</td>
           <td class="text-truncate" style="max-width: 420px">{{ t.detalle }}</td>
           <td>{{ t.assigned_name or t.assigned_to or '-' }}</td>
-          <td><small class="text-muted">{{ t.created_at }}</small></td>
-          <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}"><small>{{ t.due_at or '-' }}</small></td>
+          <td><small class="text-muted">{{ t.created_at|short_dt }}</small></td>
+          <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}">
+            <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
+          </td>
           <td class="text-end">
             {% if techs %}
               <form class="d-inline" method="post" action="{{ url_for('ticket_reassign', id=t.id) }}">

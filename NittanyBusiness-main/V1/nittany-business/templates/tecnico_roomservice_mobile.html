@@ -21,21 +21,21 @@
   <div class="row g-2 row-cols-2">
     <div class="col">
       <a class="btn w-100 btn-light py-3 border rounded-3"
-         href="{{ url_for('tech_in_progress', slug='housekeeping') }}">
+         href="{{ url_for('tech_in_progress', slug='roomservice') }}">
         <div class="fw-semibold">En curso</div>
         <div class="small text-muted">lo que estoy haciendo</div>
       </a>
     </div>
     <div class="col">
       <a class="btn w-100 btn-light py-3 border rounded-3"
-         href="{{ url_for('tech_my', slug='housekeeping') }}">
+         href="{{ url_for('tech_my', slug='roomservice') }}">
         <div class="fw-semibold">Mis asignados</div>
         <div class="small text-muted">todo lo mío</div>
       </a>
     </div>
     <div class="col">
       <a class="btn w-100 btn-light py-3 border rounded-3"
-         href="{{ url_for('tech_available', slug='housekeeping') }}">
+         href="{{ url_for('tech_available', slug='roomservice') }}">
         <div class="fw-semibold">Lista</div>
         <div class="small text-muted">disponibles del área</div>
       </a>
@@ -56,14 +56,14 @@
     </div>
     <div class="col">
       <a class="btn w-100 btn-light py-3 border rounded-3"
-         href="{{ url_for('tech_tools', slug='housekeeping') }}">
+         href="{{ url_for('tech_tools', slug='roomservice') }}">
         <div class="fw-semibold">Herramientas</div>
         <div class="small text-muted">checklists y recursos</div>
       </a>
     </div>
     <div class="col">
       <a class="btn w-100 btn-light py-3 border rounded-3"
-         href="{{ url_for('tech_history', slug='housekeeping', days=7) }}">
+         href="{{ url_for('tech_history', slug='roomservice', days=7) }}">
         <div class="fw-semibold">Historial</div>
         <div class="small text-muted">últimos 7 días</div>
       </a>
@@ -102,7 +102,7 @@
             {{ t.prioridad }}
           </span>
           <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-            {% if t.due_at %}entrega {{ t.due_at }}{% else %}sin SLA{% endif %}
+            {% if t.due_at %}entrega {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
           </div>
         </div>
       </div>
@@ -146,8 +146,9 @@
       </div>
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
-        <span>Estado: {{ t.estado }}</span>
-        <span>Creado: {{ t.created_at }}</span>
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
+
       </div>
     </div>
   </li>

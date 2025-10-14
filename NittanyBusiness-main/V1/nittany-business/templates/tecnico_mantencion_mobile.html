@@ -91,7 +91,7 @@
         <div class="text-end">
           <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ t.prioridad }}</span>
           {% if t.due_at %}
-            <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">SLA {{ t.due_at }}</div>
+            <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">SLA {{ t.due_at|short_dt }}</div>
           {% else %}
             <div class="small text-muted">Sin SLA</div>
           {% endif %}
@@ -122,8 +122,8 @@
       </div>
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
-        <span>Estado: {{ t.estado }}</span>
-        <span>Creado: {{ t.created_at }}</span>
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
       </div>
     </div>
   </li>

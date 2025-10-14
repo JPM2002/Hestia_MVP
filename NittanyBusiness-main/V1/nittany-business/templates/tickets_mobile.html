@@ -11,7 +11,7 @@
     <h1 class="h5 mb-0">📋 Tickets</h1>
     <div class="small text-muted">
       {% if F.area %}<span class="badge text-bg-light me-1">{{ F.area }}</span>{% endif %}
-      {% if F.estado %}<span class="badge text-bg-light me-1">{{ F.estado }}</span>{% endif %}
+      {% if F.estado %}<span class="badge text-bg-light me-1">{{ F.estado|nice_state }}</span>{% endif %}
       {% if F.prioridad %}<span class="badge text-bg-light me-1">{{ F.prioridad }}</span>{% endif %}
       {% if F.period and F.period!='today' %}<span class="badge text-bg-light me-1">{{ F.period }}</span>{% endif %}
       {% if q %}<span class="badge text-bg-light">“{{ q }}”</span>{% endif %}
@@ -51,9 +51,9 @@
           </span>
           <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
             {% if t.estado == 'RESUELTO' %}
-              resuelto {{ t.finished_at or t.due_at or '' }}
+              resuelto {{ (t.finished_at or t.due_at)|short_dt if (t.finished_at or t.due_at) else '' }}
             {% else %}
-              {% if t.due_at %}vence {{ t.due_at }}{% else %}sin SLA{% endif %}
+              {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
             {% endif %}
           </div>
         </div>
@@ -108,8 +108,8 @@
       </div>
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
-        <span>Estado: {{ t.estado }}</span>
-        <span>Creado: {{ t.created_at }}</span>
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
       </div>
     </div>
   </li>

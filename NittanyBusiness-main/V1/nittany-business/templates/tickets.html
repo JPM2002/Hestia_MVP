@@ -79,7 +79,7 @@
             {{ t.prioridad }}
           </span>
         </td>
-        <td>{{ t.estado }}</td>
+        <td>{{ t.estado|nice_state }}</td>
         <td style="max-width: 260px">{{ t.detalle }}</td>
         <td>{{ t.ubicacion }}</td>
         <td>
@@ -89,14 +89,15 @@
             <span class="text-muted">—</span>
           {% endif %}
         </td>
-        <td><small>{{ t.created_at }}</small></td>
+        <td><small>{{ t.created_at|short_dt }}</small></td>
         <td>
           {% if t.due_at %}
-            <small>{{ t.due_at }}</small>
+            <small>{{ t.due_at|short_dt }}</small>
             {% if t.is_critical %}<span class="badge badge-critical ms-1">crítico</span>{% endif %}
           {% else %}
             <small class="text-muted">—</small>
           {% endif %}
+
         </td>
         <td class="text-nowrap">
           <form class="d-inline" method="post" action="{{ url_for('ticket_accept', id=t.id) }}">

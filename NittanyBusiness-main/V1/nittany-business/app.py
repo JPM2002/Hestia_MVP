@@ -19,6 +19,90 @@ from jinja2 import TemplateNotFound
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
 
+# --- UTIL: estado legible, fechas cortas y "hace X" -----------------
+from datetime import timezone
+
+ESTADO_NICE = {
+    "PENDIENTE": "Pendiente",
+    "ASIGNADO": "Asignado",
+    "ACEPTADO": "Aceptado",
+    "EN_CURSO": "En curso",
+    "PAUSADO": "Pausado",
+    "DERIVADO": "Derivado",
+    "RESUELTO": "Resuelto",
+}
+
+def _to_dt(x):
+    if not x:
+        return None
+    if isinstance(x, datetime):
+        return x
+    try:
+        # tolera strings sqlite/pg
+        return datetime.fromisoformat(str(x))
+    except Exception:
+        return None
+
+def nice_state(value: str) -> str:
+    if not value:
+        return ""
+    return ESTADO_NICE.get(value.upper(), value.replace("_", " ").title())
+
+def short_dt(value) -> str:
+    """
+    Devuelve HH:MM si es hoy; 'DD/MM HH:MM' si es este año; de lo contrario 'DD/MM/YYYY'.
+    """
+    dt = _to_dt(value)
+    if not dt:
+        return ""
+    now = datetime.now()
+    if dt.date() == now.date():
+        return dt.strftime("%H:%M")
+    if dt.year == now.year:
+        return dt.strftime("%d/%m %H:%M")
+    return dt.strftime("%d/%m/%Y")
+
+def ago(value) -> str:
+    """
+    'hace 5 min', 'hace 2 h', 'ayer', 'hace 3 d'
+    """
+    dt = _to_dt(value)
+    if not dt:
+        return ""
+    now = datetime.now(timezone.utc).astimezone() if dt.tzinfo else datetime.now()
+    delta = now - dt
+    s = int(delta.total_seconds())
+    if s < 60:
+        return "hace segundos"
+    m = s // 60
+    if m < 60:
+        return f"hace {m} min"
+    h = m // 60
+    if h < 24:
+        return f"hace {h} h"
+    d = h // 24
+    if d == 1:
+        return "ayer"
+    return f"hace {d} d"
+
+def round2(value):
+    try:
+        return f"{float(value):.2f}"
+    except Exception:
+        return value
+
+# Registrar filtros en Jinja
+app.jinja_env.filters["nice_state"] = nice_state
+app.jinja_env.filters["short_dt"]   = short_dt
+app.jinja_env.filters["ago"]        = ago
+app.jinja_env.filters["round2"]     = round2
+
+
+# --- UTIL: faltaba esta función en tu código y se usa en ticket_edit() ---
+def using_pg() -> bool:
+    return USE_PG
+
+
 # Demo switcher on login (set ENABLE_TECH_DEMO=1 in env to show it)
 app.config['ENABLE_TECH_DEMO'] = os.getenv('ENABLE_TECH_DEMO', '0') == '1'
 
@@ -1033,6 +1117,31 @@ def tech_tools(slug):
     return render_best(template_order,
                        area=area, slug=slug, user=session['user'],
                        device=g.device, view=g.view_mode, tools=tools)
+
+
+@app.post('/api/tech/shift')
+def api_tech_shift():
+    if 'user' not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    action = (request.form.get('action') or '').lower()
+    now = datetime.now().isoformat()
+
+    if action == 'start':
+        session['shift_active'] = True
+        session.setdefault('shift_started_at', now)
+    elif action == 'pause':
+        session['shift_active'] = False
+    elif action == 'stop':
+        session['shift_active'] = False
+        session.pop('shift_started_at', None)
+    else:
+        return jsonify({"ok": False, "error": "acción inválida"}), 400
+
+    return jsonify({
+        "ok": True,
+        "active": bool(session.get('shift_active')),
+        "started_at": session.get('shift_started_at')
+    })
 
 
 # ---------------------------- tickets list & filters ----------------------------

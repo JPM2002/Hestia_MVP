@@ -92,8 +92,10 @@
             </span>
           </td>
           <td class="text-truncate" style="max-width: 380px">{{ t.detalle }}</td>
-          <td><small>{{ t.created_at }}</small></td>
-          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at or '-' }}</small></td>
+          <td><small>{{ t.created_at|short_dt }}</small></td>
+          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}">
+            <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
+          </td>
         </tr>
       {% else %}
         <tr><td colspan="6" class="text-center text-muted py-4">Sin resultados</td></tr>
