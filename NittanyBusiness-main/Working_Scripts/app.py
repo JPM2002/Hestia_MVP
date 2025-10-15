@@ -23,7 +23,6 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 # ----------------------------- Config -----------------------------
 
 # ----------------------------- Copy (5-star tone) -----------------------------
-# ----------------------------- Copy (5-star tone) -----------------------------
 COPY = {
     "greet":
         "¡Hola! 👋 Soy tu asistente. Puedo ayudarte con mantención, housekeeping o room service.\n"
@@ -203,7 +202,50 @@ SLA_FALLBACK = {
 PENDING: Dict[str, Dict[str, Any]] = {}
 SESSION_TTL = 15 * 60  # seconds
 
+# ---- Runtime persistence flags/fallbacks ----
+RUNTIME_DB_OK = False          # flipped to True after tables are created successfully
+FALLBACK_WAMIDS = set()        # in-memory dedupe if table missing
+
+def ensure_runtime_tables():
+    global RUNTIME_DB_OK
+    try:
+        if using_pg():
+            execute("""
+            CREATE TABLE IF NOT EXISTS runtime_sessions (
+                phone TEXT PRIMARY KEY,
+                data  JSONB NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""")
+            execute("""
+            CREATE TABLE IF NOT EXISTS runtime_wamids (
+                id TEXT PRIMARY KEY,
+                seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""")
+        else:
+            execute("""
+            CREATE TABLE IF NOT EXISTS runtime_sessions (
+                phone TEXT PRIMARY KEY,
+                data  TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )""")
+            execute("""
+            CREATE TABLE IF NOT EXISTS runtime_wamids (
+                id TEXT PRIMARY KEY,
+                seen_at TEXT NOT NULL
+            )""")
+        RUNTIME_DB_OK = True
+        print("[BOOT] runtime tables ready", flush=True)
+    except Exception as e:
+        RUNTIME_DB_OK = False
+        print(f"[WARN] ensure_runtime_tables failed; using in-memory runtime: {e}", flush=True)
+
+
 app = Flask(__name__)
+try:
+    ensure_runtime_tables()
+except Exception as _e:
+    print(f"[WARN] ensure_runtime_tables at import failed: {_e}", flush=True)
+
 
 def _meta_get_media_url(media_id: str) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -260,6 +302,7 @@ def ensure_summary_in_session(s: Dict[str, Any]) -> str:
 
 
 # ----------------------------- DB helpers -----------------------------
+
 
 def fetchall(sql: str, params=()):
     conn = db_conn()
@@ -1166,5 +1209,6 @@ if __name__ == "__main__":
     ensure_runtime_tables()
     print(f"[BOOT] WhatsApp webhook starting on port {PORT} (DB={'PG' if using_pg() else 'SQLite'})", flush=True)
     app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+    
 
 
