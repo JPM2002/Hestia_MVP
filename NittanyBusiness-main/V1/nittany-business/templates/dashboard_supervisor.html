@@ -190,7 +190,7 @@
 {% block scripts %}
 
 <script>
-  // Area from server; empty string if None
+  // Normalize area coming from server; empty string if None so endpoints can default.
   const AREA = {{ (kpis.area or '') | tojson }};
 
   // Update your fetches to pass AREA:

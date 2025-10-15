@@ -200,6 +200,54 @@ def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
         q.update(extra)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 
+# --- Area helpers (Supervisor scope) -----------------------------------------
+def _user_primary_area(org_id: int, user_id: int):
+    """
+    Best-effort: return the user's primary/first area in this org.
+    Falls back to the area where the user handled more tickets recently.
+    Returns None if nothing found.
+    """
+    # If you have a mapping table orguserareas(user_id, org_id, area, is_primary)
+    row = fetchone("""
+        SELECT area
+        FROM OrgUserAreas
+        WHERE org_id=? AND user_id=?
+        ORDER BY COALESCE(is_primary, FALSE) DESC, area ASC
+        LIMIT 1
+    """, (org_id, user_id))
+    if row and row.get("area"):
+        return row["area"]
+
+    # Fallback: most frequent area in last 90 days
+    row = fetchone("""
+        SELECT area
+        FROM Tickets
+        WHERE org_id=? AND assigned_to=? AND created_at >= (NOW() - INTERVAL '90 days')
+        GROUP BY area
+        ORDER BY COUNT(1) DESC
+        LIMIT 1
+    """, (org_id, user_id))
+    return row["area"] if row else None
+
+
+def _user_has_area(area: str) -> bool:
+    """
+    True if the current user can manage the given area.
+    Managers can manage all. Supervisors must be mapped to the area.
+    """
+    if current_org_role() == 'GERENTE':
+        return True
+    if not area or area == 'None':
+        return False
+    org_id, _ = current_scope()
+    uid = session['user']['id']
+    row = fetchone("""
+        SELECT 1
+        FROM OrgUserAreas
+        WHERE org_id=? AND user_id=? AND area=?
+        LIMIT 1
+    """, (org_id, uid, area))
+    return bool(row)
 
 
 
@@ -1936,14 +1984,12 @@ def api_supervisor_team_stats():
     if not area or area == 'None':
         area = _user_primary_area(org_id, session['user']['id'])
 
-    # RBAC: supervisor must manage the area (if we have one)
-    if current_org_role() == 'SUPERVISOR' and area:
-        if not _user_has_area(area):
-            return jsonify({"error": "forbidden"}), 403
+    if current_org_role() == 'SUPERVISOR' and area and not _user_has_area(area):
+        return jsonify({"error": "forbidden"}), 403
 
-    # Open snapshot (priority mix + “critical” computed from due_at)
+    # Open tickets snapshot (priority mix + "critical" computed from due_at)
     open_rows = fetchall("""
-        SELECT prioridad, due_at, estado, created_at
+        SELECT prioridad, due_at
         FROM Tickets
         WHERE org_id=? AND area=? AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
     """, (org_id, area or ""))
@@ -1954,8 +2000,7 @@ def api_supervisor_team_stats():
         if not due_at:
             return False
         try:
-            d = datetime.fromisoformat(str(due_at))
-            return d <= now
+            return datetime.fromisoformat(str(due_at)) <= now
         except Exception:
             return False
 
@@ -1963,9 +2008,7 @@ def api_supervisor_team_stats():
     prio_counts = {"URGENTE": 0, "ALTA": 0, "MEDIA": 0, "BAJA": 0}
     for r in open_rows:
         p = (r.get("prioridad") or "MEDIA").upper()
-        if p not in prio_counts:
-            prio_counts[p] = 0
-        prio_counts[p] += 1
+        prio_counts[p] = prio_counts.get(p, 0) + 1
 
     return jsonify({
         "area": area,
@@ -1975,6 +2018,7 @@ def api_supervisor_team_stats():
             "values": [prio_counts[k] for k in prio_counts.keys()]
         }
     })
+
 
 
 @app.get('/api/sup/open_by_type')
