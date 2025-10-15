@@ -86,22 +86,22 @@
 </div>
 
 
-<!-- Table -->
-<div class="card mt-3">
+<div class="card mt-3" id="open-card">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <span>Tickets abiertos ({{ kpis.area or 'área' }})</span>
     <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
   </div>
+
   <div class="table-responsive">
-    <table class="table mb-0 align-middle">
+    <table class="table mb-0 align-middle" id="open-table">
       <thead class="table-light">
         <tr>
           <th>ID</th><th>Prioridad</th><th>Estado</th><th>Detalle</th><th>Técnico</th><th>Creado</th><th>Vence</th><th class="text-end">Acciones</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="open-tbody">
       {% for t in (tickets or []) %}
-        <tr class="{% if t.is_critical %}table-warning{% endif %}">
+        <tr class="data-row {% if t.is_critical %}table-warning{% endif %}">
           <td class="fw-semibold">{{ t.id }}</td>
           <td>{{ t.prioridad }}</td>
           <td>{{ t.estado|nice_state }}</td>
@@ -133,12 +133,29 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>
+        <tr class="empty-row"><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+
+  <!-- Pager -->
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small" id="open-pager">
+    <div id="open-range" class="text-muted">Mostrando 0–0 de 0</div>
+    <div class="d-flex align-items-center gap-2">
+      <label class="mb-0 text-muted">Por pág.</label>
+      <select id="open-size" class="form-select form-select-sm w-auto">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+      <button class="btn btn-sm btn-outline-dark" id="open-prev">‹</button>
+      <span id="open-page" class="mx-1">1/1</span>
+      <button class="btn btn-sm btn-outline-dark" id="open-next">›</button>
+    </div>
+  </div>
 </div>
+
 
 <!-- Desempeño del equipo (30d) -->
 <div class="card mt-3">
@@ -376,6 +393,60 @@
     T.innerHTML = rows || `<tr><td colspan="5" class="text-center text-muted py-3">Sin datos (30d)</td></tr>`;
   })();
 </script>
+
+<script>
+(function(){
+  const tbody   = document.getElementById('open-tbody');
+  const rowsAll = Array.from(tbody.querySelectorAll('tr.data-row'));
+  const emptyRow= tbody.querySelector('tr.empty-row');
+  const prevBtn = document.getElementById('open-prev');
+  const nextBtn = document.getElementById('open-next');
+  const pageLbl = document.getElementById('open-page');
+  const rangeEl = document.getElementById('open-range');
+  const sizeSel = document.getElementById('open-size');
+
+  let page = 1;
+  let size = parseInt(sizeSel.value, 10) || 10;
+
+  function render(){
+    const total = rowsAll.length;
+    const pages = Math.max(1, Math.ceil(total / size));
+
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+
+    // hide all then show slice
+    rowsAll.forEach(tr => tr.style.display = 'none');
+
+    if (total === 0) {
+      if (emptyRow) emptyRow.style.display = '';
+      pageLbl.textContent = '1/1';
+      rangeEl.textContent = 'Mostrando 0–0 de 0';
+      prevBtn.disabled = nextBtn.disabled = true;
+      return;
+    } else if (emptyRow) {
+      emptyRow.style.display = 'none';
+    }
+
+    const start = (page - 1) * size;
+    const end   = Math.min(start + size, total);
+    rowsAll.slice(start, end).forEach(tr => tr.style.display = '');
+
+    pageLbl.textContent = `${page}/${pages}`;
+    rangeEl.textContent = `Mostrando ${start + 1}–${end} de ${total}`;
+    prevBtn.disabled = (page <= 1);
+    nextBtn.disabled = (page >= pages);
+  }
+
+  prevBtn?.addEventListener('click', () => { page--; render(); });
+  nextBtn?.addEventListener('click', () => { page++; render(); });
+  sizeSel?.addEventListener('change', (e) => { size = parseInt(e.target.value, 10) || 10; page = 1; render(); });
+
+  // initial paint
+  render();
+})();
+</script>
+
 
 {% endblock %}
 
