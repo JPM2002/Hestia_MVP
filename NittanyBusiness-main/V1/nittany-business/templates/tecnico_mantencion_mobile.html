@@ -2,6 +2,18 @@
 {% block title %}Mantención — Mi trabajo{% endblock %}
 
 {% block content %}
+<style>
+  /* keep right column inside card on small screens */
+  .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .tk-main { min-width:0; } /* allows wrapping instead of forcing overflow */
+  .tk-detail { white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.15; }
+  .tk-meta { flex: 0 0 auto; max-width: 40%; text-align: right; }
+  .tk-meta .small { white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.1; }
+  .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
+  @media (max-width:420px){ .tk-meta { max-width: 46%; } }
+</style>
+
+
 <header class="d-flex justify-content-between align-items-center mb-2">
   <h1 class="h4 mb-0">🛠️ Mantención</h1>
   <div class="d-flex gap-2">
@@ -82,13 +94,15 @@
   <li class="card {% if t.is_critical %}border-danger{% endif %}"
       data-prio="{{ t.prioridad }}" data-estado="{{ t.estado }}" data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle)|lower }}">
     <div class="card-body p-2">
-      <div class="d-flex justify-content-between align-items-center">
-        <div>
+      <div class="tk-row">
+        <div class="tk-main">
           <div class="fw-semibold">{{ t.ubicacion or 'Ubicación' }}</div>
-          <div class="small text-muted text-truncate" style="max-width: 90vw">{{ t.detalle }}</div>
+          <div class="small text-muted tk-detail">{{ t.detalle }}</div>
         </div>
-        <div class="text-end">
-          <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ t.prioridad }}</span>
+        <div class="tk-meta">
+          <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad }}
+          </span>
           {% if t.due_at %}
             <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">SLA {{ t.due_at|short_dt }}</div>
           {% else %}
@@ -96,6 +110,7 @@
           {% endif %}
         </div>
       </div>
+
 
       {% if t.due_at %}
       <div class="progress mt-2" style="height:6px">
