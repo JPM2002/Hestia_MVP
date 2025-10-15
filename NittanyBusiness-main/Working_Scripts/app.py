@@ -619,6 +619,17 @@ def looks_like_command(s: str) -> bool:
     u = (s or "").strip().upper()
     return any(u.startswith(p) for p in COMMAND_PREFIXES)
 
+def is_yes(text: str) -> bool:
+    """
+    Accept common confirmations with accents/casings: si, sí, yes, y, ok, dale, vale.
+    Only if the message is basically just that word (optionally with punctuation/emoji).
+    """
+    t = (text or "").strip().lower()
+    # strip simple trailing punctuation/emojis/spaces
+    t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
+    return t in {"si", "sí", "s", "y", "yes", "ok", "vale", "dale", "de acuerdo"}
+
+
 
 # ----------------------------- SLA helpers -----------------------------
 def sla_minutes(area: str, prioridad: str) -> Optional[int]:
@@ -963,6 +974,13 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     elif cmd.startswith("DETALLE "):
         s["detalle"] = cmd_raw.split(" ", 1)[1] if " " in cmd_raw else ""
 
+        # ---- Stage repair / stickiness:
+        # If we already have name+room+detail, force stage to 'confirm'
+        if s.get("guest_name") and s.get("room") and s.get("detalle"):
+            if s.get("stage") != "confirm":
+                _set_stage(s, "confirm")
+                session_set(from_phone, s)
+
     stage = _stage(s)
 
     # ========== need_name ==========
@@ -1036,7 +1054,23 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
 
     # ========== confirm ==========
     if stage == "confirm":
-        if cmd in ("SI", "SÍ", "YES", "Y"):
+        # Ensure we keep a confirmation window alive (10 minutes)
+        if not s.get("confirm_expires_at"):
+            s["confirm_expires_at"] = time.time() + 10 * 60
+            session_set(from_phone, s)
+
+        # Robust YES handling (si/sí/yes/ok/y/etc.)
+        if is_yes(cmd_raw):
+            exp = s.get("confirm_expires_at")
+            if exp is not None and time.time() > exp:
+                # Window expired → re-show summary and refresh window
+                if _should_prompt(s, "confirm_draft"):
+                    send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
+                s["confirm_expires_at"] = time.time() + 10 * 60
+                session_set(from_phone, s)
+                return {"ok": True, "pending": True}
+
+            # Sanity check: must have the essentials
             if not all(k in s for k in ("area", "prioridad", "detalle")):
                 if _should_prompt(s, "need_more"):
                     send_whatsapp(from_phone, txt("need_more_for_ticket"))
@@ -1072,24 +1106,36 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
             session_clear(from_phone)
             return {"ok": True, "ticket_id": ticket_id}
 
+        # NO → stay in confirm and show edit help
         if cmd in ("NO", "N"):
             if _should_prompt(s, "edit_help"):
                 send_whatsapp(from_phone, txt("edit_help"))
             session_set(from_phone, s)
             return {"ok": True, "pending": True}
 
-        # Any other text at confirm → re-show summary
+        # Any other text while confirming → resend summary (rate-limited)
         if _should_prompt(s, "confirm_draft"):
             send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
         session_set(from_phone, s)
         return {"ok": True, "pending": True}
 
-    # Safety fallback
+    # Safety fallback: if we already have a full draft, force-confirm; else greet
+    if s.get("guest_name") and s.get("room") and s.get("detalle"):
+        _set_stage(s, "confirm")
+        if not s.get("confirm_expires_at"):
+            s["confirm_expires_at"] = time.time() + 10 * 60
+        session_set(from_phone, s)
+        if _should_prompt(s, "confirm_draft"):
+            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
+        return {"ok": True, "pending": True}
+
     _set_stage(s, "need_name")
     session_set(from_phone, s)
     if _should_prompt(s, "greet"):
         send_whatsapp(from_phone, txt("greet"))
     return {"ok": True, "pending": True}
+
+
 
 
 # ----------------------------- Routes -----------------------------
