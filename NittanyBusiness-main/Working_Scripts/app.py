@@ -22,6 +22,10 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 # ----------------------------- Config -----------------------------
 
+# Recepción: a quién notificar cuando queda PENDIENTE_APROBACION
+# Ej: "+56911111111,+56922222222"
+RECEPTION_PHONES = os.getenv("RECEPTION_PHONES", "+56s996107169")
+
 # ----------------------------- Copy (5-star tone) -----------------------------
 COPY = {
     "greet":
@@ -56,7 +60,14 @@ COPY = {
     "tech_assignment":
         "{prefix}🔔 Nuevo ticket #{ticket_id}\n"
         "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\n"
-        "Detalle: {detalle}\n{link}"
+        "Detalle: {detalle}\n{link}",
+    "ticket_pending_approval":
+        "✅ ¡Gracias, {guest}! He registrado tu solicitud como *pendiente de aprobación* (ticket #{ticket_id}). "
+        "Recepción la revisará en breve. 🛎️",
+    "reception_new_pending":
+        "📥 Ticket para *revisión/edición* #{ticket_id}\n"
+        "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\n"
+        "Detalle: {detalle}\n{link}\n\nAcción en sistema: Aprobar / Editar."
 }
 
 def txt(key: str, **kwargs) -> str:
@@ -351,6 +362,28 @@ def _ticket_link(ticket_id: int) -> str:
         base = APP_BASE_URL.rstrip("/")
         return f"{base}/tickets/{ticket_id}"
     return ""
+
+def _phones_from_env(s: str) -> list[str]:
+    if not s:
+        return []
+    return [p.strip() for p in re.split(r"[,\s;]+", s) if p.strip()]
+
+def _notify_reception_pending(ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
+    recips = _phones_from_env(RECEPTION_PHONES)
+    if not recips:
+        return
+    link = _ticket_link(ticket_id)
+    body = txt(
+        "reception_new_pending",
+        ticket_id=ticket_id,
+        area=area or "—",
+        prioridad=prioridad or "—",
+        habitacion=ubicacion or "—",
+        detalle=detalle or "—",
+        link=(f"Abrir: {link}" if link else "")
+    )
+    for ph in recips:
+        send_whatsapp(ph, body)
 
 def _notify_tech(phone: str, ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
     summary = (
@@ -775,7 +808,7 @@ def session_clear(phone: str):
 
 
 
-def create_ticket(payload: Dict[str, Any]) -> int:
+def create_ticket(payload: Dict[str, Any], initial_status: str = "PENDIENTE_APROBACION") -> int:
     now = datetime.now()
     due_dt = compute_due(now, payload["area"], payload["prioridad"])
     due_at = due_dt.isoformat() if due_dt else None
@@ -785,7 +818,7 @@ def create_ticket(payload: Dict[str, Any]) -> int:
         INSERT INTO Tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen,
                             ubicacion, huesped_id, created_at, due_at,
                             assigned_to, created_by, confidence_score, qr_required)
-        VALUES (%s, %s, %s, %s, 'PENDIENTE', %s, %s,
+        VALUES (%s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s)
         """ if using_pg() else
@@ -793,7 +826,7 @@ def create_ticket(payload: Dict[str, Any]) -> int:
         INSERT INTO Tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen,
                             ubicacion, huesped_id, created_at, due_at,
                             assigned_to, created_by, confidence_score, qr_required)
-        VALUES (?, ?, ?, ?, 'PENDIENTE', ?, ?,
+        VALUES (?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?)
         """,
@@ -802,6 +835,7 @@ def create_ticket(payload: Dict[str, Any]) -> int:
             payload.get("hotel_id", HOTEL_ID_DEFAULT),
             payload["area"],
             payload["prioridad"],
+            initial_status,  # <-- status parametrizado (PENDIENTE_APROBACION por defecto)
             payload["detalle"],
             payload.get("canal_origen", "huesped_whatsapp"),
             payload.get("ubicacion"),
@@ -811,24 +845,21 @@ def create_ticket(payload: Dict[str, Any]) -> int:
             None,   # assigned_to
             None,   # created_by
             float(payload.get("confidence_score", 0.85)),
-            bool(payload.get("qr_required", False)),  # BOOLEAN, not 0/1
+            bool(payload.get("qr_required", False)),
         )
     )
 
-    # --- best-effort persist guest phone/name if columns exist ---
-    guest_phone = payload.get("huesped_phone") or payload.get("huesped_id")  # use WA phone
+    # Persistir teléfono/nombre del huésped si existen columnas
+    guest_phone = payload.get("huesped_phone") or payload.get("huesped_id")
     guest_name  = payload.get("huesped_nombre")
-
     try:
-        sets = []
-        params = []
+        sets, params = [], []
         if guest_phone and table_has_column("Tickets", "huesped_phone"):
             sets.append("huesped_phone=%s" if using_pg() else "huesped_phone=?")
             params.append(guest_phone)
         if guest_name and table_has_column("Tickets", "huesped_nombre"):
             sets.append("huesped_nombre=%s" if using_pg() else "huesped_nombre=?")
             params.append(guest_name)
-
         if sets:
             params.append(new_id)
             sql = f"UPDATE Tickets SET {', '.join(sets)} WHERE id=%s" if using_pg() else \
@@ -837,13 +868,23 @@ def create_ticket(payload: Dict[str, Any]) -> int:
     except Exception as e:
         print(f"[WARN] could not persist guest phone/name: {e}", flush=True)
 
+    # Historial
     execute(
         "INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
         if using_pg() else
         "INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
         (new_id, None, "CREADO", "via whatsapp", now.isoformat())
     )
+    if initial_status == "PENDIENTE_APROBACION":
+        execute(
+            "INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
+            if using_pg() else
+            "INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
+            (new_id, None, "PENDIENTE_APROBACION", "esperando aprobación de recepción", now.isoformat())
+        )
+
     return new_id
+
 
 
 
@@ -1043,14 +1084,13 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
         if is_yes(cmd_raw):
             exp = s.get("confirm_expires_at")
             if exp is not None and time.time() > exp:
-                # Window expired → re-show summary and refresh window
                 if _should_prompt(s, "confirm_draft"):
                     send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
                 s["confirm_expires_at"] = time.time() + 10 * 60
                 session_set(from_phone, s)
                 return {"ok": True, "pending": True}
 
-            # Sanity check: must have the essentials
+            # Sanity check
             if not all(k in s for k in ("area", "prioridad", "detalle")):
                 if _should_prompt(s, "need_more"):
                     send_whatsapp(from_phone, txt("need_more_for_ticket"))
@@ -1070,9 +1110,12 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
                 "huesped_phone": from_phone,
                 "huesped_nombre": s.get("guest_name"),
             }
-            ticket_id = create_ticket(payload)
+            # Crear en estado PENDIENTE_APROBACION (no asignar todavía)
+            ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+
+            # Notificar a Recepción para aprobar/editar
             try:
-                _auto_assign_and_notify(
+                _notify_reception_pending(
                     ticket_id=ticket_id,
                     area=s["area"],
                     prioridad=s["prioridad"],
@@ -1080,40 +1123,13 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
                     ubicacion=s.get("room"),
                 )
             except Exception as e:
-                print(f"[WARN] notify/assign failed: {e}", flush=True)
+                print(f"[WARN] notify reception failed: {e}", flush=True)
 
-            send_whatsapp(from_phone, txt("ticket_created", guest=s.get("guest_name"), ticket_id=ticket_id))
+            # Mensaje al huésped
+            send_whatsapp(from_phone, txt("ticket_pending_approval", guest=s.get("guest_name"), ticket_id=ticket_id))
             session_clear(from_phone)
             return {"ok": True, "ticket_id": ticket_id}
 
-        # NO → stay in confirm and show edit help
-        if cmd in ("NO", "N"):
-            if _should_prompt(s, "edit_help"):
-                send_whatsapp(from_phone, txt("edit_help"))
-            session_set(from_phone, s)
-            return {"ok": True, "pending": True}
-
-        # Any other text while confirming → resend summary (rate-limited)
-        if _should_prompt(s, "confirm_draft"):
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        session_set(from_phone, s)
-        return {"ok": True, "pending": True}
-
-    # Safety fallback: if we already have a full draft, force-confirm; else greet
-    if s.get("guest_name") and s.get("room") and s.get("detalle"):
-        _set_stage(s, "confirm")
-        if not s.get("confirm_expires_at"):
-            s["confirm_expires_at"] = time.time() + 10 * 60
-        session_set(from_phone, s)
-        if _should_prompt(s, "confirm_draft"):
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        return {"ok": True, "pending": True}
-
-    _set_stage(s, "need_name")
-    session_set(from_phone, s)
-    if _should_prompt(s, "greet"):
-        send_whatsapp(from_phone, txt("greet"))
-    return {"ok": True, "pending": True}
 
 
 

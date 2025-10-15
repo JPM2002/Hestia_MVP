@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 import hashlib
 from functools import wraps
 import os
+import requests  # <-- ADD
+
 # --- add for DSN normalization ---
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
@@ -31,6 +33,8 @@ ESTADO_NICE = {
     "PAUSADO": "Pausado",
     "DERIVADO": "Derivado",
     "RESUELTO": "Resuelto",
+    "PENDIENTE_APROBACION": "Pendiente de aprobación",
+
 }
 
 def _wants_json():
@@ -292,6 +296,44 @@ if USE_PG:
 
 PG_POOL = None  # created lazily on first use
 
+# --- WhatsApp notify service (the webhook app you shared) ---
+WA_NOTIFY_BASE  = os.getenv('WA_NOTIFY_BASE', 'https://hestia-whatsapp-webhook.onrender.com/').rstrip('/')   # ej: https://hestia-wa.onrender.com
+WA_NOTIFY_TOKEN = os.getenv('WA_NOTIFY_TOKEN', '200220022002')              # must match INTERNAL_NOTIFY_TOKEN there
+
+def _wa_post(path: str, payload: dict):
+    """Best-effort call to WA notify service; safe no-op if not configured."""
+    if not WA_NOTIFY_BASE:
+        print(f"[WA] (dry-run) POST {path} {payload}", flush=True)
+        return
+    try:
+        url = f"{WA_NOTIFY_BASE}{path}"
+        headers = {'Content-Type': 'application/json'}
+        if WA_NOTIFY_TOKEN:
+            headers['Authorization'] = f'Bearer {WA_NOTIFY_TOKEN}'
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        if r.status_code >= 300:
+            print(f"[WA] notify {path} failed {r.status_code}: {r.text}", flush=True)
+    except Exception as e:
+        print(f"[WA] notify exception {path}: {e}", flush=True)
+
+def _notify_tech_assignment(to_phone: str, ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: str | None):
+    _wa_post('/notify/tech/assignment', {
+        "to_phone": to_phone,
+        "ticket_id": ticket_id,
+        "area": area,
+        "prioridad": prioridad,
+        "detalle": detalle or "",
+        "ubicacion": ubicacion
+    })
+
+def _notify_guest_final(to_phone: str, ticket_id: int, huesped_nombre: str | None):
+    _wa_post('/notify/guest/final', {
+        "to_phone": to_phone,
+        "ticket_id": ticket_id,
+        "huesped_nombre": huesped_nombre or ""
+    })
+
+
 def hp(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
@@ -507,7 +549,7 @@ DEFAULT_PERMS = {
         "ticket.transition.resume", "ticket.transition.finish",
     },
     "RECEPCION": {
-        "ticket.view.area", "ticket.create", "ticket.confirm",
+        "ticket.view.area", "ticket.create", "ticket.confirm","ticket.update",
     },
     "TECNICO": {
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
@@ -801,7 +843,8 @@ def healthz():
 
 
 # ---------------------------- role data helpers ----------------------------
-OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+OPEN_STATES = ('PENDIENTE_APROBACION','PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+
 
 def get_global_kpis():
     """KPIs para GERENTE (visión por ORG)."""
@@ -1391,9 +1434,10 @@ def recepcion_inbox():
     rows = fetchall("""
         SELECT id, area, prioridad, estado, detalle, ubicacion, canal_origen, created_at
         FROM Tickets
-        WHERE org_id=? AND estado='PENDIENTE'
+        WHERE org_id=? AND estado IN ('PENDIENTE_APROBACION','PENDIENTE')
         ORDER BY created_at DESC
     """, (org_id,))
+
     view = g.view_mode
     return render_best(
         [f"tickets_{view}.html", "tickets.html"],
@@ -1454,7 +1498,7 @@ def api_recepcion_kpis():
     now = datetime.now()
     sod = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-    c1 = fetchall("SELECT COUNT(*) c FROM Tickets WHERE org_id=? AND estado='PENDIENTE'", (org_id,))
+    c1 = fetchall("SELECT COUNT(*) c FROM Tickets WHERE org_id=? AND estado IN ('PENDIENTE_APROBACION','PENDIENTE')", (org_id,))
     c2 = fetchall("SELECT COUNT(*) c FROM Tickets WHERE org_id=? AND estado='EN_CURSO'", (org_id,))
     c3 = fetchall("SELECT COUNT(*) c FROM Tickets WHERE org_id=? AND estado='RESUELTO' AND (finished_at>=?)", (org_id, sod))
     rows_due = fetchall("""
@@ -1484,7 +1528,9 @@ def api_recepcion_list():
     limit  = int(request.args.get('limit', '50'))
 
     where, params = ["org_id=?"], [org_id]
-    if estado:
+    if estado == 'PENDIENTE':
+        where.append("estado IN ('PENDIENTE_APROBACION','PENDIENTE')")
+    elif estado:
         where.append("estado=?"); params.append(estado)
 
     start, end = _period_bounds(period)
@@ -1678,17 +1724,20 @@ def hk_shift_end():
 @app.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
-    """Recepción confirma / Gerente y Supervisor también; dispara asignación."""
+    """Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION), auto-asignan y notifican por WA."""
     if 'user' not in session: 
         return redirect(url_for('login'))
 
-    t = fetchone("SELECT id, org_id, area, estado FROM Tickets WHERE id=?", (id,))
+    t = fetchone("""
+        SELECT id, org_id, area, prioridad, estado, detalle, ubicacion, assigned_to
+        FROM Tickets WHERE id=?
+    """, (id,))
     if not t:
         flash('Ticket no encontrado.', 'error')
         return redirect(url_for('tickets'))
 
-    if t['estado'] != 'PENDIENTE':
-        flash('Solo puedes confirmar tickets pendientes.', 'error')
+    if t['estado'] not in ('PENDIENTE_APROBACION', 'PENDIENTE'):
+        flash('Solo puedes confirmar/aprobar tickets pendientes.', 'error')
         return redirect(url_for('tickets'))
 
     # SUPERVISOR: solo su área
@@ -1702,8 +1751,27 @@ def ticket_confirm(id):
         fields["assigned_to"] = assignee
 
     _update_ticket(id, fields, "CONFIRMADO")
+
+    # Notificar técnico por WhatsApp si hay teléfono
+    if assignee:
+        tech = fetchone("SELECT telefono FROM Users WHERE id=?", (assignee,))
+        to_phone = (tech.get('telefono') if tech else None) or ""
+        if to_phone.strip():
+            try:
+                _notify_tech_assignment(
+                    to_phone=to_phone,
+                    ticket_id=id,
+                    area=t['area'],
+                    prioridad=t['prioridad'],
+                    detalle=t['detalle'],
+                    ubicacion=t['ubicacion']
+                )
+            except Exception as e:
+                print(f"[WA] notify tech assignment failed: {e}", flush=True)
+
     flash('Ticket confirmado y asignado.' if assignee else 'Ticket confirmado (sin asignar).', 'success')
     return redirect(url_for('tickets'))
+
 
 
 def pick_assignee(org_id: int, area: str) -> int | None:
@@ -1911,6 +1979,19 @@ def ticket_finish(id):
         {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
         "RESUELTO"
     )
+        # Avisar al huésped por WhatsApp si tenemos su número
+    try:
+        t2 = fetchone("""
+            SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
+                   COALESCE(huesped_nombre, '') AS guest_name
+            FROM Tickets WHERE id=?
+        """, (id,))
+        to_phone = (t2.get('to_phone') if t2 else None) or ""
+        if to_phone.strip():
+            _notify_guest_final(to_phone=to_phone, ticket_id=id, huesped_nombre=(t2.get('guest_name') or None))
+    except Exception as e:
+        print(f"[WA] notify guest final failed: {e}", flush=True)
+
     return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
 
 

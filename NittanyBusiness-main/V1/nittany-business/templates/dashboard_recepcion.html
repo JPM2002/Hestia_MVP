@@ -244,7 +244,7 @@
 // RBAC flags (puedes renderizarlas desde servidor)
 const CAN_EDIT = true;
 const CAN_APPROVE = true;
-const CAN_DELETE = true;
+const CAN_DELETE = false;
 
 // --- Modales ---
 let editModal, editForm, deleteModal, deleteForm, manualModal, manualForm;
@@ -310,7 +310,7 @@ window.openDelete = (id) => {
 };
 
 window.approveTicket = async (id) => {
-  const r = await fetch(`/tickets/${id}/approve`, { method:'POST' });
+  const r = await fetch(`/tickets/${id}/confirm`, { method:'POST' });
   if (r.ok) { await window.refreshAll?.(); } else { alert('No se pudo aprobar.'); }
 };
 </script>
@@ -390,13 +390,23 @@ function headerWithGuest(t){
 }
 
 function actionButtonsPending(t){
-  const editBtn = CAN_EDIT ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>` : '';
-  const approveBtn = (CAN_APPROVE && (t.awaiting_approval || t.estado === 'PEND_APROB' || t.estado === 'PENDIENTE_APROBACION'))
-      ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>` : '';
-  const deleteBtn  = (CAN_DELETE && (t.awaiting_approval || t.estado === 'PEND_APROB' || t.estado === 'PENDIENTE_APROBACION'))
-      ? `<button class="btn btn-sm btn-outline-danger" onclick="openDelete(${t.id})">Eliminar</button>` : '';
+  // “Por aprobar” = pendiente + ingresado por WhatsApp huésped
+  const isAwaiting = (t.estado === 'PENDIENTE') && ((t.canal || '').toLowerCase() === 'huesped_whatsapp');
+
+  const editBtn = CAN_EDIT
+    ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>`
+    : '';
+
+  const approveBtn = (CAN_APPROVE && isAwaiting)
+    ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>`
+    : '';
+
+  // Delete is disabled (no live endpoint)
+  const deleteBtn  = '';
+
   return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
 }
+
 
 function liTicketPending(t){
   return `<li class="list-group-item">
@@ -434,14 +444,26 @@ function liFeed(x){
 }
 
 async function loadKPIs(){
-  const r = await fetch('/api/recepcion/kpis');
-  if(!r.ok) return;
-  const j = await r.json();
-  el.kpiPending.textContent   = j.pending ?? '0';
-  el.kpiInProg.textContent    = j.in_progress ?? '0';
-  el.kpiResolved.textContent  = j.resolved_today ?? '0';
-  el.kpiToApprove.textContent = (j.pending ?? 0) - (j.in_progress ?? 0); // placeholder si no tienes un KPI explícito
+  const [k, pend] = await Promise.all([
+    fetch('/api/recepcion/kpis'),
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=500')
+  ]);
+
+  if(k.ok){
+    const j = await k.json();
+    el.kpiPending.textContent   = j.pending ?? '0';
+    el.kpiInProg.textContent    = j.in_progress ?? '0';
+    el.kpiResolved.textContent  = j.resolved_today ?? '0';
+  }
+
+  // Compute “Por aprobar” client-side: pendientes de huésped WhatsApp
+  if(pend.ok){
+    const jp = await pend.json();
+    const toApproveCount = (jp.items || []).filter(x => (x.canal || '').toLowerCase() === 'huesped_whatsapp').length;
+    el.kpiToApprove.textContent = String(toApproveCount);
+  }
 }
+
 
 async function loadLists(){
   const [p, e, r] = await Promise.all([
@@ -454,8 +476,10 @@ async function loadLists(){
   const jr = r.ok ? await r.json() : {items:[]};
 
   // Divide PENDIENTES entre por aprobar vs pendientes ya aprobados
-  const toapprove = (jp.items||[]).filter(x => x.awaiting_approval);
-  const pend      = (jp.items||[]).filter(x => !x.awaiting_approval);
+  // “Por aprobar” = pendientes ingresados por huésped (WhatsApp)
+  const toapprove = (jp.items||[]).filter(x => (x.canal || '').toLowerCase() === 'huesped_whatsapp');
+  const pend      = (jp.items||[]).filter(x => (x.canal || '').toLowerCase() !== 'huesped_whatsapp');
+
 
   cache = {
     toapprove,
