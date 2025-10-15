@@ -42,7 +42,7 @@
          placeholder="Buscar habitación / detalle..." />
 </div>
 
-<!-- Featured: en curso o lo más urgente pendiente -->
+<!-- Featured: en curso o lo más urgente pendiente (Ticket en foco va inmediatamente después del turno) -->
 {% set ns = namespace(featured=None) %}
 {% for t in (tickets or []) %}
   {% if t.estado in ['EN_CURSO','ACEPTADO','ASIGNADO'] and ns.featured is none %}
@@ -118,7 +118,9 @@
       </div>
     </div>
   </div>
-<!-- Quick Actions (6 buttons) -->
+{% endif %}
+
+<!-- Quick Actions (SIEMPRE visibles, ya no dependen de featured) -->
 <section class="mb-3">
   <div class="row g-2 row-cols-2">
     <div class="col">
@@ -172,7 +174,6 @@
     </div>
   </div>
 </section>
-{% endif %}
 
 <!-- En espera / pendientes (lista compacta) -->
 <h2 class="h6 text-muted mb-2">En espera</h2>
