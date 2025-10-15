@@ -68,8 +68,6 @@ def txt(key: str, **kwargs) -> str:
         return s
 
 
-
-
 def wamid_seen_before(wamid: str) -> bool:
     try:
         if using_pg():
@@ -1062,13 +1060,13 @@ def webhook():
         return jsonify({"ok": True, "ignored": True}), 200
 
     # 3) Dedup by wamid (Meta may retry)
+    # 3) Dedup by wamid (Meta may retry)
     wamid = msgs[0].get("id")
     if wamid:
-        if wamid in PROCESSED_WAMIDS:
+        if wamid_seen_before(wamid):
             return jsonify({"ok": True, "duplicate": True}), 200
-        PROCESSED_WAMIDS.add(wamid)
-        if len(PROCESSED_WAMIDS) > 2000:
-            PROCESSED_WAMIDS.clear()
+        mark_wamid_seen(wamid)
+
 
     # 4) Normalize
     from_phone, text, audio_url = _normalize_inbound(request)
@@ -1168,4 +1166,5 @@ if __name__ == "__main__":
     ensure_runtime_tables()
     print(f"[BOOT] WhatsApp webhook starting on port {PORT} (DB={'PG' if using_pg() else 'SQLite'})", flush=True)
     app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+
 
