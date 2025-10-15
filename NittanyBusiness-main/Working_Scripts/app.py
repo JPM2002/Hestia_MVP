@@ -69,6 +69,26 @@ COPY = {
         "Detalle: {detalle}\n{link}"
 }
 
+def _stage(s: dict) -> str:
+    return s.get("stage") or "need_name"  # default entry point
+
+def _set_stage(s: dict, stage: str):
+    s["stage"] = stage
+    s["ts"] = time.time()
+
+# avoid spamming same prompt within a short cooldown
+PROMPT_COOLDOWN = 20  # seconds
+
+def _should_prompt(s: dict, key: str) -> bool:
+    # key is any string you use to tag a prompt, e.g. "ask_name", "ask_room", "ask_detail"
+    last = s.get("last_prompt") or {}
+    lp_key = last.get("key")
+    lp_at  = last.get("at", 0)
+    if lp_key == key and (time.time() - lp_at) < PROMPT_COOLDOWN:
+        return False
+    s["last_prompt"] = {"key": key, "at": time.time()}
+    return True
+
 
 
 def txt(key: str, **kwargs) -> str:
@@ -702,210 +722,148 @@ def _render_summary(area: str, prio: str, room: Optional[str], detail: str) -> s
 # ----------------------------- Core processing -----------------------------
 def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dict[str, Any]:
     s = session_get(from_phone)
+    cmd_raw = (text or "").strip()
+    cmd = cmd_raw.upper()
 
-    # Normalize inputs
-    text = (text or "").strip()
-    cmd_upper = text.upper()
+    # Inline edits (allowed from any stage)
+    if cmd.startswith("AREA "):
+        s["area"] = cmd.split(" ", 1)[1].strip().upper()
+    elif cmd.startswith("PRIORIDAD "):
+        s["prioridad"] = cmd.split(" ", 1)[1].strip().upper()
+    elif cmd.startswith("HAB ") or cmd.startswith("ROOM "):
+        s["room"] = re.sub(r"\D", "", cmd.split(" ", 1)[1])
+    elif cmd.startswith("DETALLE "):
+        s["detalle"] = cmd_raw.split(" ", 1)[1] if " " in cmd_raw else ""
 
-    # Inline quick edits always available
-    if cmd_upper.startswith("AREA "):
-        s["area"] = cmd_upper.split(" ", 1)[1].strip()
-        session_set(from_phone, s)
-        # If we already have name+room+detalle, go to confirm
-        if s.get("guest_name") and s.get("room") and s.get("detalle"):
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        else:
-            # Nudge for the next missing piece
-            if not s.get("guest_name"):
-                send_whatsapp(from_phone, txt("ask_name"))
-            elif not s.get("room"):
-                send_whatsapp(from_phone, txt("ask_room", name=s.get("guest_name","")))
-            else:
-                send_whatsapp(from_phone, txt("ask_detail_after_room"))
-        return {"ok": True, "pending": True}
+    # Normalized stage machine
+    stage = _stage(s)
 
-    if cmd_upper.startswith("PRIORIDAD "):
-        s["prioridad"] = cmd_upper.split(" ", 1)[1].strip().upper()
-        session_set(from_phone, s)
-        if s.get("guest_name") and s.get("room") and s.get("detalle"):
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        else:
-            if not s.get("guest_name"):
-                send_whatsapp(from_phone, txt("ask_name"))
-            elif not s.get("room"):
-                send_whatsapp(from_phone, txt("ask_room", name=s.get("guest_name","")))
-            else:
-                send_whatsapp(from_phone, txt("ask_detail_after_room"))
-        return {"ok": True, "pending": True}
-
-    if cmd_upper.startswith("HAB ") or cmd_upper.startswith("ROOM "):
-        s["room"] = re.sub(r"\D", "", text.split(" ", 1)[1])
-        session_set(from_phone, s)
+    # ========== STAGE: need_name ==========
+    if stage == "need_name":
+        # Greeting-like messages without clear name → still ask for name
         if not s.get("guest_name"):
-            send_whatsapp(from_phone, txt("ask_name"))
-        elif not s.get("detalle"):
-            send_whatsapp(from_phone, txt("ask_detail_after_room", name=s.get("guest_name","")))
-        else:
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        return {"ok": True, "pending": True}
-
-    if cmd_upper.startswith("DETALLE "):
-        s["detalle"] = text.split(" ", 1)[1] if " " in text else ""
-        # If we don’t have area/prioridad yet, guess
-        s.setdefault("area", guess_area(s["detalle"]))
-        s.setdefault("prioridad", guess_priority(s["detalle"]))
-        session_set(from_phone, s)
-        if not s.get("guest_name"):
-            send_whatsapp(from_phone, txt("nudge_detail_no_name"))
-        elif not s.get("room"):
-            send_whatsapp(from_phone, txt("nudge_detail_no_room", name=s["guest_name"]))
-        else:
-            send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
-        return {"ok": True, "pending": True}
-
-    # Confirm / cancel
-    if cmd_upper in ("SI", "SÍ", "YES", "Y"):
-        if not all(k in s for k in ("guest_name", "room", "detalle")):
-            # Ask for missing pieces
-            if not s.get("guest_name"):
-                send_whatsapp(from_phone, txt("ask_name"))
-            elif not s.get("room"):
-                send_whatsapp(from_phone, txt("ask_room", name=s.get("guest_name","")))
-            else:
-                send_whatsapp(from_phone, txt("need_more_for_ticket"))
-            return {"ok": True, "pending": True}
-
-        # Ensure area/prioridad present
-        s.setdefault("area", guess_area(s["detalle"]))
-        s.setdefault("prioridad", guess_priority(s["detalle"]))
-        session_set(from_phone, s)
-
-        payload = {
-            "org_id": s.get("org_id", ORG_ID_DEFAULT),
-            "hotel_id": s.get("hotel_id", HOTEL_ID_DEFAULT),
-            "area": s["area"],
-            "prioridad": s["prioridad"],
-            "detalle": s["detalle"],
-            "ubicacion": s.get("room"),
-            "huesped_id": from_phone,
-            "canal_origen": "huesped_whatsapp",
-            "confidence_score": s.get("confidence", 0.85),
-            "qr_required": False,
-            "huesped_phone": from_phone,
-            "huesped_nombre": s.get("guest_name"),
-        }
-        ticket_id = create_ticket(payload)
-
-        # Auto-asignación + notificación (si procede)
-        try:
-            _auto_assign_and_notify(
-                ticket_id=ticket_id,
-                area=s["area"],
-                prioridad=s["prioridad"],
-                detalle=s["detalle"],
-                ubicacion=s.get("room"),
-            )
-        except Exception as e:
-            print(f"[WARN] notify/assign failed: {e}", flush=True)
-
-        send_whatsapp(from_phone, txt("ticket_created", guest=s.get("guest_name"), ticket_id=ticket_id))
-        session_clear(from_phone)
-        return {"ok": True, "ticket_id": ticket_id}
-
-    if cmd_upper in ("NO", "N"):
-        send_whatsapp(from_phone, txt("edit_help"))
-        session_set(from_phone, s)
-        return {"ok": True, "pending": True}
-
-    # --------- Natural free text / audio flow ----------
-    # If audio provided, transcribe; store as detalle if we already have name+room
-    if audio_url:
-        transcript = transcribe_audio(audio_url)
-        if transcript:
-            s["detalle"] = transcript
-            s.setdefault("area", guess_area(transcript))
-            s.setdefault("prioridad", guess_priority(transcript))
-            session_set(from_phone, s)
-
-            if not s.get("guest_name"):
-                send_whatsapp(from_phone, txt("nudge_detail_no_name"))
+            if cmd_raw and not looks_like_command(cmd_raw):
+                # take free text as the name (first message vibe)
+                s["guest_name"] = cmd_raw.strip().title()
+                _set_stage(s, "need_room")
+                session_set(from_phone, s)
+                if _should_prompt(s, "ask_room"):
+                    send_whatsapp(from_phone, "Gracias, *{}*. ¿Cuál es tu *número de habitación*? 🏨".format(s["guest_name"]))
                 return {"ok": True, "pending": True}
-            if not s.get("room"):
-                send_whatsapp(from_phone, txt("nudge_detail_no_room", name=s["guest_name"]))
+            else:
+                if _should_prompt(s, "ask_name"):
+                    send_whatsapp(from_phone,
+                        "¡Hola! 👋 Soy tu asistente. Puedo ayudarte con mantención, housekeeping o room service.\n"
+                        "Para empezar, ¿me dices *tu nombre*? 🙂"
+                    )
+                session_set(from_phone, s)
                 return {"ok": True, "pending": True}
 
-            # We have everything → confirm
-            summary = ensure_summary_in_session(s)
-            send_whatsapp(from_phone, txt("ack_got_detail_wait_confirm", summary=summary))
+    # ========== STAGE: need_room ==========
+    if stage == "need_room":
+        # if user just sent audio, don't regress; keep asking room number first
+        room = s.get("room") or guess_room(cmd_raw)
+        if room:
+            s["room"] = room
+            _set_stage(s, "need_detail")
+            session_set(from_phone, s)
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, "Perfecto. Ahora cuéntame qué ocurrió. Puedes *enviar un audio* o escribir el detalle. 🎤✍️")
             return {"ok": True, "pending": True}
-
-    # If text looks like greeting/smalltalk → greet and ask name
-    if is_greeting_or_help(text):
-        if not s.get("guest_name"):
-            send_whatsapp(from_phone, txt("greet"))
-        elif not s.get("room"):
-            send_whatsapp(from_phone, txt("ask_room", name=s["guest_name"]))
         else:
-            send_whatsapp(from_phone, txt("ask_detail_after_room"))
+            if _should_prompt(s, "ask_room"):
+                send_whatsapp(from_phone, "Gracias, *{}*. Me falta el *número de habitación*. ¿Cuál es? 🏨".format(s.get("guest_name","")))
+            session_set(from_phone, s)
+            return {"ok": True, "pending": True}
+
+    # ========== STAGE: need_detail ==========
+    if stage == "need_detail":
+        detail = s.get("detalle") or cmd_raw
+        # Accept audio as detail (transcribe if needed)
+        if audio_url and not cmd_raw:
+            # user sent a voice note with no text
+            txt_detail = transcribe_audio(audio_url) or f"[audio recibido]"
+            s["detalle"] = txt_detail
+        elif detail:
+            s["detalle"] = detail
+
+        if s.get("detalle"):
+            # Auto-suggest area/prio if missing
+            s["area"] = s.get("area") or guess_area(s["detalle"])
+            s["prioridad"] = s.get("prioridad") or guess_priority(s["detalle"])
+            _set_stage(s, "confirm")
+            session_set(from_phone, s)
+
+            summary = _render_summary(s["area"], s["prioridad"], s.get("room"), s["detalle"])
+            if _should_prompt(s, "confirm_draft"):
+                send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+            return {"ok": True, "pending": True}
+        else:
+            # still no detail: prompt, but don't spam
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, "Cuéntame qué ocurrió con un *audio* o escribe el *detalle*. 🎤✍️")
+            session_set(from_phone, s)
+            return {"ok": True, "pending": True}
+
+    # ========== STAGE: confirm ==========
+    if stage == "confirm":
+        if cmd in ("SI", "SÍ", "YES", "Y"):
+            # ensure we have essential fields
+            if not all(k in s for k in ("area", "prioridad", "detalle")):
+                if _should_prompt(s, "need_more"):
+                    send_whatsapp(from_phone, txt("need_more_for_ticket"))
+                return {"ok": True, "pending": True}
+
+            payload = {
+                "org_id": s.get("org_id", ORG_ID_DEFAULT),
+                "hotel_id": s.get("hotel_id", HOTEL_ID_DEFAULT),
+                "area": s["area"],
+                "prioridad": s["prioridad"],
+                "detalle": s["detalle"],
+                "ubicacion": s.get("room"),
+                "huesped_id": from_phone,
+                "canal_origen": "huesped_whatsapp",
+                "confidence_score": s.get("confidence", 0.85),
+                "qr_required": False,
+                "huesped_phone": from_phone,
+                "huesped_nombre": s.get("guest_name"),
+            }
+            ticket_id = create_ticket(payload)
+            try:
+                _auto_assign_and_notify(
+                    ticket_id=ticket_id,
+                    area=s["area"],
+                    prioridad=s["prioridad"],
+                    detalle=s["detalle"],
+                    ubicacion=s.get("room"),
+                )
+            except Exception as e:
+                print(f"[WARN] notify/assign failed: {e}", flush=True)
+
+            send_whatsapp(from_phone, txt("ticket_created", guest=s.get("guest_name"), ticket_id=ticket_id))
+            session_clear(from_phone)
+            return {"ok": True, "ticket_id": ticket_id}
+
+        if cmd in ("NO", "N"):
+            # let them edit in place; keep stage at confirm
+            if _should_prompt(s, "edit_help"):
+                send_whatsapp(from_phone, txt("edit_help"))
+            session_set(from_phone, s)
+            return {"ok": True, "pending": True}
+
+        # Any other message while confirming → re-show summary (rate-limited)
+        summary = _render_summary(s.get("area",""), s.get("prioridad",""), s.get("room"), s.get("detalle",""))
+        if _should_prompt(s, "confirm_draft"):
+            send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
         session_set(from_phone, s)
         return {"ok": True, "pending": True}
 
-    # Try to capture name/room opportunistically from free text
-    if not s.get("guest_name"):
-        n = maybe_name(text)
-        if n:
-            s["guest_name"] = n
-            session_set(from_phone, s)
-            send_whatsapp(from_phone, txt("ask_room", name=s["guest_name"]))
-            return {"ok": True, "pending": True}
-
-    if not s.get("room"):
-        rm = maybe_room(text)
-        if rm:
-            s["room"] = rm
-            session_set(from_phone, s)
-            if not s.get("guest_name"):
-                send_whatsapp(from_phone, txt("ask_name"))
-            else:
-                send_whatsapp(from_phone, txt("ask_detail_after_room"))
-            return {"ok": True, "pending": True}
-
-    # If we get a longer text and still missing detalle → treat as detalle
-    if text and not s.get("detalle") and not looks_like_command(text):
-        s["detalle"] = text
-        s.setdefault("area", guess_area(text))
-        s.setdefault("prioridad", guess_priority(text))
-        session_set(from_phone, s)
-
-        if not s.get("guest_name"):
-            send_whatsapp(from_phone, txt("nudge_detail_no_name"))
-            return {"ok": True, "pending": True}
-        if not s.get("room"):
-            send_whatsapp(from_phone, txt("nudge_detail_no_room", name=s["guest_name"]))
-            return {"ok": True, "pending": True}
-
-        # Confirm draft
-        summary = ensure_summary_in_session(s)
-        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
-        return {"ok": True, "pending": True}
-
-    # Default nudge depending on what’s missing
-    if not s.get("guest_name"):
-        send_whatsapp(from_phone, txt("ask_name"))
-    elif not s.get("room"):
-        send_whatsapp(from_phone, txt("ask_room", name=s["guest_name"]))
-    else:
-        send_whatsapp(from_phone, txt("ask_detail_after_room"))
+    # Fallback safety (shouldn’t hit): reset to need_name politely
+    _set_stage(s, "need_name")
     session_set(from_phone, s)
+    if _should_prompt(s, "ask_name"):
+        send_whatsapp(from_phone, txt("ask_name"))
     return {"ok": True, "pending": True}
-
-
-
-def _auth_ok(req) -> bool:
-    if not INTERNAL_NOTIFY_TOKEN:
-        return True  # allow when not configured (demo)
-    auth = req.headers.get("Authorization", "")
-    return auth == f"Bearer {INTERNAL_NOTIFY_TOKEN}"
 
 
 # ----------------------------- Routes -----------------------------
@@ -937,36 +895,50 @@ def whatsapp_verify():
 # Inbound messages
 @app.post("/webhook/whatsapp")
 def webhook():
-    # Fast-path: Meta delivery statuses
-    if request.is_json:
-        payload = request.get_json(silent=True) or {}
-        try:
-            change = payload.get("entry", [])[0].get("changes", [])[0]
-            value = change.get("value", {})
-            if "statuses" in value:
-                return jsonify({"ok": True, "kind": "status"}), 200
-            if "messages" in value:
-                wamid = value["messages"][0].get("id")
-                if wamid:
-                    if wamid in PROCESSED_WAMIDS:
-                        return jsonify({"ok": True, "duplicate": True}), 200
-                    PROCESSED_WAMIDS.add(wamid)
-        except Exception:
-            pass
+    payload = request.get_json(silent=True) or {}
 
+    # --- Meta boilerplate: statuses + dedupe
+    try:
+        entry   = (payload.get("entry") or [])[0]
+        change  = (entry.get("changes") or [])[0]
+        value   = change.get("value") or {}
+        msgs    = value.get("messages") or []
+        statuses= value.get("statuses") or []
+    except Exception:
+        msgs, statuses = [], []
+
+    # 1) Status callbacks? just ACK
+    if statuses:
+        return jsonify({"ok": True, "kind": "status"}), 200
+
+    # 2) No messages? ACK and bail (prevents loops on delivery/read updates)
+    if not msgs:
+        return jsonify({"ok": True, "ignored": True}), 200
+
+    # 3) Dedup by wamid (Meta may retry)
+    wamid = msgs[0].get("id")
+    if wamid:
+        if wamid in PROCESSED_WAMIDS:
+            return jsonify({"ok": True, "duplicate": True}), 200
+        PROCESSED_WAMIDS.add(wamid)
+        # optional: cap memory
+        if len(PROCESSED_WAMIDS) > 2000:
+            PROCESSED_WAMIDS.clear()
+
+    # 4) Normalize (text / audio / interactive) -> (from_phone, text, audio_url)
     from_phone, text, audio_url = _normalize_inbound(request)
     if not from_phone:
         return jsonify({"ok": True, "ignored": True}), 200
 
+    # 5) Single special-case: first contact is *audio only* → ask for name
     s = session_get(from_phone)
+    if audio_url and not text and not s.get("guest_name"):
+        _set_stage(s, "need_name")
+        session_set(from_phone, s)
+        send_whatsapp(from_phone, txt("ask_name"))
+        return jsonify({"ok": True, "pending": True}), 200
 
-    # If we receive audio as first interaction: greet & ask name (don’t force immediate detail-processing)
-    if audio_url and not text:
-        if not s.get("guest_name"):
-            send_whatsapp(from_phone, txt("ask_name"))
-            return jsonify({"ok": True, "pending": True}), 200
-        # If we do know the guest, let the main processor handle transcription/flow
-        # (we pass audio_url; process_message will transcribe & proceed)
+    # 6) Delegate the rest to the state machine
     try:
         result = process_message(from_phone, text, audio_url)
         return jsonify(result), 200
@@ -974,6 +946,7 @@ def webhook():
         print(f"[ERR] webhook processing: {e}", flush=True)
         send_whatsapp(from_phone, f"❌ Error procesando el mensaje: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 
