@@ -97,23 +97,6 @@ def mark_wamid_seen(wamid: str):
         FALLBACK_WAMIDS.clear()
 
 
-def mark_wamid_seen(wamid: str):
-    if RUNTIME_DB_OK:
-        try:
-            if using_pg():
-                execute("INSERT INTO runtime_wamids(id, seen_at) VALUES (%s, NOW()) ON CONFLICT (id) DO NOTHING", (wamid,))
-            else:
-                execute("INSERT OR IGNORE INTO runtime_wamids(id, seen_at) VALUES (?, ?)", (wamid, datetime.now().isoformat()))
-            return
-        except Exception as e:
-            print(f"[WARN] mark_wamid_seen failed: {e}", flush=True)
-    # fallback
-    FALLBACK_WAMIDS.add(wamid)
-    if len(FALLBACK_WAMIDS) > 5000:
-        # simple cap
-        FALLBACK_WAMIDS.clear()
-
-
 # ----------------------------- Stage helpers -----------------------------
 def _stage(s: dict) -> str:
     return s.get("stage") or "need_name"
@@ -174,15 +157,6 @@ def ensure_summary_in_session(s: Dict[str, Any]) -> str:
     detalle = s.get("detalle") or ""
     return _render_summary(area, prio, room, detalle)
 
-
-
-
-def txt(key: str, **kwargs) -> str:
-    s = COPY.get(key, "")
-    try:
-        return s.format(**kwargs)
-    except Exception:
-        return s
     
 
 # Internal A→B auth (optional, used by /notify/*)
@@ -267,11 +241,8 @@ def ensure_runtime_tables():
         print(f"[WARN] ensure_runtime_tables failed; using in-memory runtime: {e}", flush=True)
 
 
+
 app = Flask(__name__)
-try:
-    ensure_runtime_tables()
-except Exception as _e:
-    print(f"[WARN] ensure_runtime_tables at import failed: {_e}", flush=True)
 
 
 def _meta_get_media_url(media_id: str) -> Tuple[Optional[str], Optional[str]]:
@@ -349,32 +320,6 @@ def fetchall(sql: str, params=()):
     finally:
         try: conn.close()
         except Exception: pass
-
-def ensure_runtime_tables():
-    if using_pg():
-        execute("""
-        CREATE TABLE IF NOT EXISTS runtime_sessions (
-            phone TEXT PRIMARY KEY,
-            data  JSONB NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )""")
-        execute("""
-        CREATE TABLE IF NOT EXISTS runtime_wamids (
-            id TEXT PRIMARY KEY,
-            seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )""")
-    else:
-        execute("""
-        CREATE TABLE IF NOT EXISTS runtime_sessions (
-            phone TEXT PRIMARY KEY,
-            data  TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        execute("""
-        CREATE TABLE IF NOT EXISTS runtime_wamids (
-            id TEXT PRIMARY KEY,
-            seen_at TEXT NOT NULL
-        )""")
 
 
 def _only_digits(s: str) -> str:
@@ -495,7 +440,6 @@ def db_conn():
     if using_pg():
         dsn = _dsn_with_params(DATABASE_URL)
         conn = pg.connect(dsn)
-        # Ensure JSON/JSONB come back as Python dicts
         try:
             pg_extras.register_default_json(conn, loads=json.loads)
             pg_extras.register_default_jsonb(conn, loads=json.loads)
@@ -509,6 +453,7 @@ def db_conn():
     except Exception:
         pass
     return conn
+
 
 
 def fetchone(sql: str, params=()):
@@ -586,6 +531,12 @@ def _table_has_column_pg(table: str, col: str) -> bool:
 
 def table_has_column(table: str, col: str) -> bool:
     return _table_has_column_pg(table, col) if using_pg() else _table_has_column_sqlite(table, col)
+# --- Initialize runtime tables early (import-time; needed for gunicorn workers) ---
+try:
+    ensure_runtime_tables()
+except Exception as _e:
+    print(f"[WARN] ensure_runtime_tables at import failed: {_e}", flush=True)
+
 
 
 # ----------------------------- NLP-ish parsing helpers -----------------------------
@@ -792,6 +743,8 @@ def session_set(phone: str, data: Dict[str, Any]):
                     VALUES (%s, %s, NOW())
                     ON CONFLICT (phone) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at
                 """, (phone, pg_extras.Json(data)))
+                return
+
 
             else:
                 # SQLite "UPSERT" with REPLACE
@@ -1246,6 +1199,10 @@ def webhook():
         print(f"[ERR] webhook processing: {e}", flush=True)
         send_whatsapp(from_phone, f"❌ Error procesando el mensaje: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
+
+def _auth_ok(req) -> bool:
+    token = (req.headers.get("Authorization") or "").replace("Bearer ", "").strip()
+    return (INTERNAL_NOTIFY_TOKEN == "") or (token == INTERNAL_NOTIFY_TOKEN)
 
 
 # Simple local simulator (no Meta)
