@@ -67,6 +67,29 @@ def txt(key: str, **kwargs) -> str:
     except Exception:
         return s
 
+
+
+
+def wamid_seen_before(wamid: str) -> bool:
+    try:
+        if using_pg():
+            row = fetchone("SELECT 1 FROM runtime_wamids WHERE id=%s", (wamid,))
+        else:
+            row = fetchone("SELECT 1 FROM runtime_wamids WHERE id=?", (wamid,))
+        return bool(row)
+    except Exception:
+        return False
+
+def mark_wamid_seen(wamid: str):
+    try:
+        if using_pg():
+            execute("INSERT INTO runtime_wamids(id, seen_at) VALUES (%s, NOW()) ON CONFLICT (id) DO NOTHING", (wamid,))
+        else:
+            execute("INSERT OR IGNORE INTO runtime_wamids(id, seen_at) VALUES (?, ?)", (wamid, datetime.now().isoformat()))
+    except Exception as e:
+        print(f"[WARN] mark_wamid_seen failed: {e}", flush=True)
+
+
 # ----------------------------- Stage helpers -----------------------------
 def _stage(s: dict) -> str:
     return s.get("stage") or "need_name"
@@ -176,8 +199,7 @@ SLA_FALLBACK = {
     ("ROOMSERVICE", "URGENTE"): 20, ("ROOMSERVICE", "ALTA"): 45, ("ROOMSERVICE", "MEDIA"): 60, ("ROOMSERVICE", "BAJA"): 90,
 }
 
-# Idempotency cache for WhatsApp message IDs (cleared on process restart)
-PROCESSED_WAMIDS = set()
+
 
 # In-memory conversational state for WhatsApp confirmation
 PENDING: Dict[str, Dict[str, Any]] = {}
@@ -240,6 +262,53 @@ def ensure_summary_in_session(s: Dict[str, Any]) -> str:
 
 
 # ----------------------------- DB helpers -----------------------------
+
+def fetchall(sql: str, params=()):
+    conn = db_conn()
+    try:
+        if using_pg():
+            cur = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            conn.commit()
+            cur.close()
+            return rows
+        else:
+            cur = conn.execute(sql, params)
+            rows = cur.fetchall()
+            conn.commit()
+            return [dict(r) for r in rows]
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+def ensure_runtime_tables():
+    if using_pg():
+        execute("""
+        CREATE TABLE IF NOT EXISTS runtime_sessions (
+            phone TEXT PRIMARY KEY,
+            data  JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+        execute("""
+        CREATE TABLE IF NOT EXISTS runtime_wamids (
+            id TEXT PRIMARY KEY,
+            seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+    else:
+        execute("""
+        CREATE TABLE IF NOT EXISTS runtime_sessions (
+            phone TEXT PRIMARY KEY,
+            data  TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        execute("""
+        CREATE TABLE IF NOT EXISTS runtime_wamids (
+            id TEXT PRIMARY KEY,
+            seen_at TEXT NOT NULL
+        )""")
+
+
 def _only_digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
 
@@ -593,22 +662,62 @@ def send_whatsapp(to: str, body: str):
     except Exception as e:
         print(f"[WARN] WhatsApp send exception: {e}", flush=True)
 
-# ----------------------------- Session helpers -----------------------------
+SESSION_TTL = 15 * 60  # seconds
+
 def session_get(phone: str) -> Dict[str, Any]:
-    s = PENDING.get(phone) or {}
-    if s and (time.time() - s.get("ts", 0) > SESSION_TTL):
+    """Return session dict with TTL; create if missing."""
+    try:
+        if using_pg():
+            row = fetchone(
+                "SELECT data, EXTRACT(EPOCH FROM NOW()) - EXTRACT(EPOCH FROM updated_at) AS age "
+                "FROM runtime_sessions WHERE phone=%s",
+                (phone,)
+            )
+            if row and row.get("data") is not None and (row.get("age") or 0) < SESSION_TTL:
+                s = dict(row["data"])
+            else:
+                s = {}
+        else:
+            row = fetchone("SELECT data, updated_at FROM runtime_sessions WHERE phone=?", (phone,))
+            if row:
+                age = time.time() - datetime.fromisoformat(row["updated_at"]).timestamp()
+                s = json.loads(row["data"] or "{}") if age < SESSION_TTL else {}
+            else:
+                s = {}
+    except Exception:
         s = {}
     s["ts"] = time.time()
-    PENDING[phone] = s
     return s
 
 def session_set(phone: str, data: Dict[str, Any]):
-    data["ts"] = time.time()
-    PENDING[phone] = data
+    payload = dict(data)
+    payload["ts"] = time.time()
+    now_iso = datetime.now().isoformat()
+    try:
+        if using_pg():
+            execute("""
+                INSERT INTO runtime_sessions(phone, data, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (phone) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at
+            """, (phone, json.dumps(payload)))
+        else:
+            execute("""
+                INSERT INTO runtime_sessions(phone, data, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(phone) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at
+            """, (phone, json.dumps(payload), now_iso))
+    except Exception as e:
+        print(f"[WARN] session_set failed: {e}", flush=True)
 
 def session_clear(phone: str):
-    if phone in PENDING:
-        del PENDING[phone]
+    try:
+        if using_pg():
+            execute("DELETE FROM runtime_sessions WHERE phone=%s", (phone,))
+        else:
+            execute("DELETE FROM runtime_sessions WHERE phone=?", (phone,))
+    except Exception as e:
+        print(f"[WARN] session_clear failed: {e}", flush=True)
+
 
 def create_ticket(payload: Dict[str, Any]) -> int:
     now = datetime.now()
@@ -1056,5 +1165,7 @@ def notify_tech_assignment():
 
 # ----------------------------- Main -----------------------------
 if __name__ == "__main__":
+    ensure_runtime_tables()
     print(f"[BOOT] WhatsApp webhook starting on port {PORT} (DB={'PG' if using_pg() else 'SQLite'})", flush=True)
-    app.run(host="0.0.0.0", port=PORT, debug=True)
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+
