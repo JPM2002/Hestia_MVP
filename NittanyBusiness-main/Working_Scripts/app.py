@@ -494,7 +494,14 @@ def using_pg() -> bool:
 def db_conn():
     if using_pg():
         dsn = _dsn_with_params(DATABASE_URL)
-        return pg.connect(dsn)
+        conn = pg.connect(dsn)
+        # Ensure JSON/JSONB come back as Python dicts
+        try:
+            pg_extras.register_default_json(conn, loads=json.loads)
+            pg_extras.register_default_jsonb(conn, loads=json.loads)
+        except Exception as e:
+            print(f"[WARN] JSON codec register failed: {e}", flush=True)
+        return conn
     conn = sqlite.connect(SQLITE_PATH, check_same_thread=False)
     conn.row_factory = sqlite.Row
     try:
@@ -502,6 +509,7 @@ def db_conn():
     except Exception:
         pass
     return conn
+
 
 def fetchone(sql: str, params=()):
     conn = db_conn()
@@ -751,11 +759,15 @@ def session_get(phone: str) -> Dict[str, Any]:
             if using_pg():
                 row = fetchone("SELECT data FROM runtime_sessions WHERE phone=%s", (phone,))
                 if row and row.get("data") is not None:
-                    s = dict(row["data"])
-            else:
-                row = fetchone("SELECT data FROM runtime_sessions WHERE phone=?", (phone,))
-                if row and row.get("data"):
-                    s = json.loads(row["data"])
+                    val = row["data"]
+                    # val may already be a dict (if decoders registered) or a JSON string / bytes
+                    if isinstance(val, dict):
+                        s = val
+                    else:
+                        if isinstance(val, (bytes, bytearray, memoryview)):
+                            val = bytes(val).decode("utf-8", "ignore")
+                        s = json.loads(val or "{}")
+
         except Exception as e:
             print(f"[WARN] session_get failed: {e}", flush=True)
     else:
@@ -775,12 +787,12 @@ def session_set(phone: str, data: Dict[str, Any]):
     if RUNTIME_DB_OK:
         try:
             if using_pg():
-                # Upsert
                 execute("""
                     INSERT INTO runtime_sessions(phone, data, updated_at)
                     VALUES (%s, %s, NOW())
                     ON CONFLICT (phone) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at
-                """, (phone, json.dumps(data)))
+                """, (phone, pg_extras.Json(data)))
+
             else:
                 # SQLite "UPSERT" with REPLACE
                 execute("""
@@ -1022,6 +1034,21 @@ def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dic
     # ========== need_detail ==========
     if stage == "need_detail":
         detail = s.get("detalle") or cmd_raw
+
+        # If they reply "SI/ok" here, don't treat it as detail; either jump to confirm if we already have a draft,
+        # or politely re-ask for detail.
+        if is_yes(cmd_raw):
+            if s.get("detalle") and s.get("room") and s.get("area") and s.get("prioridad"):
+                _set_stage(s, "confirm")
+                session_set(from_phone, s)
+                if _should_prompt(s, "confirm_draft"):
+                    send_whatsapp(from_phone, txt("confirm_draft", summary=ensure_summary_in_session(s)))
+                return {"ok": True, "pending": True}
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, txt("ask_detail"))
+            session_set(from_phone, s)
+            return {"ok": True, "pending": True}
+
 
         # accept voice note as detail (only at this stage)
         if audio_url and not cmd_raw:
