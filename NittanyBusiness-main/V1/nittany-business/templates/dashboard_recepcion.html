@@ -8,7 +8,10 @@
   .list-item-flex { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
   .list-item-main { min-width:0; } /* critical for wrapping within flex */
   .list-item-detail { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
-  .list-item-meta { flex:0 0 auto; max-width:30%; }
+  .list-item-meta { flex:0 0 auto; max-width:34%; text-align:right; }
+  .pill { display:inline-block; padding:.15rem .4rem; border-radius:.5rem; background:#f2f2f2; }
+  .tiny { font-size:.8rem; }
+  .btn-row { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem; }
 </style>
 
 <header class="d-flex justify-content-between align-items-center mb-3">
@@ -55,7 +58,7 @@
     <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
   </div>
 </div>
-<!-- Críticos list (the JS writes into #list-critical) -->
+<!-- Críticos list -->
 <div class="card mb-3">
   <ul id="list-critical" class="list-group list-group-flush small"></ul>
 </div>
@@ -133,44 +136,47 @@
   </div>
 </div>
 
+<!-- Delete (soft) Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="deleteForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Eliminar ticket <span id="del-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="delete-ticket-id" name="ticket_id">
+        <label class="form-label">Motivo</label>
+        <textarea name="motivo" id="delete-motivo" class="form-control" rows="3" placeholder="Ej: ticket duplicado / creado por error"></textarea>
+        <div class="small text-muted mt-1">Se registrará como baja lógica (soft delete).</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-danger" type="submit">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 
 <script>
-// Allow edit from list items
-const CAN_EDIT = true; // flip by RBAC on server if you want
+// RBAC flags (opcional: puedes renderizarlos desde servidor si quieres granularidad)
+const CAN_EDIT = true;
+const CAN_APPROVE = true;  // Recepción/Gerencia/Supervisor
+const CAN_DELETE = true;   // Recepción/Gerencia/Supervisor
 
-function liTicket(t){
-  const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
-                   t.prioridad==='ALTA'    ? 'text-bg-warning' :
-                   t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
-  const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
-  const sla  = t.is_critical ? `<span class="text-danger fw-semibold"> ⚠</span>` : '';
-  const editBtn = CAN_EDIT ? `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="openEdit(${t.id}, ${JSON.stringify((t.detalle||'')).replace(/"/g,'&quot;')}, '${t.prioridad||''}', '${(t.ubicacion||'').replace(/'/g,"&#39;")}')">Editar</button>` : '';
-
-  return `<li class="list-group-item">
-    <div class="list-item-flex">
-      <div class="list-item-main">
-        <div class="d-flex align-items-center">
-          <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>${t.area || '—'}${room}
-          ${editBtn}
-        </div>
-        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
-      </div>
-      <div class="text-end small text-muted list-item-meta">
-        ${t.estado || ''}${sla}<br>
-        <span>${t.due_at ? ('Vence ' + t.due_at) : 'Sin SLA'}</span>
-      </div>
-    </div>
-  </li>`;
-}
-
-// Edit modal handlers
+// --- Edit modal handlers ---
 let editModal, editForm;
+let deleteModal, deleteForm;
+
 window.addEventListener('DOMContentLoaded', () => {
   editModal = new bootstrap.Modal(document.getElementById('editModal'));
   editForm  = document.getElementById('editForm');
+  deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+  deleteForm  = document.getElementById('deleteForm');
 
   editForm.addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -179,24 +185,47 @@ window.addEventListener('DOMContentLoaded', () => {
     const r = await fetch(`/tickets/${id}/edit`, { method:'POST', body: fd });
     if (r.ok) {
       editModal.hide();
-      // refresh lists/kpis/feed
       await window.refreshAll?.();
     } else {
       alert('No se pudo guardar.');
     }
   });
+
+  deleteForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('delete-ticket-id').value;
+    const fd = new FormData(deleteForm);
+    const r = await fetch(`/tickets/${id}/delete`, { method:'POST', body: fd });
+    if (r.ok) {
+      deleteModal.hide();
+      await window.refreshAll?.();
+    } else {
+      alert('No se pudo eliminar.');
+    }
+  });
 });
 
-window.openEdit = (id, detalle, prioridad, ubicacion) => {
-  document.getElementById('edit-id').textContent = `#${id}`;
-  document.getElementById('edit-ticket-id').value = id;
-  document.getElementById('edit-detalle').value = detalle || '';
-  document.getElementById('edit-prioridad').value = (prioridad || '').toUpperCase();
-  document.getElementById('edit-ubicacion').value = ubicacion || '';
+window.openEdit = (t) => {
+  document.getElementById('edit-id').textContent = `#${t.id}`;
+  document.getElementById('edit-ticket-id').value = t.id;
+  document.getElementById('edit-detalle').value = t.detalle || '';
+  document.getElementById('edit-prioridad').value = (t.prioridad || '').toUpperCase();
+  document.getElementById('edit-ubicacion').value = t.ubicacion || '';
   editModal.show();
 };
-</script>
 
+window.openDelete = (id) => {
+  document.getElementById('del-id').textContent = `#${id}`;
+  document.getElementById('delete-ticket-id').value = id;
+  document.getElementById('delete-motivo').value = '';
+  deleteModal.show();
+};
+
+window.approveTicket = async (id) => {
+  const r = await fetch(`/tickets/${id}/approve`, { method:'POST' });
+  if (r.ok) { await window.refreshAll?.(); } else { alert('No se pudo aprobar.'); }
+};
+</script>
 
 <script>
 /* ===== Countdown + refresh hook for Críticos ===== */
@@ -235,7 +264,6 @@ window.openEdit = (id, detalle, prioridad, ubicacion) => {
     }
   }, 1000);
 
-  // allow data loaders to reset the countdown when they finish
   window.resetCritTimer = () => { secs = EVERY; if (label) label.textContent = `Actualizando en ${secs}s`; };
 })();
 </script>
@@ -259,25 +287,58 @@ let prev = {
   pendingIds: new Set(),
 };
 
-function liTicket(t){
+function pill(text){ return `<span class="pill tiny">${text}</span>`; }
+
+function metaAssigned(t){
+  const who = t.assigned_name || '(sin asignar)';
+  const due = t.due_at ? `Vence ${t.due_at}` : 'Sin SLA';
+  const crit = t.is_critical ? ` <span class="text-danger fw-semibold">⚠</span>` : '';
+  return `${pill('Asignado: ' + who)}<br><span class="text-muted">${due}${crit}</span>`;
+}
+
+function headerWithGuest(t){
   const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
                    t.prioridad==='ALTA'    ? 'text-bg-warning' :
                    t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
   const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
-  const sla  = t.is_critical ? `<span class="text-danger fw-semibold"> ⚠</span>` : '';
+  const guest = (t.guest_name || t.huesped || '') ? ` · Huésped: ${(t.guest_name || t.huesped || '')}${t.guest_id ? ' ('+t.guest_id+')':''}` : '';
+  return `<div class="d-flex align-items-center flex-wrap gap-1">
+            <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>
+            <span>${t.area || '—'}${room}${guest}</span>
+          </div>`;
+}
 
+function actionButtonsPending(t){
+  const editBtn = CAN_EDIT ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>` : '';
+  const approveBtn = (CAN_APPROVE && (t.awaiting_approval || t.estado === 'PEND_APROB' || t.estado === 'PENDIENTE_APROBACION'))
+      ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>` : '';
+  const deleteBtn  = (CAN_DELETE && (t.awaiting_approval || t.estado === 'PEND_APROB' || t.estado === 'PENDIENTE_APROBACION'))
+      ? `<button class="btn btn-sm btn-outline-danger" onclick="openDelete(${t.id})">Eliminar</button>` : '';
+  return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
+}
+
+function liTicketPending(t){
   return `<li class="list-group-item">
     <div class="list-item-flex">
       <div class="list-item-main">
-        <div>
-          <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>${t.area || '—'}${room}
-        </div>
+        ${headerWithGuest(t)}
         <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${actionButtonsPending(t)}
       </div>
-      <div class="text-end small text-muted list-item-meta">
-        ${t.estado || ''}${sla}<br>
-        <span>${t.due_at ? ('Vence ' + t.due_at) : 'Sin SLA'}</span>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
+    </div>
+  </li>`;
+}
+
+function liTicketGeneric(t){
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        ${headerWithGuest(t)}
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${CAN_EDIT ? `<div class="btn-row"><button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button></div>` : ''}
       </div>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
     </div>
   </li>`;
 }
@@ -311,10 +372,10 @@ async function loadLists(){
   const je = e.ok ? await e.json() : {items:[]};
   const jr = r.ok ? await r.json() : {items:[]};
 
-  // Critical = pending + in-progress where is_critical
+  // Críticos = pending + in-progress where is_critical
   if (el.listCrit) {
     const criticalItems = [...(jp.items||[]), ...(je.items||[])].filter(x=>x.is_critical);
-    el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicket).join('') ||
+    el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicketGeneric).join('') ||
                             '<li class="list-group-item text-muted">Sin críticos</li>';
   }
 
@@ -325,13 +386,18 @@ async function loadLists(){
     try { el.ding.currentTime = 0; el.ding.play().catch(()=>{}); } catch(e){}
   }
   prev.pendingIds = ids;
-  el.listPend.innerHTML = (jp.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
 
-  // En curso
-  el.listProg.innerHTML = (je.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
+  // PENDIENTES: usa plantilla con botones Aprobar/Eliminar/Editar si awaiting_approval
+  el.listPend.innerHTML = (jp.items||[]).map(liTicketPending).join('') ||
+                          '<li class="list-group-item text-muted">Vacío</li>';
 
-  // Resueltos
-  el.listRes.innerHTML = (jr.items||[]).map(liTicket).join('') || '<li class="list-group-item text-muted">Vacío</li>';
+  // EN CURSO
+  el.listProg.innerHTML = (je.items||[]).map(liTicketGeneric).join('') ||
+                          '<li class="list-group-item text-muted">Vacío</li>';
+
+  // RESUELTOS
+  el.listRes.innerHTML = (jr.items||[]).map(liTicketGeneric).join('') ||
+                         '<li class="list-group-item text-muted">Vacío</li>';
 }
 
 async function loadFeed(){
