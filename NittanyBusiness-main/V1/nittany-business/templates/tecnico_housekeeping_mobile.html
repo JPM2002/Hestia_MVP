@@ -5,11 +5,21 @@
 <style>
   /* keep right column inside card on small screens */
   .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
-  .tk-main { min-width:0; } /* allow text to wrap */
+  .tk-main { min-width:0; }
   .tk-meta { flex:0 0 auto; max-width:40%; text-align:right; }
   .tk-meta .small { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.1; }
   .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
   @media (max-width:420px){ .tk-meta{ max-width:46%; } }
+
+  /* Small busy spinner inline */
+  .btn[aria-busy="true"]::after{
+    content:"";
+    display:inline-block;
+    width:1rem;height:1rem;margin-left:.4rem;
+    border:.15rem solid currentColor;border-right-color:transparent;border-radius:50%;
+    vertical-align:-.2rem; animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
 </style>
 
 <header class="d-flex justify-content-between align-items-center mb-3">
@@ -29,7 +39,9 @@
 <!-- Shift controls -->
 <section class="mb-3">
   <div class="d-flex gap-2">
-    <button id="btn-shift-start" class="btn btn-success flex-fill">Iniciar turno</button>
+    <!-- Start as outline; turns solid when activo -->
+    <button id="btn-shift-start" class="btn btn-outline-success flex-fill">Iniciar turno</button>
+    <!-- Pause is outline; turns solid when pausado -->
     <button id="btn-shift-pause" class="btn btn-outline-warning flex-fill">Pausa</button>
     <button id="btn-shift-stop"  class="btn btn-outline-danger flex-fill">Cerrar turno</button>
   </div>
@@ -280,13 +292,49 @@
 <script>
   // ========= HK Shift controls (uses /api/hk/shift) =========
   const shiftStatus = document.getElementById('shift-status');
+  const btnStart = document.getElementById('btn-shift-start');
+  const btnPause = document.getElementById('btn-shift-pause');
+  const btnStop  = document.getElementById('btn-shift-stop');
+
+  function setSolid(btn, base){
+    // base: "success" | "warning" | "danger"
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(solid);
+  }
+  function setOutline(btn, base){
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(outline);
+  }
+
+  function applyVisualState(j){
+    // Default outlines
+    setOutline(btnStart,'success');
+    setOutline(btnPause,'warning');
+    setOutline(btnStop,'danger');
+
+    if (!j || (!j.active && !j.started_at)) {
+      // inactivo -> todo outline (start NOT solid)
+      return;
+    }
+    if (j.ended_at) {
+      // finalizado -> keep stop outline (we already show label)
+      return;
+    }
+    if (j.paused) {
+      // pausado -> pausa SOLID
+      setSolid(btnPause,'warning');
+    } else {
+      // activo -> iniciar SOLID
+      setSolid(btnStart,'success');
+    }
+  }
 
   function labelFromState(j){
-    // API: { active, started_at, paused, ended_at, elapsed }
     if (!j || (!j.active && !j.started_at)) return 'Turno: inactivo';
     if (j.ended_at) return 'Turno: finalizado';
     if (j.paused)   return 'Turno: en pausa';
-    // active
     try {
       const d = new Date(j.started_at);
       return `Turno: activo desde ${d.toLocaleString()}`;
@@ -301,21 +349,28 @@
       if(!r.ok) throw new Error();
       const j = await r.json();
       shiftStatus.textContent = labelFromState(j);
+      applyVisualState(j);
     } catch(_){
       shiftStatus.textContent = 'Turno: inactivo';
+      applyVisualState(null);
     }
   }
 
-  async function postNoContent(url){
-    const r = await fetch(url, { method: 'POST' });
-    // endpoints return 204; just refresh label afterwards
-    await refreshShiftStatus();
-    return r.ok;
+  async function postNoContent(url, btn){
+    try{
+      if (btn) { btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+      const r = await fetch(url, { method: 'POST' });
+      // endpoints return 204; refresh label + visuals
+      await refreshShiftStatus();
+      return r.ok;
+    } finally {
+      if (btn) { btn.removeAttribute('aria-busy'); btn.disabled = false; }
+    }
   }
 
-  document.getElementById('btn-shift-start')?.addEventListener('click', ()=>postNoContent('/hk/shift/start'));
-  document.getElementById('btn-shift-pause')?.addEventListener('click', ()=>postNoContent('/hk/shift/pause'));
-  document.getElementById('btn-shift-stop') ?.addEventListener('click', ()=>postNoContent('/hk/shift/end'));
+  btnStart?.addEventListener('click', ()=>postNoContent('/hk/shift/start', btnStart));
+  btnPause?.addEventListener('click', ()=>postNoContent('/hk/shift/pause', btnPause));
+  btnStop ?.addEventListener('click', ()=>postNoContent('/hk/shift/end',   btnStop));
 
   // Initial state
   refreshShiftStatus();
