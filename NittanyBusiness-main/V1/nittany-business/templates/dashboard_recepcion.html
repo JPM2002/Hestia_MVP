@@ -14,6 +14,8 @@
   .pending-approval { background: #fff6e6; }  /* resalta por aprobar */
   .toolbar { gap:.5rem; }
   .toolbar .form-select, .toolbar .form-control { height: 36px; }
+  .sidebar-stats .card + .card { margin-top:.75rem; }
+  .section-title { display:flex; justify-content:space-between; align-items:center; margin:.5rem 0; }
 </style>
 
 <header class="d-flex justify-content-between align-items-center mb-3">
@@ -47,76 +49,54 @@
   </div>
 </div>
 
-<!-- KPIs -->
+<!-- Layout: principal (lista unificada) + sidebar (contadores) -->
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-3">
-    <div class="card"><div class="card-body">
-      <div class="text-muted">Por aprobar</div>
-      <div id="kpi-toapprove" class="h3 mb-0">—</div>
-    </div></div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card"><div class="card-body">
-      <div class="text-muted">Pendientes</div>
-      <div id="kpi-pending" class="h3 mb-0">—</div>
-    </div></div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card"><div class="card-body">
-      <div class="text-muted">En curso</div>
-      <div id="kpi-inprogress" class="h3 mb-0">—</div>
-    </div></div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card"><div class="card-body">
-      <div class="text-muted">Resueltos (hoy)</div>
-      <div id="kpi-resolved" class="h3 mb-0">—</div>
-    </div></div>
-  </div>
-</div>
+  <div class="col-12 col-lg-8">
+    <div class="section-title">
+      <h5 class="mb-0">🗂️ Todos los Tickets</h5>
+    </div>
 
-<!-- Críticos header + countdown -->
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h5 class="mb-0">🔥 Críticos (SLA en riesgo)</h5>
-  <div class="d-flex align-items-center gap-2 small text-muted">
-    <span id="crit-timer">Actualizando en 10s</span>
-    <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
-  </div>
-</div>
-<div class="card mb-3">
-  <ul id="list-critical" class="list-group list-group-flush small"></ul>
-</div>
+    <!-- Críticos header + countdown -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">🔥 Críticos (SLA en riesgo)</h6>
+      <div class="d-flex align-items-center gap-2 small text-muted">
+        <span id="crit-timer">Actualizando en 10s</span>
+        <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <ul id="list-critical" class="list-group list-group-flush small"></ul>
+    </div>
 
-<div class="row g-3">
-  <!-- Por aprobar (primero, destacado) -->
-  <div class="col-12">
-    <div class="card pending-approval">
-      <div class="card-header py-2">📝 Por aprobar</div>
-      <ul id="list-toapprove" class="list-group list-group-flush small"></ul>
+    <!-- Lista unificada -->
+    <div class="card">
+      <ul id="list-all" class="list-group list-group-flush small"></ul>
     </div>
   </div>
-</div>
 
-<div class="row g-3 mt-1">
-  <!-- Pendientes -->
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header py-2">📥 Pendientes</div>
-      <ul id="list-pending" class="list-group list-group-flush small"></ul>
-    </div>
-  </div>
-  <!-- En curso -->
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header py-2">⏳ En curso</div>
-      <ul id="list-progress" class="list-group list-group-flush small"></ul>
-    </div>
-  </div>
-  <!-- Resueltos (hoy) -->
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header py-2">✅ Resueltos (hoy)</div>
-      <ul id="list-resolved" class="list-group list-group-flush small"></ul>
+  <!-- Sidebar con contadores -->
+  <div class="col-12 col-lg-4">
+    <div class="sidebar-stats">
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Por aprobar</div>
+        <div id="kpi-toapprove" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Pendientes</div>
+        <div id="kpi-pending" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">En curso</div>
+        <div id="kpi-inprogress" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Resueltos (hoy)</div>
+        <div id="kpi-resolved" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Críticos</div>
+        <div id="kpi-critical" class="h3 mb-0">—</div>
+      </div></div>
     </div>
   </div>
 </div>
@@ -350,22 +330,20 @@ window.approveTicket = async (id) => {
 </script>
 
 <script>
-/* ===== Datos + render con filtros ===== */
+/* ===== Datos + render con filtros (lista unificada) ===== */
 const el = {
   kpiToApprove: document.getElementById('kpi-toapprove'),
   kpiPending:  document.getElementById('kpi-pending'),
   kpiInProg:   document.getElementById('kpi-inprogress'),
   kpiResolved: document.getElementById('kpi-resolved'),
+  kpiCritical: document.getElementById('kpi-critical'),
   listCrit:    document.getElementById('list-critical'),
-  listToAppr:  document.getElementById('list-toapprove'),
-  listPend:    document.getElementById('list-pending'),
-  listProg:    document.getElementById('list-progress'),
-  listRes:     document.getElementById('list-resolved'),
+  listAll:     document.getElementById('list-all'),
   feed:        document.getElementById('feed'),
   ding:        document.getElementById('ding'),
 };
 
-let cache = { toapprove: [], pending: [], progress: [], resolved: [] };
+let cache = { toapprove: [], pending: [], progress: [], resolved: [], all: [] };
 let prev = { pendingIds: new Set() };
 
 function pill(text){ return `<span class="pill tiny">${text}</span>`; }
@@ -390,8 +368,8 @@ function headerWithGuest(t){
 }
 
 function actionButtonsPending(t){
-  // “Por aprobar” = pendiente + ingresado por WhatsApp huésped
-  const isAwaiting = (t.estado === 'PENDIENTE') && ((t.canal || '').toLowerCase() === 'huesped_whatsapp');
+  // “Por aprobar” => estado explícito PENDIENTE_APROBACION
+  const isAwaiting = (t.estado === 'PENDIENTE_APROBACION');
 
   const editBtn = CAN_EDIT
     ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>`
@@ -401,12 +379,10 @@ function actionButtonsPending(t){
     ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>`
     : '';
 
-  // Delete is disabled (no live endpoint)
-  const deleteBtn  = '';
+  const deleteBtn  = ''; // (soft delete deshabilitado aquí)
 
   return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
 }
-
 
 function liTicketPending(t){
   return `<li class="list-group-item">
@@ -456,14 +432,13 @@ async function loadKPIs(){
     el.kpiResolved.textContent  = j.resolved_today ?? '0';
   }
 
-  // Compute “Por aprobar” client-side: pendientes de huésped WhatsApp
+  // “Por aprobar” = items con estado PENDIENTE_APROBACION
   if(pend.ok){
     const jp = await pend.json();
-    const toApproveCount = (jp.items || []).filter(x => (x.canal || '').toLowerCase() === 'huesped_whatsapp').length;
+    const toApproveCount = (jp.items || []).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION').length;
     el.kpiToApprove.textContent = String(toApproveCount);
   }
 }
-
 
 async function loadLists(){
   const [p, e, r] = await Promise.all([
@@ -475,11 +450,9 @@ async function loadLists(){
   const je = e.ok ? await e.json() : {items:[]};
   const jr = r.ok ? await r.json() : {items:[]};
 
-  // Divide PENDIENTES entre por aprobar vs pendientes ya aprobados
-  // “Por aprobar” = pendientes ingresados por huésped (WhatsApp)
-  const toapprove = (jp.items||[]).filter(x => (x.canal || '').toLowerCase() === 'huesped_whatsapp');
-  const pend      = (jp.items||[]).filter(x => (x.canal || '').toLowerCase() !== 'huesped_whatsapp');
-
+  // Divide PENDIENTES entre por aprobar (PENDIENTE_APROBACION) y pendientes ya aprobados (PENDIENTE)
+  const toapprove = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION');
+  const pend      = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE');
 
   cache = {
     toapprove,
@@ -488,7 +461,16 @@ async function loadLists(){
     resolved: (jr.items||[])
   };
 
-  // Ding si crecen los pendientes (no-aprobados no disparan ding)
+  // Construye lista unificada (orden: por aprobar → pendientes → en curso → resueltos hoy)
+  const tag = (t, cls='') => ({...t, __cls: cls});
+  cache.all = [
+    ...toapprove.map(t => tag(t, 'pending-approval')),
+    ...cache.pending,
+    ...cache.progress,
+    ...cache.resolved
+  ];
+
+  // Ding si crecen los pendientes (los por aprobar no disparan el ding)
   const ids = new Set(pend.map(x=>x.id));
   const newId = [...ids].find(id => !prev.pendingIds.has(id));
   if ((ids.size > prev.pendingIds.size || newId) && el.ding) {
@@ -518,30 +500,20 @@ function applyFilters(list, forceEstado=''){
 }
 
 function renderFromCache(){
-  // Críticos (mezcla de por aprobar NO; solo pendientes aprobados + en curso)
+  // Críticos: solo pendientes aprobados + en curso
   const criticalItems = [...cache.pending, ...cache.progress].filter(x=>x.is_critical);
   el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicketGeneric).join('') ||
                           '<li class="list-group-item text-muted">Sin críticos</li>';
+  if (el.kpiCritical) el.kpiCritical.textContent = String(criticalItems.length || 0);
 
-  // Por aprobar
-  const TA = applyFilters(cache.toapprove, 'PENDIENTE');
-  el.listToAppr.innerHTML = TA.map(liTicketPending).join('') ||
-                            '<li class="list-group-item text-muted">Sin items</li>';
-
-  // Pendientes
-  const P = applyFilters(cache.pending, 'PENDIENTE');
-  el.listPend.innerHTML = P.map(liTicketGeneric).join('') ||
-                          '<li class="list-group-item text-muted">Vacío</li>';
-
-  // En curso
-  const E = applyFilters(cache.progress, 'EN_CURSO'); // filtro lógico por estado seleccionado
-  el.listProg.innerHTML = E.map(liTicketGeneric).join('') ||
-                          '<li class="list-group-item text-muted">Vacío</li>';
-
-  // Resueltos hoy
-  const R = applyFilters(cache.resolved, 'RESUELTO');
-  el.listRes.innerHTML = R.map(liTicketGeneric).join('') ||
-                         '<li class="list-group-item text-muted">Vacío</li>';
+  // Lista unificada con filtros; PENDIENTE_APROBACION resaltados
+  const ALL = applyFilters(cache.all);
+  el.listAll.innerHTML = ALL.map(t => {
+    const html = (t.estado === 'PENDIENTE_APROBACION') ? liTicketPending(t) : liTicketGeneric(t);
+    return (t.__cls === 'pending-approval')
+      ? html.replace('class="list-group-item"', 'class="list-group-item pending-approval"')
+      : html;
+  }).join('') || '<li class="list-group-item text-muted">Sin tickets</li>';
 }
 
 async function loadFeed(){
