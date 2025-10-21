@@ -65,7 +65,8 @@
 {% if ns.featured %}
   <h2 class="h6 text-muted mb-2">🟢 Ticket en foco</h2>
   <div class="card border-2 border-success mb-3" id="hk-featured"
-       data-created="{{ ns.featured.created_at }}">
+       data-created="{{ ns.featured.created_at }}"
+       {% if ns.featured.started_at %}data-started="{{ ns.featured.started_at }}"{% endif %}>
     <div class="card-body p-3">
       <div class="d-flex justify-content-between align-items-start">
         <div class="me-3">
@@ -83,9 +84,16 @@
                   title="{{ ns.featured.created_at|short_dt }}">—</span>
             {% if ns.featured.due_at %} · SLA: {{ ns.featured.due_at|short_dt }}{% endif %}
           </div>
+
           {% if ns.featured.estado in ['PENDIENTE','ASIGNADO','ACEPTADO'] %}
           <div class="small text-muted mt-1">
             ⏱ Esperando inicio: <span id="hk-wait-timer">—</span>
+          </div>
+          {% endif %}
+
+          {% if ns.featured.estado == 'EN_CURSO' and ns.featured.started_at %}
+          <div class="small text-muted mt-1">
+            ⏱ En curso: <span id="hk-active-timer">—</span>
           </div>
           {% endif %}
         </div>
@@ -115,11 +123,11 @@
 
         {% if ns.featured.estado in ['ACEPTADO','EN_CURSO'] %}
           <div class="d-flex gap-2">
-            <form class="flex-fill" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}">
+            <form class="flex-fill" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
               <input type="hidden" name="motivo" value="Esperando habitación">
               <button class="btn btn-lg btn-outline-warning w-100">Pausar</button>
             </form>
-            <form class="flex-fill" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}">
+            <form class="flex-fill" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}?next={{ request.path }}">
               <button class="btn btn-lg btn-danger w-100">Finalizar</button>
             </form>
           </div>
@@ -400,7 +408,7 @@
     });
   }
 
-  // ========= Live timers (wait time + created labels) =========
+  // ========= Live timers (wait time + created labels + active timer) =========
   function fmtDHMS(ms){
     if (!ms || ms < 0) return '—';
     const s = Math.floor(ms/1000);
@@ -421,6 +429,13 @@
     if (feat && spanFeat) {
       const created = Date.parse(feat.getAttribute('data-created') || '');
       if (!isNaN(created)) spanFeat.textContent = fmtDHMS(now - created);
+    }
+
+    // featured "active timer" (elapsed since started_at)
+    const activeSpan = document.getElementById('hk-active-timer');
+    if (feat && activeSpan) {
+      const started = Date.parse(feat.getAttribute('data-started') || '');
+      if (!isNaN(started)) activeSpan.textContent = fmtDHMS(now - started);
     }
 
     // optional hooks per list item
