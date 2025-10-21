@@ -20,6 +20,19 @@
     vertical-align:-.2rem; animation:spin .7s linear infinite;
   }
   @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  /* === Tiny toast === */
+  .hk-toast {
+    position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
+    background: #111; color: #fff; padding: .6rem .9rem; border-radius: .75rem;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    font-size: .95rem; z-index: 1080; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .hk-toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .hk-toast.success { background:#198754; }   /* Bootstrap success */
+  .hk-toast.warn    { background:#ffc107; color:#111; }
+  .hk-toast.error   { background:#dc3545; }
 </style>
 
 <header class="d-flex justify-content-between align-items-center mb-3">
@@ -248,6 +261,8 @@
     <li class="text-center text-muted py-4">No tienes tickets en espera.</li>
   {% endfor %}
 </ul>
+<div id="hk-toast" class="hk-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
 
 <!-- Bottom nav for quick access -->
 <nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
@@ -280,6 +295,34 @@
 
 {% block scripts %}
 <script>
+  // ---- Toast helpers ----
+const hkToastEl = document.getElementById('hk-toast');
+let hkToastTimer = null;
+
+function showToast(msg, kind='success', ms=2200){
+  if(!hkToastEl) return;
+  hkToastEl.className = `hk-toast ${kind}`;
+  hkToastEl.textContent = msg;
+  // show
+  requestAnimationFrame(()=> hkToastEl.classList.add('show'));
+  // auto-hide
+  clearTimeout(hkToastTimer);
+  hkToastTimer = setTimeout(()=> hkToastEl.classList.remove('show'), ms);
+}
+
+// Map endpoint -> human message
+function actionMessageFromUrl(url){
+  if (url.includes('ticket_accept')) return '✅ Has tomado este ticket.';
+  if (url.includes('ticket_start'))  return '▶️ Has iniciado el ticket.';
+  if (url.includes('ticket_pause'))  return '⏸️ Has pausado el ticket.';
+  if (url.includes('ticket_finish')) return '🏁 Has finalizado el ticket.';
+  if (url.includes('ticket_resume')) return '⏯️ Has reanudado el ticket.';
+  if (url.endsWith('/start'))        return '✅ Turno iniciado.';
+  if (url.endsWith('/pause'))        return '⏸️ Turno en pausa.';
+  if (url.endsWith('/end'))          return '🏁 Turno finalizado.';
+  return '✔️ Acción realizada.';
+}
+
   // ========= HK Shift controls (uses /api/hk/shift) =========
   const shiftStatus = document.getElementById('shift-status');
   const btnStart = document.getElementById('btn-shift-start');
@@ -347,16 +390,24 @@
   }
 
   async function postNoContent(url, btn){
-    try{
-      if (btn) { btn.setAttribute('aria-busy','true'); btn.disabled = true; }
-      const r = await fetch(url, { method: 'POST' });
-      // endpoints return 204; refresh label + visuals
-      await refreshShiftStatus();
-      return r.ok;
-    } finally {
-      if (btn) { btn.removeAttribute('aria-busy'); btn.disabled = false; }
+  try{
+    if (btn) { btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+    const r = await fetch(url, { method: 'POST' });
+    await refreshShiftStatus();
+    if (r.ok) {
+      showToast(actionMessageFromUrl(url), 'success');
+    } else {
+      showToast('❌ No se pudo actualizar el estado del turno.', 'error', 2800);
     }
+    return r.ok;
+  } catch(e){
+    showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
+    return false;
+  } finally {
+    if (btn) { btn.removeAttribute('aria-busy'); btn.disabled = false; }
   }
+}
+
 
   btnStart?.addEventListener('click', ()=>postNoContent('/hk/shift/start', btnStart));
   btnPause?.addEventListener('click', ()=>postNoContent('/hk/shift/pause', btnPause));
@@ -364,6 +415,40 @@
 
   // Initial state
   refreshShiftStatus();
+
+  // ---- Intercept ticket action forms to show toast and stay on page ----
+function wireTicketForms(){
+  const forms = document.querySelectorAll('form[action*="ticket_"]');
+  forms.forEach(form=>{
+    // avoid double-binding
+    if (form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const btn = form.querySelector('button[type="submit"], button:not([type])');
+      try{
+        if (btn){ btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+        const fd = new FormData(form);
+        const r  = await fetch(form.action, { method:'POST', body: fd });
+        if (r.ok){
+          showToast(actionMessageFromUrl(form.action), 'success');
+          // Give the toast a moment, then refresh to reflect new state
+          setTimeout(()=>window.location.reload(), 700);
+        } else {
+          showToast('❌ No se pudo actualizar el ticket.', 'error', 2800);
+        }
+      } catch(_){
+        showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
+      } finally {
+        if (btn){ btn.removeAttribute('aria-busy'); btn.disabled = false; }
+      }
+    });
+  });
+}
+
+wireTicketForms(); // run once on load
+
 
   // ========= Search filter for list =========
   const search = document.getElementById('hk-search');
@@ -451,5 +536,7 @@
   updateCreatedLabels();
   tickTimers();
   setInterval(tickTimers, 1000);
+
+
 </script>
 {% endblock %}
