@@ -50,19 +50,40 @@ def _wants_json():
         return True
     return False
 
+# --- helpers: JSON vs redirect ---
+
+def _redirect_back(default_endpoint='dashboard'):
+    """
+    Prefer going back to where the user came from (or ?next=...).
+    Falls back to the given endpoint (dashboard) instead of /tickets.
+    """
+    target = request.args.get('next') or request.referrer
+    if target:
+        # basic safety: only allow same-host redirects
+        try:
+            from urllib.parse import urlparse
+            base = urlparse(request.host_url)
+            dest = urlparse(target)
+            if dest.netloc in ("", base.netloc):
+                return redirect(target)
+        except Exception:
+            pass
+    return redirect(url_for(default_endpoint))
+
 def _ok_or_redirect(msg, **payload):
     if _wants_json():
         p = {"ok": True, "message": msg}
         p.update(payload)
         return jsonify(p)
     flash(msg, 'success')
-    return redirect(url_for('tickets'))
+    # go back to same page/user flow (e.g., /housekeeping mobile view)
+    return _redirect_back()
 
 def _err_or_redirect(msg, code=400):
     if _wants_json():
         return jsonify({"ok": False, "message": msg}), code
     flash(msg, 'error')
-    return redirect(url_for('tickets'))
+    return _redirect_back()
 
 def _to_dt(x):
     if not x:

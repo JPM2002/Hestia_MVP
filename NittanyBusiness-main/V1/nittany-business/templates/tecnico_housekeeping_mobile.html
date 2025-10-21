@@ -102,13 +102,13 @@
 
       <div class="mt-3 d-grid gap-2">
         {% if ns.featured.estado in ['PENDIENTE','ASIGNADO'] %}
-          <form method="post" action="{{ url_for('ticket_accept', id=ns.featured.id) }}">
+          <form method="post" action="{{ url_for('ticket_accept', id=ns.featured.id) }}?next={{ request.path }}">
             <button class="btn btn-lg btn-primary w-100">Aceptar</button>
           </form>
         {% endif %}
 
         {% if ns.featured.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}">
+          <form method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}?next={{ request.path }}">
             <button class="btn btn-lg btn-dark w-100">Iniciar</button>
           </form>
         {% endif %}
@@ -126,7 +126,7 @@
         {% endif %}
 
         {% if ns.featured.estado == 'PAUSADO' %}
-          <form method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}">
+          <form method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}?next={{ request.path }}">
             <button class="btn btn-lg btn-outline-secondary w-100">Reanudar</button>
           </form>
         {% endif %}
@@ -197,30 +197,30 @@
 
       <div class="mt-2 d-flex flex-wrap gap-1">
         {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
-          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}?next={{ request.path }}">
             <button class="btn btn-sm btn-outline-primary">Aceptar</button>
           </form>
         {% endif %}
         {% if t.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}?next={{ request.path }}">
             <button class="btn btn-sm btn-dark">Iniciar</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
             <input type="hidden" name="motivo" value="Esperando habitación">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
         {% endif %}
         {% if t.estado in ['EN_CURSO'] %}
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
             <input type="hidden" name="motivo" value="Pendiente insumos">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}?next={{ request.path }}">
             <button class="btn btn-sm btn-danger">Finalizar</button>
           </form>
         {% endif %}
         {% if t.estado in ['PAUSADO'] %}
-          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}?next={{ request.path }}">
             <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
           </form>
         {% endif %}
