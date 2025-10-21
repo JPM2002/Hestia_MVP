@@ -134,7 +134,7 @@
           </form>
         {% endif %}
 
-        {% if ns.featured.estado in ['ACEPTADO','EN_CURSO'] %}
+        {% if ns.featured.estado == 'EN_CURSO' %}
           <div class="d-flex gap-2">
             <form class="flex-fill" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
               <input type="hidden" name="motivo" value="Esperando habitación">
@@ -145,6 +145,7 @@
             </form>
           </div>
         {% endif %}
+
 
         {% if ns.featured.estado == 'PAUSADO' %}
           <form method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}?next={{ request.path }}">
@@ -222,15 +223,12 @@
             <button class="btn btn-sm btn-outline-primary">Aceptar</button>
           </form>
         {% endif %}
-        {% if t.estado in ['ACEPTADO'] %}
+        {% if t.estado == 'ACEPTADO' %}
           <form method="post" action="{{ url_for('ticket_start', id=t.id) }}?next={{ request.path }}">
             <button class="btn btn-sm btn-dark">Iniciar</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
-            <input type="hidden" name="motivo" value="Esperando habitación">
-            <button class="btn btn-sm btn-outline-warning">Pausa</button>
-          </form>
         {% endif %}
+
         {% if t.estado in ['EN_CURSO'] %}
           <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
             <input type="hidden" name="motivo" value="Pendiente insumos">
@@ -427,16 +425,53 @@ function wireTicketForms(){
     form.addEventListener('submit', async (ev)=>{
       ev.preventDefault();
       const btn = form.querySelector('button[type="submit"], button:not([type])');
+
       try{
         if (btn){ btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+
         const fd = new FormData(form);
-        const r  = await fetch(form.action, { method:'POST', body: fd });
+        const r  = await fetch(form.action, {
+          method: (form.method || 'POST').toUpperCase(),
+          body: fd,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',     // ensure JSON from backend
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+
+        // if session expired and server redirected us to /login
+        if (r.redirected && new URL(r.url, location.origin).pathname.includes('/login')) {
+          window.location.href = r.url;
+          return;
+        }
+
         if (r.ok){
-          showToast(actionMessageFromUrl(form.action), 'success');
+          // try to read server message (when JSON path is taken)
+          let msg = actionMessageFromUrl(form.action);
+          try {
+            const j = await r.json();
+            if (j && j.message) msg = j.message;
+          } catch(_) { /* 204/empty or non-json, ignore */ }
+
+          showToast(msg, 'success');
           // Give the toast a moment, then refresh to reflect new state
           setTimeout(()=>window.location.reload(), 700);
         } else {
-          showToast('❌ No se pudo actualizar el ticket.', 'error', 2800);
+          // Prefer backend JSON message when available
+          let msg = '❌ No se pudo actualizar el ticket.';
+          try {
+            const j = await r.json();
+            if (j && j.message) msg = j.message;
+          } catch(_) {}
+
+          const kind = (r.status === 409) ? 'warn' : 'error'; // 409 = flujo inválido
+          showToast(msg, kind, 3000);
+
+          if (r.status === 401) {
+            // unauthorized -> reload (may land on login)
+            setTimeout(()=>window.location.reload(), 600);
+          }
         }
       } catch(_){
         showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
@@ -446,6 +481,7 @@ function wireTicketForms(){
     });
   });
 }
+
 
 wireTicketForms(); // run once on load
 

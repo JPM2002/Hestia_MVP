@@ -1824,6 +1824,29 @@ def pick_assignee(org_id: int, area: str) -> int | None:
         return best
     except Exception:
         return None
+    
+# --- Logical state guards for transitions (backend truth) ---
+ALLOWED_TRANSITIONS = {
+    "accept": {"PENDIENTE", "ASIGNADO", "DERIVADO"},
+    "start":  {"ACEPTADO"},          # must have been explicitly started
+    "pause":  {"EN_CURSO"},
+    "resume": {"PAUSADO"},
+    "finish": {"EN_CURSO"},
+}
+
+def _guard_transition(t, allowed: set, verb_es: str):
+    """
+    If current ticket state is not allowed for this transition, return an error/redirect.
+    Use 409 (conflict) to signal invalid state flow to the UI.
+    """
+    estado = (t.get('estado') or '').upper()
+    if estado not in allowed:
+        return _err_or_redirect(
+            f"No puedes {verb_es} un ticket en estado {nice_state(estado)}.",
+            code=409
+        )
+    return None
+
 
 # ---------------------------- transitions ----------------------------
 def _update_ticket(id, fields: dict, action: str, motivo: str | None = None):
@@ -1856,6 +1879,10 @@ def ticket_accept(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
+    # Enforce logical flow
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["accept"], "aceptar")
+    if bad: return bad
+
     role = current_org_role()
 
     # Técnico: solo si es el asignado (o se autoasigna si no hay asignado)
@@ -1878,6 +1905,7 @@ def ticket_accept(id):
     return _ok_or_redirect('Ticket aceptado.', ticket_id=id, new_estado='ACEPTADO')
 
 
+
 @app.post('/tickets/<int:id>/start')
 @require_perm('ticket.transition.start')
 def ticket_start(id):
@@ -1888,11 +1916,13 @@ def ticket_start(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
-    role = current_org_role()
+    # Must be ACEPTADO (do not allow from PAUSADO; use /resume)
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["start"], "iniciar")
+    if bad: return bad
 
+    role = current_org_role()
     if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
         return _err_or_redirect('Solo puedes iniciar tus tickets.', 403)
-
     if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
@@ -1902,6 +1932,7 @@ def ticket_start(id):
         "INICIADO"
     )
     return _ok_or_redirect('Ticket iniciado.', ticket_id=id, new_estado='EN_CURSO')
+
 
 
 @app.post('/tickets/<int:id>/pause')
@@ -1914,17 +1945,20 @@ def ticket_pause(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
-    role = current_org_role()
+    # Only from EN_CURSO
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["pause"], "pausar")
+    if bad: return bad
 
+    role = current_org_role()
     if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
         return _err_or_redirect('Solo puedes pausar tus tickets.', 403)
-
     if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
     motivo = (request.form.get('motivo') or '').strip()
     _update_ticket(id, {"estado": "PAUSADO"}, "PAUSADO", motivo)
     return _ok_or_redirect('Ticket en pausa.', ticket_id=id, new_estado='PAUSADO')
+
 
 
 @app.post('/tickets/<int:id>/resume')
@@ -1937,44 +1971,19 @@ def ticket_resume(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
-    role = current_org_role()
+    # Only from PAUSADO
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["resume"], "reanudar")
+    if bad: return bad
 
+    role = current_org_role()
     if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
         return _err_or_redirect('Solo puedes reanudar tus tickets.', 403)
-
     if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
     _update_ticket(id, {"estado": "EN_CURSO"}, "REANUDADO")
     return _ok_or_redirect('Ticket reanudado.', ticket_id=id, new_estado='EN_CURSO')
 
-
-@app.post('/tickets/<int:id>/reassign')
-@require_perm('ticket.assign')
-def ticket_reassign(id):
-    if 'user' not in session:
-        return _err_or_redirect('No autenticado.', 401)
-
-    t = _get_ticket_or_abort(id)
-    if t is None:
-        return _err_or_redirect('Ticket no encontrado.', 404)
-
-    role = current_org_role()
-    if role == 'SUPERVISOR':
-        _require_area_manage(t['area'])
-
-    to_user = request.form.get('assigned_to', type=int)
-    if not to_user:
-        return _err_or_redirect('Falta destino.', 400)
-
-    motivo = (request.form.get('motivo') or '').strip()
-    _update_ticket(
-        id,
-        {"assigned_to": int(to_user), "estado": "ASIGNADO"},
-        "REASIGNADO",
-        motivo
-    )
-    return _ok_or_redirect('Ticket reasignado.', ticket_id=id, new_estado='ASIGNADO', assigned_to=int(to_user))
 
 
 @app.post('/tickets/<int:id>/finish')
@@ -1987,11 +1996,15 @@ def ticket_finish(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
-    role = current_org_role()
+    # Only from EN_CURSO (must have been started)
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["finish"], "finalizar")
+    if bad: return bad
+    if not t.get('started_at'):
+        return _err_or_redirect('No puedes finalizar antes de iniciar el ticket.', 409)
 
+    role = current_org_role()
     if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
         return _err_or_redirect('Solo puedes finalizar tus tickets.', 403)
-
     if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
@@ -2000,7 +2013,8 @@ def ticket_finish(id):
         {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
         "RESUELTO"
     )
-        # Avisar al huésped por WhatsApp si tenemos su número
+
+    # Aviso opcional al huésped por WhatsApp (mantengo tu lógica)
     try:
         t2 = fetchone("""
             SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
@@ -2014,6 +2028,52 @@ def ticket_finish(id):
         print(f"[WA] notify guest final failed: {e}", flush=True)
 
     return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
+
+
+
+@app.post('/tickets/<int:id>/finish')
+@require_perm('ticket.transition.finish')
+def ticket_finish(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+
+    # Only from EN_CURSO (must have been started)
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["finish"], "finalizar")
+    if bad: return bad
+    if not t.get('started_at'):
+        return _err_or_redirect('No puedes finalizar antes de iniciar el ticket.', 409)
+
+    role = current_org_role()
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes finalizar tus tickets.', 403)
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
+        "RESUELTO"
+    )
+
+    # Aviso opcional al huésped por WhatsApp (mantengo tu lógica)
+    try:
+        t2 = fetchone("""
+            SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
+                   COALESCE(huesped_nombre, '') AS guest_name
+            FROM Tickets WHERE id=?
+        """, (id,))
+        to_phone = (t2.get('to_phone') if t2 else None) or ""
+        if to_phone.strip():
+            _notify_guest_final(to_phone=to_phone, ticket_id=id, huesped_nombre=(t2.get('guest_name') or None))
+    except Exception as e:
+        print(f"[WA] notify guest final failed: {e}", flush=True)
+
+    return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
+
 
 
 
