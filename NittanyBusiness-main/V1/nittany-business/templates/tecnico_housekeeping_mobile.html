@@ -77,7 +77,10 @@
           </div>
           <div class="small mt-1">
             Estado: <span class="fw-semibold">{{ ns.featured.estado|nice_state }}</span>
-            · Creado: {{ ns.featured.created_at|short_dt }}
+            · Creado:
+            <span class="hk-created"
+                  data-created="{{ ns.featured.created_at }}"
+                  title="{{ ns.featured.created_at|short_dt }}">—</span>
             {% if ns.featured.due_at %} · SLA: {{ ns.featured.due_at|short_dt }}{% endif %}
           </div>
           {% if ns.featured.estado in ['PENDIENTE','ASIGNADO','ACEPTADO'] %}
@@ -225,7 +228,11 @@
 
       <div class="mt-2 d-flex justify-content-between small text-muted">
         <span>Estado: {{ t.estado|nice_state }}</span>
-        <span>Creado: {{ t.created_at|short_dt }}</span>
+        <span>Creado:
+          <span class="hk-created"
+                data-created="{{ t.created_at }}"
+                title="{{ t.created_at|short_dt }}">—</span>
+        </span>
       </div>
     </div>
   </li>
@@ -243,9 +250,8 @@
   </div>
 </nav>
 
-<!-- Offcanvas: Herramientas -->
-
-<!-- Todo -->
+<!-- Offcanvas: Herramientas (placeholder, oculto hasta tener links reales) -->
+<!-- (dejar marcado para futuro; no hay botón que lo abra en esta vista) -->
 <div class="offcanvas offcanvas-bottom" tabindex="-1" id="hkTools">
   <div class="offcanvas-header">
     <h5 class="offcanvas-title">Herramientas — Housekeeping</h5>
@@ -362,7 +368,39 @@
     });
   });
 
-  // ========= Live "waiting to start" timers =========
+  // ========= Relative "created" labels =========
+  function fmtAgoFrom(iso){
+    const t = Date.parse(iso);
+    if (isNaN(t)) return '';
+    const diff = Date.now() - t;
+
+    const s = Math.floor(diff/1000);
+    if (s < 45) return 'hace un instante';
+
+    const m = Math.floor(s/60);
+    if (m < 60) return `hace ${m} ${m===1 ? 'minuto' : 'minutos'}`;
+
+    const h = Math.floor(m/60);
+    if (h < 24) return `hace ${h} ${h===1 ? 'hora' : 'horas'}`;
+
+    const d = Math.floor(h/24);
+    if (d < 7) return `hace ${d} ${d===1 ? 'día' : 'días'}`;
+
+    // Fallback: DD/MM HH:mm
+    const dt = new Date(t);
+    const pad = (n)=>String(n).padStart(2,'0');
+    return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
+
+  function updateCreatedLabels(){
+    document.querySelectorAll('.hk-created').forEach(el => {
+      const src = el.getAttribute('data-created') || '';
+      const txt = fmtAgoFrom(src);
+      if (txt) el.textContent = txt;
+    });
+  }
+
+  // ========= Live timers (wait time + created labels) =========
   function fmtDHMS(ms){
     if (!ms || ms < 0) return '—';
     const s = Math.floor(ms/1000);
@@ -377,7 +415,7 @@
   function tickTimers(){
     const now = Date.now();
 
-    // featured
+    // featured "waiting to start"
     const feat = document.getElementById('hk-featured');
     const spanFeat = document.getElementById('hk-wait-timer');
     if (feat && spanFeat) {
@@ -385,13 +423,17 @@
       if (!isNaN(created)) spanFeat.textContent = fmtDHMS(now - created);
     }
 
-    // list items (optional hook)
+    // optional hooks per list item
     document.querySelectorAll('.hk-wait').forEach(el=>{
       const created = Date.parse(el.getAttribute('data-created') || '');
       if (!isNaN(created)) el.textContent = fmtDHMS(now - created);
     });
+
+    // update "Creado: hace …"
+    updateCreatedLabels();
   }
 
+  updateCreatedLabels();
   tickTimers();
   setInterval(tickTimers, 1000);
 </script>
