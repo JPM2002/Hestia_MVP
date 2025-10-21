@@ -120,7 +120,7 @@
   </div>
 {% endif %}
 
-<!-- Quick Actions (SIEMPRE visibles, ya no dependen de featured) -->
+<!-- Quick Actions -->
 <section class="mb-3">
   <div class="row g-2 row-cols-2">
     <div class="col">
@@ -278,29 +278,49 @@
 
 {% block scripts %}
 <script>
-  // ========== Shift controls ==========
+  // ========= HK Shift controls (uses /api/hk/shift) =========
   const shiftStatus = document.getElementById('shift-status');
-  async function shift(action){
-    const fd = new FormData(); fd.append('action', action);
-    const r = await fetch('/api/tech/shift', { method:'POST', body: fd });
-    if(!r.ok) return;
-    const j = await r.json();
-    if (j.active) {
-      try {
-        const d = new Date(j.started_at);
-        shiftStatus.textContent = `Turno: activo desde ${d.toLocaleString()}`;
-      } catch(_) {
-        shiftStatus.textContent = 'Turno: activo';
-      }
-    } else {
+
+  function labelFromState(j){
+    // API: { active, started_at, paused, ended_at, elapsed }
+    if (!j || (!j.active && !j.started_at)) return 'Turno: inactivo';
+    if (j.ended_at) return 'Turno: finalizado';
+    if (j.paused)   return 'Turno: en pausa';
+    // active
+    try {
+      const d = new Date(j.started_at);
+      return `Turno: activo desde ${d.toLocaleString()}`;
+    } catch(_) {
+      return 'Turno: activo';
+    }
+  }
+
+  async function refreshShiftStatus(){
+    try{
+      const r = await fetch('/api/hk/shift');
+      if(!r.ok) throw new Error();
+      const j = await r.json();
+      shiftStatus.textContent = labelFromState(j);
+    } catch(_){
       shiftStatus.textContent = 'Turno: inactivo';
     }
   }
-  document.getElementById('btn-shift-start')?.addEventListener('click', ()=>shift('start'));
-  document.getElementById('btn-shift-pause')?.addEventListener('click', ()=>shift('pause'));
-  document.getElementById('btn-shift-stop') ?.addEventListener('click', ()=>shift('stop'));
 
-  // ========== Search filter for list ==========
+  async function postNoContent(url){
+    const r = await fetch(url, { method: 'POST' });
+    // endpoints return 204; just refresh label afterwards
+    await refreshShiftStatus();
+    return r.ok;
+  }
+
+  document.getElementById('btn-shift-start')?.addEventListener('click', ()=>postNoContent('/hk/shift/start'));
+  document.getElementById('btn-shift-pause')?.addEventListener('click', ()=>postNoContent('/hk/shift/pause'));
+  document.getElementById('btn-shift-stop') ?.addEventListener('click', ()=>postNoContent('/hk/shift/end'));
+
+  // Initial state
+  refreshShiftStatus();
+
+  // ========= Search filter for list =========
   const search = document.getElementById('hk-search');
   const listItems  = Array.from(document.querySelectorAll('#hk-list > li.card'));
   search?.addEventListener('input', (e)=>{
@@ -311,7 +331,7 @@
     });
   });
 
-  // ========== Live "waiting to start" timers ==========
+  // ========= Live "waiting to start" timers =========
   function fmtDHMS(ms){
     if (!ms || ms < 0) return '—';
     const s = Math.floor(ms/1000);
