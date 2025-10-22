@@ -2034,15 +2034,11 @@ def ticket_finish(id):
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
 
-    # Only from EN_CURSO (must have been started)
-    bad = _guard_transition(t, ALLOWED_TRANSITIONS["finish"], "finalizar")
-    if bad: return bad
-    if not t.get('started_at'):
-        return _err_or_redirect('No puedes finalizar antes de iniciar el ticket.', 409)
-
     role = current_org_role()
+
     if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
         return _err_or_redirect('Solo puedes finalizar tus tickets.', 403)
+
     if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
@@ -2052,7 +2048,7 @@ def ticket_finish(id):
         "RESUELTO"
     )
 
-    # Aviso opcional al huésped por WhatsApp (mantengo tu lógica)
+    # Avisar al huésped por WhatsApp si tenemos su número
     try:
         t2 = fetchone("""
             SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
@@ -2061,56 +2057,16 @@ def ticket_finish(id):
         """, (id,))
         to_phone = (t2.get('to_phone') if t2 else None) or ""
         if to_phone.strip():
-            _notify_guest_final(to_phone=to_phone, ticket_id=id, huesped_nombre=(t2.get('guest_name') or None))
+            _notify_guest_final(
+                to_phone=to_phone,
+                ticket_id=id,
+                huesped_nombre=(t2.get('guest_name') or None)
+            )
     except Exception as e:
         print(f"[WA] notify guest final failed: {e}", flush=True)
 
     return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
 
-
-
-@app.post('/tickets/<int:id>/finish')
-@require_perm('ticket.transition.finish')
-def ticket_finish(id):
-    if 'user' not in session:
-        return _err_or_redirect('No autenticado.', 401)
-
-    t = _get_ticket_or_abort(id)
-    if t is None:
-        return _err_or_redirect('Ticket no encontrado.', 404)
-
-    # Only from EN_CURSO (must have been started)
-    bad = _guard_transition(t, ALLOWED_TRANSITIONS["finish"], "finalizar")
-    if bad: return bad
-    if not t.get('started_at'):
-        return _err_or_redirect('No puedes finalizar antes de iniciar el ticket.', 409)
-
-    role = current_org_role()
-    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
-        return _err_or_redirect('Solo puedes finalizar tus tickets.', 403)
-    if role == 'SUPERVISOR':
-        _require_area_manage(t['area'])
-
-    _update_ticket(
-        id,
-        {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
-        "RESUELTO"
-    )
-
-    # Aviso opcional al huésped por WhatsApp (mantengo tu lógica)
-    try:
-        t2 = fetchone("""
-            SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
-                   COALESCE(huesped_nombre, '') AS guest_name
-            FROM Tickets WHERE id=?
-        """, (id,))
-        to_phone = (t2.get('to_phone') if t2 else None) or ""
-        if to_phone.strip():
-            _notify_guest_final(to_phone=to_phone, ticket_id=id, huesped_nombre=(t2.get('guest_name') or None))
-    except Exception as e:
-        print(f"[WA] notify guest final failed: {e}", flush=True)
-
-    return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
 
 
 
