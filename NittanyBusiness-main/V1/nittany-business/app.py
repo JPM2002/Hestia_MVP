@@ -992,17 +992,36 @@ def get_assigned_tickets_for_area(user_id: int, area: str | None):
              "estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')"]
     if area:
         where.append("area=?"); params.append(area)
+
     rows = fetchall(f"""
         SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
         FROM Tickets
         WHERE {' AND '.join(where)}
-        ORDER BY created_at DESC
+        ORDER BY
+          CASE estado
+            WHEN 'EN_CURSO' THEN 0
+            WHEN 'ACEPTADO' THEN 1
+            WHEN 'ASIGNADO' THEN 2
+            WHEN 'PAUSADO'  THEN 3
+            WHEN 'DERIVADO' THEN 4
+            ELSE 9
+          END ASC,
+          CASE prioridad
+            WHEN 'URGENTE' THEN 0
+            WHEN 'ALTA'    THEN 1
+            WHEN 'MEDIA'   THEN 2
+            WHEN 'BAJA'    THEN 3
+            ELSE 9
+          END ASC,
+          created_at ASC
     """, tuple(params))
+
     return [{
         "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
         "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
+
 
 def get_in_progress_tickets_for_user(user_id: int, area: str | None):
     """Tickets del usuario en ACEPATADO/EN_CURSO (scoped by ORG, optional área)."""
@@ -1019,12 +1038,22 @@ def get_in_progress_tickets_for_user(user_id: int, area: str | None):
     if area:
         where.append("area=?")
         params.append(area)
-    rows = fetchall(f"""
-        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
-        FROM Tickets
-        WHERE {' AND '.join(where)}
-        ORDER BY created_at DESC
-    """, tuple(params))
+        rows = fetchall(f"""
+            SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
+            FROM Tickets
+            WHERE {' AND '.join(where)}
+            ORDER BY
+                CASE estado WHEN 'EN_CURSO' THEN 0 ELSE 1 END ASC,
+                CASE prioridad
+                    WHEN 'URGENTE' THEN 0
+                    WHEN 'ALTA'    THEN 1
+                    WHEN 'MEDIA'   THEN 2
+                    WHEN 'BAJA'    THEN 3
+                    ELSE 9
+                END ASC,
+                created_at ASC
+        """, tuple(params))
+
     return [{
         "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
         "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
@@ -1052,12 +1081,21 @@ def get_area_available_tickets(area: str, only_unassigned: bool = False):
             # SQLite legacy: algunos registros pueden tener '' en vez de NULL
             where.append("(assigned_to IS NULL OR assigned_to='')")
 
-    rows = fetchall(f"""
-        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
-        FROM Tickets
-        WHERE {' AND '.join(where)}
-        ORDER BY created_at DESC
-    """, tuple(params))
+        rows = fetchall(f"""
+            SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
+            FROM Tickets
+            WHERE {' AND '.join(where)}
+            ORDER BY
+            CASE prioridad
+                WHEN 'URGENTE' THEN 0
+                WHEN 'ALTA'    THEN 1
+                WHEN 'MEDIA'   THEN 2
+                WHEN 'BAJA'    THEN 3
+                ELSE 9
+            END ASC,
+            created_at ASC
+        """, tuple(params))
+
 
     now = datetime.now()
     return [{
