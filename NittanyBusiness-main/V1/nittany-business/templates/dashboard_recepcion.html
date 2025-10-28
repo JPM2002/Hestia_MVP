@@ -11,7 +11,7 @@
   .pill { display:inline-block; padding:.15rem .4rem; border-radius:.5rem; background:#f2f2f2; }
   .tiny { font-size:.8rem; }
   .btn-row { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem; }
-  .pending-approval { background: #fff6e6; }  /* resalta por aprobar */
+  .pending-approval { background: #fff6e6; }
   .toolbar { gap:.5rem; }
   .toolbar .form-select, .toolbar .form-control { height: 36px; }
   .sidebar-stats .card + .card { margin-top:.75rem; }
@@ -21,13 +21,11 @@
 <header class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h4 mb-0">📟 Recepción — Tickets</h1>
   <div class="d-flex gap-2">
-    <!-- Abre modal para ticket manual (POST normal al backend) -->
     <button class="btn btn-accent" data-bs-toggle="modal" data-bs-target="#manualModal">Ingresar ticket manual</button>
     <a class="btn btn-outline-dark" href="{{ url_for('tickets') }}">Ver todos</a>
   </div>
 </header>
 
-<!-- Toolbar: búsqueda + filtros (cliente) -->
 <div class="card mb-3">
   <div class="card-body d-flex flex-wrap toolbar">
     <input id="flt-q" class="form-control" placeholder="Buscar por detalle, huésped, ubicación…" style="min-width: 240px; flex: 1 1 320px;">
@@ -49,14 +47,12 @@
   </div>
 </div>
 
-<!-- Layout: principal (lista unificada) + sidebar (contadores) -->
 <div class="row g-3 mb-3">
   <div class="col-12 col-lg-8">
     <div class="section-title">
       <h5 class="mb-0">🗂️ Todos los Tickets</h5>
     </div>
 
-    <!-- Críticos header + countdown -->
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="mb-0">🔥 Críticos (SLA en riesgo)</h6>
       <div class="d-flex align-items-center gap-2 small text-muted">
@@ -68,13 +64,11 @@
       <ul id="list-critical" class="list-group list-group-flush small"></ul>
     </div>
 
-    <!-- Lista unificada -->
     <div class="card">
       <ul id="list-all" class="list-group list-group-flush small"></ul>
     </div>
   </div>
 
-  <!-- Sidebar con contadores -->
   <div class="col-12 col-lg-4">
     <div class="sidebar-stats">
       <div class="card"><div class="card-body">
@@ -101,13 +95,11 @@
   </div>
 </div>
 
-<!-- Feed -->
 <div class="card mt-3">
   <div class="card-header py-2">📰 Últimos movimientos</div>
   <ul id="feed" class="list-group list-group-flush small"></ul>
 </div>
 
-<!-- Ding -->
 <audio id="ding" preload="auto">
   <source src="{{ url_for('static', filename='snd/new-ticket.mp3') }}" type="audio/mpeg">
 </audio>
@@ -169,61 +161,49 @@
   </div>
 </div>
 
-<!-- Ticket manual (POST tradicional al backend como en ticket_create.html) -->
+<!-- Ticket manual (POST clásico a /tickets/create con next=recepcion) -->
 <div class="modal fade" id="manualModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
-    <!-- IMPORTANT: Usa la misma ruta del create clásico -->
-    <form id="manualForm" class="modal-content" method="post" action="/tickets/new">
+    <form id="manualForm" class="modal-content" method="post"
+          action="{{ url_for('ticket_create', next=url_for('recepcion_dashboard')) }}">
+      {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% endif %}
       <div class="modal-header">
         <h5 class="modal-title">Ingresar ticket manual</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
-        {% if csrf_token is defined %}
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {% endif %}
-
         <div class="mb-2">
           <label class="form-label">Área</label>
           <select name="area" class="form-select" required>
-            {% for a in (areas or ['MANTENCION','HOUSEKEEPING','ROOMSERVICE']) %}
-              <option value="{{ a }}">{{ a }}</option>
-            {% endfor %}
+            <option value="">—</option>
+            <option>MANTENCION</option><option>HOUSEKEEPING</option><option>ROOMSERVICE</option>
           </select>
         </div>
-
         <div class="mb-2">
           <label class="form-label">Prioridad</label>
           <select name="prioridad" class="form-select" required>
-            {% for p in (prioridades or ['MEDIA','URGENTE','ALTA','BAJA']) %}
-              <option value="{{ p }}">{{ p }}</option>
-            {% endfor %}
+            <option>MEDIA</option><option>URGENTE</option><option>ALTA</option><option>BAJA</option>
           </select>
         </div>
-
-        <!-- Canal de origen fijo para recepción -->
-        <input type="hidden" name="canal_origen" value="RECEPCION">
-
-        <div class="mb-2">
-          <label class="form-label">Huésped ID (opcional)</label>
-          <!-- usa el MISMO nombre que el backend espera -->
-          <input class="form-control" name="huesped_id" placeholder="ej: PMS12345">
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label">Ubicación / Habitación</label>
-          <input name="ubicacion" class="form-control" required placeholder="Ej: Hab 1203 o Lobby" />
-        </div>
-
         <div class="mb-2">
           <label class="form-label">Detalle</label>
-          <textarea name="detalle" class="form-control" rows="3" required placeholder="Describa el problema"></textarea>
+          <textarea name="detalle" class="form-control" rows="3" required></textarea>
         </div>
-
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="qrreq" name="qr_required" value="1">
-          <label class="form-check-label" for="qrreq">Requerir validación por QR</label>
+        <div class="mb-2">
+          <label class="form-label">Ubicación</label>
+          <input name="ubicacion" class="form-control" placeholder="Ej: 302" />
         </div>
+        <div class="mb-2">
+          <label class="form-label">Huésped (opcional)</label>
+          <input name="guest_name" class="form-control" placeholder="Nombre del huésped" />
+          <input name="guest_id" class="form-control mt-1" placeholder="ID / PMS" />
+        </div>
+        <input type="hidden" name="canal_origen" value="recepcion">
+        <input type="hidden" name="qr_required" value="0">
+        <!-- opcional: redundancia del next por POST -->
+        <input type="hidden" name="next" value="{{ url_for('recepcion_dashboard') }}">
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
@@ -238,12 +218,10 @@
 {% block scripts %}
 
 <script>
-// RBAC flags (puedes renderizarlas desde servidor)
 const CAN_EDIT = true;
 const CAN_APPROVE = true;
 const CAN_DELETE = false;
 
-// --- Modales ---
 let editModal, editForm, deleteModal, deleteForm, manualModal, manualForm;
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -254,7 +232,9 @@ window.addEventListener('DOMContentLoaded', () => {
   manualModal = new bootstrap.Modal(document.getElementById('manualModal'));
   manualForm  = document.getElementById('manualForm');
 
-  // Editar
+  // 👇 Opción B: SIN fetch para el modal de creación (POST clásico)
+  // (No añadimos handler JS para manualForm)
+
   editForm.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const id = document.getElementById('edit-ticket-id').value;
@@ -263,7 +243,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (r.ok) { editModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo guardar.'); }
   });
 
-  // Eliminar (soft)
   deleteForm.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const id = document.getElementById('delete-ticket-id').value;
@@ -272,9 +251,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (r.ok) { deleteModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo eliminar.'); }
   });
 
-  // 🔹 SIN manejador JS para manualForm: será un POST clásico a /tickets/new
-
-  // Filtros UI
   const inputs = ['flt-q','flt-estado','flt-prio','flt-area'].map(id=>document.getElementById(id));
   inputs.forEach(i => i.addEventListener('input', () => renderFromCache()));
   document.getElementById('flt-clear').addEventListener('click', () => {
@@ -309,7 +285,6 @@ window.approveTicket = async (id) => {
 </script>
 
 <script>
-/* ===== Countdown + refresh hook for Críticos ===== */
 (function () {
   const EVERY = 10;
   let secs = EVERY;
@@ -343,7 +318,6 @@ window.approveTicket = async (id) => {
 </script>
 
 <script>
-/* ===== Datos + render con filtros (lista unificada) ===== */
 const el = {
   kpiToApprove: document.getElementById('kpi-toapprove'),
   kpiPending:  document.getElementById('kpi-pending'),
@@ -381,7 +355,6 @@ function headerWithGuest(t){
 }
 
 function actionButtonsPending(t){
-  // “Por aprobar” => estado explícito PENDIENTE_APROBACION
   const isAwaiting = (t.estado === 'PENDIENTE_APROBACION');
 
   const editBtn = CAN_EDIT
@@ -392,7 +365,7 @@ function actionButtonsPending(t){
     ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>`
     : '';
 
-  const deleteBtn  = ''; // (soft delete deshabilitado aquí)
+  const deleteBtn  = '';
 
   return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
 }
@@ -445,7 +418,6 @@ async function loadKPIs(){
     el.kpiResolved.textContent  = j.resolved_today ?? '0';
   }
 
-  // “Por aprobar” = items con estado PENDIENTE_APROBACION
   if(pend.ok){
     const jp = await pend.json();
     const toApproveCount = (jp.items || []).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION').length;
@@ -463,7 +435,6 @@ async function loadLists(){
   const je = e.ok ? await e.json() : {items:[]};
   const jr = r.ok ? await r.json() : {items:[]};
 
-  // Divide PENDIENTES entre por aprobar (PENDIENTE_APROBACION) y pendientes ya aprobados (PENDIENTE)
   const toapprove = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION');
   const pend      = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE');
 
@@ -474,7 +445,6 @@ async function loadLists(){
     resolved: (jr.items||[])
   };
 
-  // Construye lista unificada (orden: por aprobar → pendientes → en curso → resueltos hoy)
   const tag = (t, cls='') => ({...t, __cls: cls});
   cache.all = [
     ...toapprove.map(t => tag(t, 'pending-approval')),
@@ -483,7 +453,6 @@ async function loadLists(){
     ...cache.resolved
   ];
 
-  // Ding si crecen los pendientes (los por aprobar no disparan el ding)
   const ids = new Set(pend.map(x=>x.id));
   const newId = [...ids].find(id => !prev.pendingIds.has(id));
   if ((ids.size > prev.pendingIds.size || newId) && el.ding) {
@@ -513,13 +482,11 @@ function applyFilters(list, forceEstado=''){
 }
 
 function renderFromCache(){
-  // Críticos: solo pendientes aprobados + en curso
   const criticalItems = [...cache.pending, ...cache.progress].filter(x=>x.is_critical);
   el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicketGeneric).join('') ||
                           '<li class="list-group-item text-muted">Sin críticos</li>';
   if (el.kpiCritical) el.kpiCritical.textContent = String(criticalItems.length || 0);
 
-  // Lista unificada con filtros; PENDIENTE_APROBACION resaltados
   const ALL = applyFilters(cache.all);
   el.listAll.innerHTML = ALL.map(t => {
     const html = (t.estado === 'PENDIENTE_APROBACION') ? liTicketPending(t) : liTicketGeneric(t);
@@ -536,7 +503,6 @@ async function loadFeed(){
   el.feed.innerHTML = (j.items||[]).map(liFeed).join('') || '<li class="list-group-item text-muted">Sin movimientos</li>';
 }
 
-// expose helpers
 window.loadCriticos = async () => { await loadLists(); };
 window.refreshAll   = async () => { await loadKPIs(); await loadLists(); await loadFeed(); };
 

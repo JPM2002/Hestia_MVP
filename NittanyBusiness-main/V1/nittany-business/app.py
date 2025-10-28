@@ -1686,7 +1686,9 @@ def ticket_create():
         org_id, hotel_id = current_scope()
         if not org_id or not hotel_id:
             flash('Falta contexto de organización/hotel.', 'error')
-            return redirect(url_for('tickets'))
+            # intenta volver al referer si existe
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            return redirect(nxt or url_for('tickets'))
 
         area = request.form.get('area')
         prioridad = request.form.get('prioridad')
@@ -1707,21 +1709,29 @@ def ticket_create():
                                     confidence_score, qr_required)
                 VALUES (?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, NULL, ?, NULL, ?)
             """, (org_id, hotel_id, area, prioridad, detalle, canal, ubicacion, huesped_id,
-                created_at.isoformat(), due_at, session['user']['id'], qr_required))
+                  created_at.isoformat(), due_at, session['user']['id'], qr_required))
 
-            # history
             execute("""
                 INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
                 VALUES (?, ?, 'CREADO', NULL, ?)
             """, (new_id, session['user']['id'], created_at.isoformat()))
 
+            flash(f'Ticket #{new_id} creado.', 'success')
 
-            flash('Ticket creado.', 'success')
+            # 👇 redirige de vuelta a la pantalla que originó la creación
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            # seguridad mínima: solo permite rutas locales (evitar open redirect)
+            if nxt and str(nxt).startswith('/'):
+                return redirect(nxt)
             return redirect(url_for('tickets'))
-        except Exception as e:
-            flash(f'Error creando ticket: {e}', 'error')
 
-    # GET
+        except Exception as e:
+            current_app.logger.exception("Error creando ticket")
+            flash(f'Error creando ticket: {e}', 'error')
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            return redirect(nxt or url_for('tickets'))
+
+    # GET (igual que ya tenías)
     areas = ['MANTENCION','HOUSEKEEPING','ROOMSERVICE']
     prioridades = ['BAJA','MEDIA','ALTA','URGENTE']
     canales = ['recepcion','huesped_whatsapp','housekeeping_whatsapp','mantenimiento_app','roomservice_llamada']
