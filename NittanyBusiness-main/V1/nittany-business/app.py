@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, get_flashed_messages, session, jsonify, abort
+    flash, get_flashed_messages, session, jsonify, abort,current_app
 )
 import sqlite3 as sql
 from datetime import datetime, timedelta
@@ -273,34 +273,72 @@ def render_best(templates: list[str], **ctx):
 IS_SUPABASE_POOLER = bool(DATABASE_URL and "pooler.supabase.com" in DATABASE_URL)
 
 def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
-    """Ensure sslmode/connect_timeout exist in the DSN query string."""
+    """
+    Ensure sslmode/connect_timeout exist in the DSN query string and,
+    when using Supabase pooler (pgbouncer on 6543), add TCP keepalives
+    to survive brief network hiccups.
+    """
     if not dsn:
         return dsn
     parts = urlsplit(dsn)
     q = dict(parse_qsl(parts.query, keep_blank_values=True))
+
+    # Always enforce SSL + short connect timeout
     q.setdefault("sslmode", "require")
     q.setdefault("connect_timeout", "5")  # seconds
+
+    # For pooler, add libpq keepalives and mark read-write target
+    if IS_SUPABASE_POOLER:
+        q.setdefault("keepalives", "1")
+        q.setdefault("keepalives_idle", "30")
+        q.setdefault("keepalives_interval", "10")
+        q.setdefault("keepalives_count", "3")
+        q.setdefault("target_session_attrs", "read-write")
+        # Optional, if you want a server-side query timeout (ms):
+        # (works even behind pgbouncer because it's a server GUC)
+        if "PG_STMT_TIMEOUT_MS" in os.environ:
+            q["options"] = f"-c statement_timeout={os.environ['PG_STMT_TIMEOUT_MS']}"
+
     if extra:
         q.update(extra)
+
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
+
 
 # --- Area helpers (Supervisor scope) -----------------------------------------
 def _user_primary_area(org_id: int, user_id: int):
-    """
-    Best-effort: return the user's primary/first area in this org.
-    Falls back to the area where the user handled more tickets recently.
-    Returns None if nothing found.
-    """
-    # If you have a mapping table orguserareas(user_id, org_id, area, is_primary)
     row = fetchone("""
         SELECT area
         FROM OrgUserAreas
         WHERE org_id=? AND user_id=?
-        ORDER BY COALESCE(is_primary, FALSE) DESC, area ASC
+        ORDER BY COALESCE(is_primary, 0) DESC, area ASC
         LIMIT 1
     """, (org_id, user_id))
     if row and row.get("area"):
         return row["area"]
+
+    if USE_PG:
+        row = fetchone("""
+            SELECT area
+            FROM Tickets
+            WHERE org_id=%s AND assigned_to=%s AND created_at >= NOW() - INTERVAL '90 days'
+            GROUP BY area
+            ORDER BY COUNT(1) DESC
+            LIMIT 1
+        """, (org_id, user_id))
+    else:
+        cutoff = (datetime.now() - timedelta(days=90)).isoformat()
+        row = fetchone("""
+            SELECT area
+            FROM Tickets
+            WHERE org_id=? AND assigned_to=? AND created_at >= ?
+            GROUP BY area
+            ORDER BY COUNT(1) DESC
+            LIMIT 1
+        """, (org_id, user_id, cutoff))
+
+    return row["area"] if row else None
+
 
     # Fallback: most frequent area in last 90 days
     row = fetchone("""
@@ -405,22 +443,36 @@ def _init_pg_pool():
         maxconn_default = '2' if IS_SUPABASE_POOLER else '5'
         maxconn = int(os.getenv('PG_POOL_MAX', maxconn_default))
         PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
-        print(f"[BOOT] Postgres pool initialized (maxconn={maxconn}).", flush=True)
+        print(f"[BOOT] Postgres pool initialized (maxconn={maxconn}, pooler={IS_SUPABASE_POOLER}).", flush=True)
         return PG_POOL
     except Exception as e:
         print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
         raise
 
-def _db_conn_with_retry(tries: int = 2):
-    """Retry once on transient pooler hiccups."""
+
+import time
+from contextlib import suppress
+
+def _db_conn_with_retry(tries: int = 3, backoff: float = 0.35):
+    """Retry on transient pooler hiccups with exponential backoff."""
     last = None
-    for _ in range(tries):
+    for i in range(tries):
         try:
             pool = _init_pg_pool()
-            return pool.getconn()
+            conn = pool.getconn()
+            # quick ping to ensure it's alive (cheap and safe behind pgbouncer)
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return conn
         except Exception as e:
             last = e
+            # if we got a conn but ping failed, close it before retrying
+            with suppress(Exception):
+                if 'conn' in locals():
+                    PG_POOL.putconn(conn, close=True)
+            time.sleep(backoff * (2 ** i))
     raise last
+
 
 
 def db():
@@ -1064,41 +1116,39 @@ def get_assigned_tickets_for_area(user_id: int, area: str | None):
 
 
 def get_in_progress_tickets_for_user(user_id: int, area: str | None):
-    """Tickets del usuario en ACEPATADO/EN_CURSO (scoped by ORG, optional área)."""
+    """Tickets del usuario en ACEPTADO/EN_CURSO (scoped by ORG, optional área)."""
     now = datetime.now()
     org_id, _ = current_scope()
     if not org_id:
         return []
+    where = ["org_id=?", "assigned_to=?", "estado IN ('ACEPTADO','EN_CURSO')"]
     params = [org_id, user_id]
-    where = [
-        "org_id=?",
-        "assigned_to=?",
-        "estado IN ('ACEPTADO','EN_CURSO')"
-    ]
     if area:
         where.append("area=?")
         params.append(area)
-        rows = fetchall(f"""
-            SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
-            FROM Tickets
-            WHERE {' AND '.join(where)}
-            ORDER BY
-                CASE estado WHEN 'EN_CURSO' THEN 0 ELSE 1 END ASC,
-                CASE prioridad
-                    WHEN 'URGENTE' THEN 0
-                    WHEN 'ALTA'    THEN 1
-                    WHEN 'MEDIA'   THEN 2
-                    WHEN 'BAJA'    THEN 3
-                    ELSE 9
-                END ASC,
-                created_at ASC
-        """, tuple(params))
+
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY
+            CASE estado WHEN 'EN_CURSO' THEN 0 ELSE 1 END ASC,
+            CASE prioridad
+                WHEN 'URGENTE' THEN 0
+                WHEN 'ALTA'    THEN 1
+                WHEN 'MEDIA'   THEN 2
+                WHEN 'BAJA'    THEN 3
+                ELSE 9
+            END ASC,
+            created_at ASC
+    """, tuple(params))
 
     return [{
         "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
         "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
+
 
 
 def get_area_available_tickets(area: str, only_unassigned: bool = False):
@@ -1142,26 +1192,6 @@ def get_area_available_tickets(area: str, only_unassigned: bool = False):
         "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
         "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
-    } for r in rows]
-
-
-    # “Disponibles” por defecto: PENDIENTE y sin assigned_to
-    where.append("estado='PENDIENTE'")
-    if only_unassigned:
-        where.append("(assigned_to IS NULL OR assigned_to='')")
-
-    rows = fetchall(f"""
-        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
-        FROM Tickets
-        WHERE {' AND '.join(where)}
-        ORDER BY created_at DESC
-    """, tuple(params))
-
-    return [{
-        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
-        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
-        "due_at": r["due_at"], "assigned_to": r["assigned_to"],
-        "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
 
 
@@ -1260,12 +1290,6 @@ def dashboard():
         return render_best(template_order, user=user, tickets=tickets, area=area, device=g.device, view=view)
 
     # default (non-recognized roles) => generic technician page for now
-    tickets = get_assigned_tickets(user['id'])
-    return render_template('dashboard_tecnico.html', user=user, tickets=tickets)
-
-
-
-    # TECNICO / otros
     tickets = get_assigned_tickets(user['id'])
     return render_template('dashboard_tecnico.html', user=user, tickets=tickets)
 
@@ -2773,7 +2797,7 @@ def _minutes_between(a_iso, b_iso):
     except Exception:
         return None
 
-@app.get('/api/gerencia/summary')
+
 @app.get('/api/gerencia/summary')
 def api_gerencia_summary():
     """Org-level metrics for last 30 days + open snapshot (+ type metrics + per-scope SLA targets)."""
