@@ -742,6 +742,14 @@ def ensure_ticket_area_scope(ticket_row) -> bool:
     # recepcion / tecnico no deberían llegar a acciones restringidas por área aquí
     return False
 
+
+@app.context_processor
+def inject_shift_flags():
+    s = session.get('hk_shift') or {}
+    hk_active = bool(s.get('started_at')) and not s.get('ended_at') and not s.get('paused', False)
+    return {"HK_SHIFT_ACTIVE": hk_active}
+
+
 # ---------------------------- auth & base ----------------------------
 @app.route('/')
 def index():
@@ -1780,6 +1788,31 @@ def hk_shift_end():
     return ('', 204)
 
 
+# ---- SHIFT GUARDS ----------------------------------------------------------
+
+def _hk_shift_active() -> bool:
+    s = session.get('hk_shift') or {}
+    return bool(s.get('started_at')) and not s.get('ended_at') and not s.get('paused', False)
+
+def _shift_active_for_area(area: str | None) -> bool:
+    a = (area or '').upper()
+    if a == 'HOUSEKEEPING':
+        # Turno específico de Housekeeping (vista móvil)
+        return _hk_shift_active()
+    # Fallback genérico (tecnicos fuera de HK usan /api/tech/shift)
+    return bool(session.get('shift_active'))
+
+def _guard_active_shift(area: str | None):
+    """Bloquea cualquier operación de ticket si el turno del área no está activo."""
+    if not _shift_active_for_area(area):
+        return _err_or_redirect(
+            'Tu turno está inactivo o en pausa. Inicia tu turno para operar tickets.',
+            code=403
+        )
+    return None
+
+
+
 @app.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
@@ -1916,6 +1949,10 @@ def ticket_accept(id):
     t = _get_ticket_or_abort(id)
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
 
     # Enforce logical flow
     bad = _guard_transition(t, ALLOWED_TRANSITIONS["accept"], "aceptar")
@@ -1953,6 +1990,10 @@ def ticket_start(id):
     t = _get_ticket_or_abort(id)
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
 
     # Must be ACEPTADO (do not allow from PAUSADO; use /resume)
     bad = _guard_transition(t, ALLOWED_TRANSITIONS["start"], "iniciar")
@@ -1982,6 +2023,10 @@ def ticket_pause(id):
     t = _get_ticket_or_abort(id)
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
 
     # Only from EN_CURSO
     bad = _guard_transition(t, ALLOWED_TRANSITIONS["pause"], "pausar")
@@ -2008,6 +2053,10 @@ def ticket_resume(id):
     t = _get_ticket_or_abort(id)
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
 
     # Only from PAUSADO
     bad = _guard_transition(t, ALLOWED_TRANSITIONS["resume"], "reanudar")
@@ -2033,6 +2082,10 @@ def ticket_finish(id):
     t = _get_ticket_or_abort(id)
     if t is None:
         return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
 
     role = current_org_role()
 

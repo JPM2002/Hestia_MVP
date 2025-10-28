@@ -10,6 +10,12 @@
   </div>
 </header>
 
+{# === ADDED: shift banner & flag === #}
+{% set shift_ok = HK_SHIFT_ACTIVE %}
+{% if not shift_ok %}
+<div class="alert alert-warning small py-2">⚠️ Debes iniciar tu turno para iniciar/pausar/finalizar tickets.</div>
+{% endif %}
+
 <div class="mb-2">
   <input id="mx-q" class="form-control form-control-sm" placeholder="Buscar por ubicación / detalle..." />
 </div>
@@ -34,15 +40,30 @@
           <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}"><button class="btn btn-sm btn-outline-primary">Aceptar</button></form>
         {% endif %}
         {% if t.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}"><button class="btn btn-sm btn-dark">Iniciar</button></form>
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}"><input type="hidden" name="motivo" value="Pausa"><button class="btn btn-sm btn-outline-warning">Pausa</button></form>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-dark" {{ 'disabled' if not shift_ok }}>Iniciar</button>
+          </form>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pausa">
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
+          </form>
         {% endif %}
         {% if t.estado in ['EN_CURSO'] %}
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}"><input type="hidden" name="motivo" value="Pausa"><button class="btn btn-sm btn-outline-warning">Pausa</button></form>
-          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}"><button class="btn btn-sm btn-success">Resolver</button></form>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pausa">
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
+          </form>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-success" {{ 'disabled' if not shift_ok }}>Resolver</button>
+          </form>
         {% endif %}
         {% if t.estado in ['PAUSADO'] %}
-          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}"><button class="btn btn-sm btn-outline-secondary">Reanudar</button></form>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not shift_ok }}>Reanudar</button>
+          </form>
         {% endif %}
       </div>
 
@@ -68,6 +89,9 @@
 
 {% block scripts %}
 <script>
+  // === ADDED: expose shift flag to JS ===
+  const HK_SHIFT_ACTIVE = {{ 'true' if HK_SHIFT_ACTIVE else 'false' }};
+
   const q = document.getElementById('mx-q');
   const items = Array.from(document.querySelectorAll('#mx-list > li.card'));
   q?.addEventListener('input', e=>{
@@ -76,5 +100,16 @@
       li.style.display = !s || (li.dataset.key||'').includes(s) ? '' : 'none';
     });
   });
+
+  // === ADDED: block submits that require turno when inactivo ===
+  (function blockActionsWithoutShift(){
+    if (HK_SHIFT_ACTIVE) return;
+    document.querySelectorAll('form.requires-shift').forEach(form=>{
+      form.addEventListener('submit', (ev)=>{
+        ev.preventDefault();
+        alert('🔒 Debes iniciar tu turno para realizar esta acción.');
+      }, { once:false });
+    });
+  })();
 </script>
 {% endblock %}

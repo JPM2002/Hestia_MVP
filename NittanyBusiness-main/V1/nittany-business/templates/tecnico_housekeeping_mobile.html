@@ -61,6 +61,12 @@
   <div class="small text-muted mt-1" id="shift-status">Turno: inactivo</div>
 </section>
 
+{# === ADDED: compute shift flag + banner when turno inactivo === #}
+{% set shift_ok = HK_SHIFT_ACTIVE %}
+{% if not shift_ok %}
+<div class="alert alert-warning small py-2">⚠️ Debes iniciar tu turno para iniciar/pausar/finalizar tickets.</div>
+{% endif %}
+
 <!-- Optional small search for the list -->
 <div class="mb-2">
   <input id="hk-search" class="form-control form-control-sm"
@@ -129,27 +135,29 @@
         {% endif %}
 
         {% if ns.featured.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}?next={{ request.path }}">
-            <button class="btn btn-lg btn-dark w-100">Iniciar</button>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}?next={{ request.path }}">
+            <button class="btn btn-lg btn-dark w-100" {{ 'disabled' if not shift_ok }}>Iniciar</button>
           </form>
         {% endif %}
 
         {% if ns.featured.estado == 'EN_CURSO' %}
           <div class="d-flex gap-2">
-            <form class="flex-fill" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
+            {# === ADDED: requires-shift + disabled when turno inactivo === #}
+            <form class="flex-fill requires-shift" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
               <input type="hidden" name="motivo" value="Esperando habitación">
-              <button class="btn btn-lg btn-outline-warning w-100">Pausar</button>
+              <button class="btn btn-lg btn-outline-warning w-100" {{ 'disabled' if not shift_ok }}>Pausar</button>
             </form>
-            <form class="flex-fill" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}?next={{ request.path }}">
-              <button class="btn btn-lg btn-danger w-100">Finalizar</button>
+            <form class="flex-fill requires-shift" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}?next={{ request.path }}">
+              <button class="btn btn-lg btn-danger w-100" {{ 'disabled' if not shift_ok }}>Finalizar</button>
             </form>
           </div>
         {% endif %}
 
-
         {% if ns.featured.estado == 'PAUSADO' %}
-          <form method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}?next={{ request.path }}">
-            <button class="btn btn-lg btn-outline-secondary w-100">Reanudar</button>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}?next={{ request.path }}">
+            <button class="btn btn-lg btn-outline-secondary w-100" {{ 'disabled' if not shift_ok }}>Reanudar</button>
           </form>
         {% endif %}
       </div>
@@ -224,23 +232,26 @@
           </form>
         {% endif %}
         {% if t.estado == 'ACEPTADO' %}
-          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}?next={{ request.path }}">
-            <button class="btn btn-sm btn-dark">Iniciar</button>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-dark" {{ 'disabled' if not shift_ok }}>Iniciar</button>
           </form>
         {% endif %}
 
         {% if t.estado in ['EN_CURSO'] %}
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
             <input type="hidden" name="motivo" value="Pendiente insumos">
-            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}?next={{ request.path }}">
-            <button class="btn btn-sm btn-danger">Finalizar</button>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_finish', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-danger" {{ 'disabled' if not shift_ok }}>Finalizar</button>
           </form>
         {% endif %}
         {% if t.estado in ['PAUSADO'] %}
-          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}?next={{ request.path }}">
-            <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not shift_ok }}>Reanudar</button>
           </form>
         {% endif %}
       </div>
@@ -293,6 +304,9 @@
 
 {% block scripts %}
 <script>
+  // === ADDED: expose shift flag to JS ===
+  const HK_SHIFT_ACTIVE = {{ 'true' if HK_SHIFT_ACTIVE else 'false' }};
+
   // ---- Toast helpers ----
 const hkToastEl = document.getElementById('hk-toast');
 let hkToastTimer = null;
@@ -573,6 +587,16 @@ wireTicketForms(); // run once on load
   tickTimers();
   setInterval(tickTimers, 1000);
 
+  // === ADDED: block submits that require turno when inactivo ===
+  (function blockActionsWithoutShift(){
+    if (HK_SHIFT_ACTIVE) return;
+    document.querySelectorAll('form.requires-shift').forEach(form=>{
+      form.addEventListener('submit', (ev)=>{
+        ev.preventDefault();
+        showToast('🔒 Debes iniciar tu turno para realizar esta acción.', 'warn', 2600);
+      });
+    });
+  })();
 
 </script>
 {% endblock %}
