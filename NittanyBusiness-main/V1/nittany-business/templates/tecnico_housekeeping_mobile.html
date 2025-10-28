@@ -29,10 +29,10 @@
     font-size: .95rem; z-index: 1080; opacity: 0; pointer-events: none;
     transition: opacity .2s ease, transform .2s ease;
   }
-  .hk-toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-  .hk-toast.success { background:#198754; }   /* Bootstrap success */
-  .hk-toast.warn    { background:#ffc107; color:#111; }
-  .hk-toast.error   { background:#dc3545; }
+  .hk-toast.show  { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .hk-toast.success{ background:#28a745; }  /* <- green per spec */
+  .hk-toast.warn   { background:#ffc107; color:#111; } /* yellow */
+  .hk-toast.error  { background:#dc3545; } /* red */
 </style>
 
 <header class="d-flex justify-content-between align-items-center mb-3">
@@ -335,6 +335,19 @@ function actionMessageFromUrl(url){
   return '✔️ Acción realizada.';
 }
 
+function toastKindFromUrl(url){
+  // Shift actions
+  if (url.endsWith('/start')) return 'success'; // green
+  if (url.endsWith('/pause')) return 'warn';    // yellow
+  if (url.endsWith('/end'))   return 'error';   // red
+
+  // (Optional) Ticket actions – keep green by default, but show yellow on ticket pause
+  if (url.includes('ticket_pause')) return 'warn';
+
+  return 'success';
+}
+
+
   // ========= HK Shift controls (uses /api/hk/shift) =========
   const shiftStatus = document.getElementById('shift-status');
   const btnStart = document.getElementById('btn-shift-start');
@@ -407,7 +420,7 @@ function actionMessageFromUrl(url){
     const r = await fetch(url, { method: 'POST' });
     await refreshShiftStatus();
     if (r.ok) {
-      showToast(actionMessageFromUrl(url), 'success');
+      showToast(actionMessageFromUrl(url), toastKindFromUrl(url));
     } else {
       showToast('❌ No se pudo actualizar el estado del turno.', 'error', 2800);
     }
@@ -468,7 +481,7 @@ function wireTicketForms(){
             if (j && j.message) msg = j.message;
           } catch(_) { /* 204/empty or non-json, ignore */ }
 
-          showToast(msg, 'success');
+          showToast(msg, toastKindFromUrl(form.action));
           // Give the toast a moment, then refresh to reflect new state
           setTimeout(()=>window.location.reload(), 700);
         } else {
