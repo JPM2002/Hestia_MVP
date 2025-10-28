@@ -1,466 +1,552 @@
-<!-- templates/dashboard_recepcion.html -->
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <title>Recepción · Panel</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+{% extends "base.html" %}
+{% block title %}Recepción — Tickets{% endblock %}
 
-  <!-- Minimal, dependency-free styles -->
-  <style>
-    :root{
-      --bg:#0f1115;
-      --panel:#171a21;
-      --muted:#8b94a7;
-      --text:#e9eef7;
-      --ok:#2ecc71;
-      --warn:#f39c12;
-      --bad:#e74c3c;
-      --chip:#232838;
-      --border:#2a3042;
-      --accent:#4f8cff;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      font-family: ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,Apple Color Emoji,Segoe UI Emoji;
-      background:linear-gradient(180deg,#0f1115 0%, #0d1016 100%);
-      color:var(--text);
-    }
-    a{color:var(--accent); text-decoration:none}
-    a:hover{text-decoration:underline}
-    header{
-      position:sticky; top:0; z-index:10;
-      background:rgba(15,17,21,.85); backdrop-filter:saturate(1.2) blur(6px);
-      border-bottom:1px solid var(--border);
-    }
-    .wrap{
-      max-width:1200px; margin:0 auto; padding:16px;
-    }
-    .row{display:flex; gap:16px; flex-wrap:wrap}
-    .grow{flex:1 1 0}
-    .logo{
-      font-weight:800; letter-spacing:.3px; font-size:18px
-    }
-    .user{
-      margin-left:auto; color:var(--muted); font-size:14px
-    }
+{% block content %}
 
-    /* KPIs */
-    .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px}
-    .kpi{
-      background:var(--panel);
-      border:1px solid var(--border);
-      border-radius:14px;
-      padding:14px;
-      box-shadow:0 6px 24px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.02);
-      display:flex; flex-direction:column; gap:6px;
-      min-height:86px;
-    }
-    .kpi h4{margin:0; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em}
-    .kpi .val{font-size:28px; font-weight:750}
-    .kpi.ok .val{color:var(--ok)}
-    .kpi.warn .val{color:var(--warn)}
-    .kpi.bad .val{color:var(--bad)}
+<style>
+  .list-item-flex { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .list-item-main { min-width:0; }
+  .list-item-detail { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+  .list-item-meta { flex:0 0 auto; max-width:34%; text-align:right; }
+  .pill { display:inline-block; padding:.15rem .4rem; border-radius:.5rem; background:#f2f2f2; }
+  .tiny { font-size:.8rem; }
+  .btn-row { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem; }
+  .pending-approval { background: #fff6e6; }  /* resalta por aprobar */
+  .toolbar { gap:.5rem; }
+  .toolbar .form-select, .toolbar .form-control { height: 36px; }
+  .sidebar-stats .card + .card { margin-top:.75rem; }
+  .section-title { display:flex; justify-content:space-between; align-items:center; margin:.5rem 0; }
+</style>
 
-    /* Filters + actions */
-    .filters{
-      margin-top:18px;
-      background:var(--panel);
-      border:1px solid var(--border);
-      border-radius:14px;
-      padding:12px;
-      display:flex; flex-wrap:wrap; gap:10px; align-items:center
-    }
-    .filters label{font-size:12px; color:var(--muted); margin-right:6px}
-    .filters select,.filters input[type="number"]{
-      background:#0e1320; border:1px solid var(--border); color:var(--text);
-      padding:8px 10px; border-radius:10px; font-size:14px; outline:none
-    }
-    .btn{
-      background:var(--accent); color:white; border:none;
-      padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer
-    }
-    .btn.secondary{ background:#28304a; }
-    .btn.ghost{ background:transparent; border:1px solid var(--border); color:var(--text); }
-    .btn:disabled{opacity:.5; cursor:not-allowed}
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">📟 Recepción — Tickets</h1>
+  <div class="d-flex gap-2">
+    <!-- Abre modal para ticket manual (POST normal al backend) -->
+    <button class="btn btn-accent" data-bs-toggle="modal" data-bs-target="#manualModal">Ingresar ticket manual</button>
+    <a class="btn btn-outline-dark" href="{{ url_for('tickets') }}">Ver todos</a>
+  </div>
+</header>
 
-    /* Layout: table + feed side */
-    .grid{
-      display:grid; grid-template-columns: 1fr 320px; gap:16px; margin-top:16px
-    }
-    @media (max-width: 1000px){
-      .kpis{grid-template-columns:repeat(2,1fr)}
-      .grid{grid-template-columns:1fr}
-    }
+<!-- Toolbar: búsqueda + filtros (cliente) -->
+<div class="card mb-3">
+  <div class="card-body d-flex flex-wrap toolbar">
+    <input id="flt-q" class="form-control" placeholder="Buscar por detalle, huésped, ubicación…" style="min-width: 240px; flex: 1 1 320px;">
+    <select id="flt-estado" class="form-select" style="width: 160px;">
+      <option value="">Estado (todos)</option>
+      <option value="PENDIENTE">Pendiente</option>
+      <option value="EN_CURSO">En curso</option>
+      <option value="RESUELTO">Resuelto hoy</option>
+    </select>
+    <select id="flt-prio" class="form-select" style="width: 160px;">
+      <option value="">Prioridad (todas)</option>
+      <option>URGENTE</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option>
+    </select>
+    <select id="flt-area" class="form-select" style="width: 180px;">
+      <option value="">Área (todas)</option>
+      <option>MANTENCION</option><option>HOUSEKEEPING</option><option>ROOMSERVICE</option>
+    </select>
+    <button id="flt-clear" class="btn btn-light ms-auto">Limpiar</button>
+  </div>
+</div>
 
-    /* Table */
-    .card{
-      background:var(--panel);
-      border:1px solid var(--border);
-      border-radius:14px;
-      overflow:hidden;
-      box-shadow:0 6px 24px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.02);
-    }
-    .card h3{
-      margin:0; padding:12px 14px; border-bottom:1px solid var(--border); font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em
-    }
-    table{width:100%; border-collapse:collapse}
-    thead th{
-      text-align:left; font-size:12px; color:var(--muted);
-      padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap
-    }
-    tbody td{
-      padding:10px 12px; border-bottom:1px dashed #20263a; vertical-align:top; font-size:14px
-    }
-    tr:hover{background:#111524}
-    tr.critical{background: linear-gradient(90deg, rgba(231,76,60,0.08), transparent)}
-    .mono{font-variant-numeric: tabular-nums; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-    .chips{display:flex; gap:6px; flex-wrap:wrap}
-    .chip{
-      background:var(--chip); border:1px solid var(--border);
-      padding:3px 8px; border-radius:100px; font-size:12px; color:#c8d2ea
-    }
-    .prio-URGENTE{border-color:#ff7675; color:#ffb3b3}
-    .prio-ALTA{border-color:#f39c12; color:#ffd38f}
-    .prio-MEDIA{border-color:#3498db; color:#b9d9ff}
-    .prio-BAJA{border-color:#58d68d; color:#c8f3dc}
-    .estado-PENDIENTE,.estado-PENDIENTE_APROBACION{color:#ffd38f}
-    .estado-EN_CURSO{color:#b9d9ff}
-    .estado-RESUELTO{color:#c8f3dc}
-
-    /* Feed */
-    .feed{display:flex; flex-direction:column; gap:10px; padding:12px}
-    .feed-item{
-      background: #101525; border:1px solid var(--border);
-      border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:6px
-    }
-    .feed-item .meta{display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font-size:12px}
-    .pill{padding:2px 8px; border-radius:999px; background:#1a2033; border:1px solid var(--border); font-size:11px}
-    .danger{color:#ffb3b3}
-    .subtle{color:var(--muted)}
-
-    /* Utilities */
-    .right{margin-left:auto}
-    .muted{color:var(--muted)}
-    .flex{display:flex; align-items:center; gap:8px}
-    .hidden{display:none}
-    .nowrap{white-space:nowrap}
-    .w-100{width:100%}
-  </style>
-</head>
-<body>
-  <header>
-    <div class="wrap row">
-      <div class="logo">Hestia · Recepción</div>
-      <div class="user">Sesión: <strong>{{ (user.name if user and user.name) or (user.email if user) or '—' }}</strong></div>
+<!-- Layout: principal (lista unificada) + sidebar (contadores) -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-8">
+    <div class="section-title">
+      <h5 class="mb-0">🗂️ Todos los Tickets</h5>
     </div>
-  </header>
 
-  <main class="wrap">
-    <!-- KPIs -->
-    <section class="kpis" id="kpi-cards">
-      <div class="kpi warn">
-        <h4>Pendientes</h4>
-        <div class="val" id="kpi-pending">—</div>
-        <div class="muted">A la espera de confirmación/asignación</div>
+    <!-- Críticos header + countdown -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">🔥 Críticos (SLA en riesgo)</h6>
+      <div class="d-flex align-items-center gap-2 small text-muted">
+        <span id="crit-timer">Actualizando en 10s</span>
+        <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
       </div>
-      <div class="kpi">
-        <h4>En curso</h4>
-        <div class="val" id="kpi-inprog">—</div>
-        <div class="muted">Trabajándose en este momento</div>
-      </div>
-      <div class="kpi ok">
-        <h4>Resueltos hoy</h4>
-        <div class="val" id="kpi-today">—</div>
-        <div class="muted">Finalizados desde las 00:00</div>
-      </div>
-      <div class="kpi bad">
-        <h4>Críticos</h4>
-        <div class="val" id="kpi-critical">—</div>
-        <div class="muted">Vencidos o a &le; 10 min del vencimiento</div>
-      </div>
-    </section>
+    </div>
+    <div class="card mb-3">
+      <ul id="list-critical" class="list-group list-group-flush small"></ul>
+    </div>
 
-    <!-- Filters -->
-    <section class="filters">
-      <div class="flex">
-        <label for="f-estado">Estado</label>
-        <select id="f-estado">
-          <option value="PENDIENTE">Pendiente</option>
-          <option value="EN_CURSO">En curso</option>
-          <option value="RESUELTO">Resuelto</option>
-          <option value="">(Todos)</option>
-        </select>
-      </div>
-      <div class="flex">
-        <label for="f-periodo">Periodo</label>
-        <select id="f-periodo">
-          <option value="today">Hoy</option>
-          <option value="yesterday">Ayer</option>
-          <option value="7d">Últimos 7 días</option>
-          <option value="30d">Últimos 30 días</option>
-          <option value="all">Todos</option>
-        </select>
-      </div>
-      <div class="flex">
-        <label for="f-limit">Límite</label>
-        <input id="f-limit" type="number" min="10" step="10" value="100" />
-      </div>
+    <!-- Lista unificada -->
+    <div class="card">
+      <ul id="list-all" class="list-group list-group-flush small"></ul>
+    </div>
+  </div>
 
-      <button class="btn" id="btn-apply">Aplicar</button>
-      <button class="btn ghost" id="btn-reset">Reset</button>
+  <!-- Sidebar con contadores -->
+  <div class="col-12 col-lg-4">
+    <div class="sidebar-stats">
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Por aprobar</div>
+        <div id="kpi-toapprove" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Pendientes</div>
+        <div id="kpi-pending" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">En curso</div>
+        <div id="kpi-inprogress" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Resueltos (hoy)</div>
+        <div id="kpi-resolved" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Críticos</div>
+        <div id="kpi-critical" class="h3 mb-0">—</div>
+      </div></div>
+    </div>
+  </div>
+</div>
 
-      <div class="right flex">
-        <label for="f-autorefresh">Autorefresco</label>
-        <select id="f-autorefresh" title="Intervalo de autorefresco">
-          <option value="0">Off</option>
-          <option value="10">10s</option>
-          <option value="20" selected>20s</option>
-          <option value="30">30s</option>
-          <option value="60">60s</option>
-        </select>
-        <button class="btn secondary" id="btn-refresh">Refrescar</button>
+<!-- Feed -->
+<div class="card mt-3">
+  <div class="card-header py-2">📰 Últimos movimientos</div>
+  <ul id="feed" class="list-group list-group-flush small"></ul>
+</div>
+
+<!-- Ding -->
+<audio id="ding" preload="auto">
+  <source src="{{ url_for('static', filename='snd/new-ticket.mp3') }}" type="audio/mpeg">
+</audio>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar ticket <span id="edit-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
-    </section>
+      <div class="modal-body">
+        <input type="hidden" name="ticket_id" id="edit-ticket-id">
+        <div class="mb-2">
+          <label class="form-label">Detalle</label>
+          <textarea name="detalle" id="edit-detalle" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Prioridad</label>
+          <select name="prioridad" id="edit-prioridad" class="form-select">
+            <option value="">—</option>
+            <option>URGENTE</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Ubicación</label>
+          <input name="ubicacion" id="edit-ubicacion" class="form-control" />
+        </div>
+        <div class="small text-muted">Se registrará en el historial.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-    <!-- Table + Feed -->
-    <section class="grid">
-      <!-- Tickets -->
-      <div class="card">
-        <h3 class="flex">
-          Bandeja de tickets
-          <span class="pill" id="list-count">—</span>
-          <span class="right muted" id="list-updated">—</span>
-        </h3>
-        <div style="overflow:auto">
-          <table id="tbl">
-            <thead>
-              <tr>
-                <th class="nowrap">ID</th>
-                <th>Área</th>
-                <th>Prioridad</th>
-                <th>Estado</th>
-                <th>Detalle</th>
-                <th>Ubicación</th>
-                <th class="nowrap">Creado</th>
-                <th class="nowrap">Vence</th>
-                <th>Canal</th>
-                <th class="nowrap">Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="tbody">
-              <tr><td colspan="10" class="muted" style="padding:18px">Cargando…</td></tr>
-            </tbody>
-          </table>
+<!-- Delete (soft) Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="deleteForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Eliminar ticket <span id="del-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="delete-ticket-id" name="ticket_id">
+        <label class="form-label">Motivo</label>
+        <textarea name="motivo" id="delete-motivo" class="form-control" rows="3" placeholder="Ej: ticket duplicado / creado por error"></textarea>
+        <div class="small text-muted mt-1">Se registrará como baja lógica (soft delete).</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-danger" type="submit">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Ticket manual (POST tradicional al backend como en ticket_create.html) -->
+<div class="modal fade" id="manualModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <!-- IMPORTANT: Usa la misma ruta del create clásico -->
+    <form id="manualForm" class="modal-content" method="post" action="/tickets/new">
+      <div class="modal-header">
+        <h5 class="modal-title">Ingresar ticket manual</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="mb-2">
+          <label class="form-label">Área</label>
+          <select name="area" class="form-select" required>
+            {% for a in (areas or ['MANTENCION','HOUSEKEEPING','ROOMSERVICE']) %}
+              <option value="{{ a }}">{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">Prioridad</label>
+          <select name="prioridad" class="form-select" required>
+            {% for p in (prioridades or ['MEDIA','URGENTE','ALTA','BAJA']) %}
+              <option value="{{ p }}">{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Canal de origen fijo para recepción -->
+        <input type="hidden" name="canal_origen" value="RECEPCION">
+
+        <div class="mb-2">
+          <label class="form-label">Huésped ID (opcional)</label>
+          <!-- usa el MISMO nombre que el backend espera -->
+          <input class="form-control" name="huesped_id" placeholder="ej: PMS12345">
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">Ubicación / Habitación</label>
+          <input name="ubicacion" class="form-control" required placeholder="Ej: Hab 1203 o Lobby" />
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">Detalle</label>
+          <textarea name="detalle" class="form-control" rows="3" required placeholder="Describa el problema"></textarea>
+        </div>
+
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="qrreq" name="qr_required" value="1">
+          <label class="form-check-label" for="qrreq">Requerir validación por QR</label>
         </div>
       </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-      <!-- Feed -->
-      <aside class="card">
-        <h3>Actividad reciente</h3>
-        <div class="feed" id="feed">
-          <div class="muted">Cargando…</div>
-        </div>
-      </aside>
-    </section>
-  </main>
+{% endblock %}
 
-  <script>
-    // ----------------------- Utilities -----------------------
-    const $ = (sel, ctx=document) => ctx.querySelector(sel);
-    const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
-    const fmt = (x) => (x ?? '—');
-    const nowStr = () => new Date().toLocaleTimeString();
+{% block scripts %}
 
-    function chip(text, extraClass=''){
-      const span = document.createElement('span');
-      span.className = `chip ${extraClass}`.trim();
-      span.textContent = text ?? '—';
-      return span;
-    }
+<script>
+// RBAC flags (puedes renderizarlas desde servidor)
+const CAN_EDIT = true;
+const CAN_APPROVE = true;
+const CAN_DELETE = false;
 
-    function formConfirmButton(id, estado) {
-      const eligible = (estado === 'PENDIENTE' || estado === 'PENDIENTE_APROBACION');
-      if (!eligible) return '';
-      return `
-        <form method="POST" action="/tickets/${id}/confirm" style="display:inline">
-          <button class="btn" style="padding:6px 10px; font-size:12px">Confirmar</button>
-        </form>
-      `;
-    }
+// --- Modales ---
+let editModal, editForm, deleteModal, deleteForm, manualModal, manualForm;
 
-    // ----------------------- Data fetchers -----------------------
-    async function fetchKPIs(){
-      const r = await fetch('/api/recepcion/kpis', {headers:{'Accept':'application/json'}});
-      if(!r.ok) throw new Error('kpis failed');
-      const j = await r.json();
-      $('#kpi-pending').textContent = j.pending ?? 0;
-      $('#kpi-inprog').textContent = j.in_progress ?? 0;
-      $('#kpi-today').textContent  = j.resolved_today ?? 0;
-      $('#kpi-critical').textContent = j.critical ?? 0;
-    }
+window.addEventListener('DOMContentLoaded', () => {
+  editModal   = new bootstrap.Modal(document.getElementById('editModal'));
+  editForm    = document.getElementById('editForm');
+  deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+  deleteForm  = document.getElementById('deleteForm');
+  manualModal = new bootstrap.Modal(document.getElementById('manualModal'));
+  manualForm  = document.getElementById('manualForm');
 
-    function currentFilters(){
-      return {
-        estado: $('#f-estado').value,
-        period: $('#f-periodo').value,
-        limit:  parseInt($('#f-limit').value || '100', 10)
-      };
-    }
+  // Editar
+  editForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('edit-ticket-id').value;
+    const fd = new FormData(editForm);
+    const r = await fetch(`/tickets/${id}/edit`, { method:'POST', body: fd });
+    if (r.ok) { editModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo guardar.'); }
+  });
 
-    function qsFrom(obj){
-      const params = new URLSearchParams();
-      Object.entries(obj).forEach(([k,v])=>{
-        if(v !== undefined && v !== null && v !== '') params.set(k, v);
-      });
-      return params.toString();
-    }
+  // Eliminar (soft)
+  deleteForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('delete-ticket-id').value;
+    const fd = new FormData(deleteForm);
+    const r = await fetch(`/tickets/${id}/delete`, { method:'POST', body: fd });
+    if (r.ok) { deleteModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo eliminar.'); }
+  });
 
-    async function fetchList(){
-      const q = qsFrom(currentFilters());
-      const r = await fetch('/api/recepcion/list?' + q, {headers:{'Accept':'application/json'}});
-      if(!r.ok) throw new Error('list failed');
-      const j = await r.json();
-      renderList(j.items || []);
-      $('#list-count').textContent = (j.count ?? 0) + ' ítems';
-      $('#list-updated').textContent = 'Actualizado ' + nowStr();
-    }
+  // 🔹 SIN manejador JS para manualForm: será un POST clásico a /tickets/new
 
-    async function fetchFeed(){
-      const r = await fetch('/api/feed/recent', {headers:{'Accept':'application/json'}});
-      if(!r.ok) throw new Error('feed failed');
-      const j = await r.json();
-      renderFeed(j.items || []);
-    }
+  // Filtros UI
+  const inputs = ['flt-q','flt-estado','flt-prio','flt-area'].map(id=>document.getElementById(id));
+  inputs.forEach(i => i.addEventListener('input', () => renderFromCache()));
+  document.getElementById('flt-clear').addEventListener('click', () => {
+    document.getElementById('flt-q').value = '';
+    document.getElementById('flt-estado').value = '';
+    document.getElementById('flt-prio').value = '';
+    document.getElementById('flt-area').value = '';
+    renderFromCache();
+  });
+});
 
-    // ----------------------- Renderers -----------------------
-    function renderList(items){
-      const tb = $('#tbody');
-      tb.innerHTML = '';
-      if(!items.length){
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="10" class="muted" style="padding:18px">No hay tickets para los filtros actuales.</td>`;
-        tb.appendChild(tr);
-        return;
+window.openEdit = (t) => {
+  document.getElementById('edit-id').textContent = `#${t.id}`;
+  document.getElementById('edit-ticket-id').value = t.id;
+  document.getElementById('edit-detalle').value = t.detalle || '';
+  document.getElementById('edit-prioridad').value = (t.prioridad || '').toUpperCase();
+  document.getElementById('edit-ubicacion').value = t.ubicacion || '';
+  editModal.show();
+};
+
+window.openDelete = (id) => {
+  document.getElementById('del-id').textContent = `#${id}`;
+  document.getElementById('delete-ticket-id').value = id;
+  document.getElementById('delete-motivo').value = '';
+  deleteModal.show();
+};
+
+window.approveTicket = async (id) => {
+  const r = await fetch(`/tickets/${id}/confirm`, { method:'POST' });
+  if (r.ok) { await window.refreshAll?.(); } else { alert('No se pudo aprobar.'); }
+};
+</script>
+
+<script>
+/* ===== Countdown + refresh hook for Críticos ===== */
+(function () {
+  const EVERY = 10;
+  let secs = EVERY;
+  const label = document.getElementById('crit-timer');
+  const busy  = document.getElementById('crit-busy');
+
+  async function refreshCriticos() {
+    try {
+      if (busy) busy.hidden = false;
+      if (window.loadCriticos) { await window.loadCriticos(); }
+      else if (window.refreshAll) { await window.refreshAll(); }
+      else { await new Promise(r => setTimeout(r, 300)); }
+    } finally {
+      if (busy) busy.hidden = true;
+      secs = EVERY;
+      if (label) {
+        label.textContent = 'Actualizado';
+        setTimeout(() => { label.textContent = `Actualizando en ${secs}s`; }, 800);
       }
+    }
+  }
 
-      for(const it of items){
-        const tr = document.createElement('tr');
-        if(it.is_critical) tr.classList.add('critical');
+  setInterval(() => {
+    secs -= 1;
+    if (secs <= 0) { refreshCriticos(); }
+    else if (label) { label.textContent = `Actualizando en ${secs}s`; }
+  }, 1000);
 
-        const prio = chip(it.prioridad || '—', 'prio-' + (it.prioridad || '').toUpperCase());
-        const est  = chip(it.estado || '—', 'estado-' + (it.estado || '').toUpperCase());
+  window.resetCritTimer = () => { secs = EVERY; if (label) label.textContent = `Actualizando en ${secs}s`; };
+})();
+</script>
 
-        const acciones = `
-          <div class="chips">
-            <a class="btn ghost" style="padding:6px 10px; font-size:12px"
-               href="/tickets?q=${encodeURIComponent('#'+it.id)}" title="Abrir en Tickets">Abrir</a>
-            ${formConfirmButton(it.id, (it.estado || '').toUpperCase())}
+<script>
+/* ===== Datos + render con filtros (lista unificada) ===== */
+const el = {
+  kpiToApprove: document.getElementById('kpi-toapprove'),
+  kpiPending:  document.getElementById('kpi-pending'),
+  kpiInProg:   document.getElementById('kpi-inprogress'),
+  kpiResolved: document.getElementById('kpi-resolved'),
+  kpiCritical: document.getElementById('kpi-critical'),
+  listCrit:    document.getElementById('list-critical'),
+  listAll:     document.getElementById('list-all'),
+  feed:        document.getElementById('feed'),
+  ding:        document.getElementById('ding'),
+};
+
+let cache = { toapprove: [], pending: [], progress: [], resolved: [], all: [] };
+let prev = { pendingIds: new Set() };
+
+function pill(text){ return `<span class="pill tiny">${text}</span>`; }
+
+function metaAssigned(t){
+  const who = t.assigned_name || '(sin asignar)';
+  const due = t.due_at ? `Vence ${t.due_at}` : 'Sin SLA';
+  const crit = t.is_critical ? ` <span class="text-danger fw-semibold">⚠</span>` : '';
+  return `${pill('Asignado: ' + who)}<br><span class="text-muted">${due}${crit}</span>`;
+}
+
+function headerWithGuest(t){
+  const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
+                   t.prioridad==='ALTA'    ? 'text-bg-warning' :
+                   t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
+  const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
+  const guest = (t.guest_name || t.huesped || '') ? ` · Huésped: ${(t.guest_name || t.huesped || '')}${t.guest_id ? ' ('+t.guest_id+')':''}` : '';
+  return `<div class="d-flex align-items-center flex-wrap gap-1">
+            <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>
+            <span>${t.area || '—'}${room}${guest}</span>
           </div>`;
+}
 
-        tr.innerHTML = `
-          <td class="mono nowrap">#${it.id}</td>
-          <td>${fmt(it.area)}</td>
-          <td></td>
-          <td></td>
-          <td>${fmt(it.detalle)}</td>
-          <td>${fmt(it.ubicacion)}</td>
-          <td class="mono nowrap">${fmt(it.created_at)}</td>
-          <td class="mono nowrap">${fmt(it.due_at)}</td>
-          <td>${fmt(it.canal || '—')}</td>
-          <td class="nowrap">${acciones}</td>
-        `;
+function actionButtonsPending(t){
+  // “Por aprobar” => estado explícito PENDIENTE_APROBACION
+  const isAwaiting = (t.estado === 'PENDIENTE_APROBACION');
 
-        // Inject the chips in their cells
-        tr.children[2].appendChild(prio);
-        tr.children[3].appendChild(est);
+  const editBtn = CAN_EDIT
+    ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>`
+    : '';
 
-        tb.appendChild(tr);
-      }
+  const approveBtn = (CAN_APPROVE && isAwaiting)
+    ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>`
+    : '';
+
+  const deleteBtn  = ''; // (soft delete deshabilitado aquí)
+
+  return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
+}
+
+function liTicketPending(t){
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        ${headerWithGuest(t)}
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${actionButtonsPending(t)}
+      </div>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
+    </div>
+  </li>`;
+}
+
+function liTicketGeneric(t){
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        ${headerWithGuest(t)}
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${CAN_EDIT ? `<div class="btn-row"><button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button></div>` : ''}
+      </div>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
+    </div>
+  </li>`;
+}
+
+function liFeed(x){
+  const who = x.actor || 'sistema';
+  const room = x.ubicacion ? ` · ${x.ubicacion}` : '';
+  return `<li class="list-group-item">
+    <span class="text-muted">${x.at}</span> — Ticket #${x.ticket_id} ${x.action} por ${who} (${x.area || '—'}${room})
+    ${x.motivo ? ` · <span class="text-muted">${x.motivo}</span>` : ''}
+  </li>`;
+}
+
+async function loadKPIs(){
+  const [k, pend] = await Promise.all([
+    fetch('/api/recepcion/kpis'),
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=500')
+  ]);
+
+  if(k.ok){
+    const j = await k.json();
+    el.kpiPending.textContent   = j.pending ?? '0';
+    el.kpiInProg.textContent    = j.in_progress ?? '0';
+    el.kpiResolved.textContent  = j.resolved_today ?? '0';
+  }
+
+  // “Por aprobar” = items con estado PENDIENTE_APROBACION
+  if(pend.ok){
+    const jp = await pend.json();
+    const toApproveCount = (jp.items || []).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION').length;
+    el.kpiToApprove.textContent = String(toApproveCount);
+  }
+}
+
+async function loadLists(){
+  const [p, e, r] = await Promise.all([
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=300'),
+    fetch('/api/recepcion/list?estado=EN_CURSO&period=7d&limit=300'),
+    fetch('/api/recepcion/list?estado=RESUELTO&period=today&limit=300'),
+  ]);
+  const jp = p.ok ? await p.json() : {items:[]};
+  const je = e.ok ? await e.json() : {items:[]};
+  const jr = r.ok ? await r.json() : {items:[]};
+
+  // Divide PENDIENTES entre por aprobar (PENDIENTE_APROBACION) y pendientes ya aprobados (PENDIENTE)
+  const toapprove = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION');
+  const pend      = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE');
+
+  cache = {
+    toapprove,
+    pending: pend,
+    progress: (je.items||[]),
+    resolved: (jr.items||[])
+  };
+
+  // Construye lista unificada (orden: por aprobar → pendientes → en curso → resueltos hoy)
+  const tag = (t, cls='') => ({...t, __cls: cls});
+  cache.all = [
+    ...toapprove.map(t => tag(t, 'pending-approval')),
+    ...cache.pending,
+    ...cache.progress,
+    ...cache.resolved
+  ];
+
+  // Ding si crecen los pendientes (los por aprobar no disparan el ding)
+  const ids = new Set(pend.map(x=>x.id));
+  const newId = [...ids].find(id => !prev.pendingIds.has(id));
+  if ((ids.size > prev.pendingIds.size || newId) && el.ding) {
+    try { el.ding.currentTime = 0; el.ding.play().catch(()=>{}); } catch(e){}
+  }
+  prev.pendingIds = ids;
+
+  renderFromCache();
+}
+
+function applyFilters(list, forceEstado=''){
+  const q = (document.getElementById('flt-q').value || '').toLowerCase();
+  const estado = forceEstado || (document.getElementById('flt-estado').value || '');
+  const prio   = (document.getElementById('flt-prio').value || '');
+  const area   = (document.getElementById('flt-area').value || '');
+
+  return (list||[]).filter(t => {
+    if (estado && !((t.estado||'').includes(estado))) return false;
+    if (prio && (t.prioridad||'') !== prio) return false;
+    if (area && (t.area||'') !== area) return false;
+    if (q) {
+      const hay = `${t.detalle||''} ${t.guest_name||''} ${t.guest_id||''} ${t.ubicacion||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
     }
+    return true;
+  });
+}
 
-    function renderFeed(items){
-      const box = $('#feed');
-      box.innerHTML = '';
-      if(!items.length){
-        box.innerHTML = `<div class="muted">Sin actividad reciente.</div>`;
-        return;
-      }
-      for(const it of items){
-        const el = document.createElement('div');
-        el.className = 'feed-item';
-        const action = (it.action || '').toUpperCase();
-        const actionClass = (action === 'RESUELTO') ? 'ok' :
-                            (action === 'PAUSADO' || action === 'DERIVADO') ? 'warn' :
-                            (action === 'CANCELADO') ? 'danger' : '';
-        el.innerHTML = `
-          <div class="meta">
-            <span class="pill mono">#${it.ticket_id}</span>
-            <span class="pill ${actionClass}">${action}</span>
-            <span class="pill">${it.area || '—'}</span>
-            ${it.ubicacion ? `<span class="pill">${it.ubicacion}</span>` : ``}
-          </div>
-          <div class="subtle">por <strong>${it.actor || 'sistema'}</strong></div>
-          <div class="subtle">${fmt(it.at)}</div>
-          ${it.motivo ? `<div class="muted">${it.motivo}</div>` : ``}
-        `;
-        box.appendChild(el);
-      }
-    }
+function renderFromCache(){
+  // Críticos: solo pendientes aprobados + en curso
+  const criticalItems = [...cache.pending, ...cache.progress].filter(x=>x.is_critical);
+  el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicketGeneric).join('') ||
+                          '<li class="list-group-item text-muted">Sin críticos</li>';
+  if (el.kpiCritical) el.kpiCritical.textContent = String(criticalItems.length || 0);
 
-    // ----------------------- Wiring -----------------------
-    let timer = null;
+  // Lista unificada con filtros; PENDIENTE_APROBACION resaltados
+  const ALL = applyFilters(cache.all);
+  el.listAll.innerHTML = ALL.map(t => {
+    const html = (t.estado === 'PENDIENTE_APROBACION') ? liTicketPending(t) : liTicketGeneric(t);
+    return (t.__cls === 'pending-approval')
+      ? html.replace('class="list-group-item"', 'class="list-group-item pending-approval"')
+      : html;
+  }).join('') || '<li class="list-group-item text-muted">Sin tickets</li>';
+}
 
-    function applyAutoRefresh(){
-      const s = parseInt($('#f-autorefresh').value || '0', 10);
-      if(timer){ clearInterval(timer); timer = null; }
-      if(s > 0){
-        timer = setInterval(async () => {
-          try{
-            await Promise.all([fetchKPIs(), fetchList(), fetchFeed()]);
-          }catch(e){ /* swallow */ }
-        }, s*1000);
-      }
-    }
+async function loadFeed(){
+  const r = await fetch('/api/feed/recent');
+  if(!r.ok) return;
+  const j = await r.json();
+  el.feed.innerHTML = (j.items||[]).map(liFeed).join('') || '<li class="list-group-item text-muted">Sin movimientos</li>';
+}
 
-    async function refreshAll(){
-      await Promise.all([fetchKPIs(), fetchList(), fetchFeed()]);
-    }
+// expose helpers
+window.loadCriticos = async () => { await loadLists(); };
+window.refreshAll   = async () => { await loadKPIs(); await loadLists(); await loadFeed(); };
 
-    // Initial state from URL (optional)
-    function maybeLoadFromURL(){
-      const u = new URL(location.href);
-      const estado = u.searchParams.get('estado');
-      const period = u.searchParams.get('period');
-      const limit  = u.searchParams.get('limit');
-      if(estado !== null) $('#f-estado').value = estado;
-      if(period !== null) $('#f-periodo').value = period;
-      if(limit  !== null) $('#f-limit').value  = limit;
-    }
+function tick(){
+  loadKPIs();
+  loadLists().then(()=> window.resetCritTimer && window.resetCritTimer());
+  loadFeed();
+}
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      maybeLoadFromURL();
-      $('#btn-apply').addEventListener('click', async () => {
-        await fetchList();
-        const q = qsFrom(currentFilters());
-        history.replaceState(null, '', '?' + q);
-      });
-      $('#btn-reset').addEventListener('click', async () => {
-        $('#f-estado').value = 'PENDIENTE';
-        $('#f-periodo').value = 'today';
-        $('#f-limit').value = 100;
-        await fetchList();
-        history.replaceState(null, '', '');
-      });
-      $('#btn-refresh').addEventListener('click', refreshAll);
-      $('#f-autorefresh').addEventListener('change', applyAutoRefresh);
-
-      // First paint
-      await refreshAll();
-      applyAutoRefresh();
-    });
-  </script>
-</body>
-</html>
+tick();
+setInterval(tick, 8000);
+</script>
+{% endblock %}
