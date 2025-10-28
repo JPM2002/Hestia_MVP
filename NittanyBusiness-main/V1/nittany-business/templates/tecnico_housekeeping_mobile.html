@@ -322,6 +322,15 @@ function showToast(msg, kind='success', ms=2200){
   hkToastTimer = setTimeout(()=> hkToastEl.classList.remove('show'), ms);
 }
 
+// === HH:MM local, 24h si el dispositivo está en es-ES/es-PE, etc. ===
+function fmtHHMM(isoOrDate){
+  try{
+    const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }catch(_){ return ''; }
+}
+
+
 // Map endpoint -> human message
 function actionMessageFromUrl(url){
   if (url.includes('ticket_accept')) return '✅ Has tomado este ticket.';
@@ -390,16 +399,27 @@ function toastKindFromUrl(url){
   }
 
   function labelFromState(j){
-    if (!j || (!j.active && !j.started_at)) return 'Turno: inactivo';
-    if (j.ended_at) return 'Turno: finalizado';
-    if (j.paused)   return 'Turno: en pausa';
-    try {
-      const d = new Date(j.started_at);
-      return `Turno: activo desde ${d.toLocaleString()}`;
-    } catch(_) {
-      return 'Turno: activo';
-    }
+  // Sin turno en curso ni marcas
+  if (!j || (!j.active && !j.started_at && !j.ended_at)) return 'Turno: inactivo';
+
+  // Finalizado -> mostrar hora de cierre
+  if (j.ended_at){
+    const hhmm = fmtHHMM(j.ended_at);
+    return `Turno: finalizado — ${hhmm} hrs`;
   }
+
+  // Pausado -> igual que antes
+  if (j.paused) return 'Turno: en pausa';
+
+  // Activo -> conserva el formato con hora de inicio
+  try{
+    const hhmm = fmtHHMM(j.started_at);
+    return `Turno: activo desde ${hhmm} hrs`;
+  }catch(_){
+    return 'Turno: activo';
+  }
+}
+
 
   async function refreshShiftStatus(){
     try{

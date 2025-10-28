@@ -37,6 +37,38 @@ ESTADO_NICE = {
 
 }
 
+# --- Shift helpers (session-only) ---
+from datetime import datetime, timezone
+from flask import jsonify, session
+
+def _now_iso():
+    # ISO con zona horaria (UTC). El front lo formatea a local.
+    return datetime.now(timezone.utc).isoformat()
+
+def _shift_log_append(action: str):
+    """Mantén un pequeño log en sesión (sin DB por ahora)."""
+    log = session.get('hk_shift_log') or []
+    at = _now_iso()
+    log.append({"action": action, "at": at})
+    session['hk_shift_log'] = log[-50:]  # limita tamaño
+    session.modified = True
+    return at
+
+def _shift_state():
+    """Devuelve el estado actual (para /api/hk/shift y para inyectar en templates)."""
+    s = session.get('hk_shift') or {}
+    started_at = s.get('started_at')
+    ended_at   = s.get('ended_at')
+    paused     = bool(s.get('paused'))
+    active     = bool(started_at and not ended_at and not paused)
+    return {
+        "active": active,
+        "paused": paused,
+        "started_at": started_at,
+        "ended_at": ended_at,
+    }
+
+
 def _wants_json():
     # Detecta fetch/XHR/HTMX o Accept JSON
     if request.is_json:
@@ -1768,8 +1800,11 @@ def api_hk_shift_status():
 
 @app.post('/hk/shift/start')
 def hk_shift_start():
+    # Al iniciar nuevo turno, limpiamos el log anterior (visible hasta el próximo inicio).
+    session['hk_shift_log'] = []
+    started = _shift_log_append('START')
     session['hk_shift'] = {
-        "started_at": _now_iso(),
+        "started_at": started,
         "paused": False,
         "ended_at": None
     }
@@ -1779,9 +1814,12 @@ def hk_shift_start():
 @app.post('/hk/shift/pause')
 def hk_shift_pause():
     s = session.get('hk_shift') or {}
-    if not s.get('started_at'):
+    # Si no hay turno iniciado, nos mantenemos no-op (204) para no romper UI.
+    if not s.get('started_at') or s.get('ended_at'):
         return ('', 204)
+
     s['paused'] = not s.get('paused', False)  # toggle
+    _shift_log_append('PAUSE' if s['paused'] else 'RESUME')
     session['hk_shift'] = s
     session.modified = True
     return ('', 204)
@@ -1789,13 +1827,27 @@ def hk_shift_pause():
 @app.post('/hk/shift/end')
 def hk_shift_end():
     s = session.get('hk_shift') or {}
-    if not s.get('started_at'):
+    if not s.get('started_at') or s.get('ended_at'):
         return ('', 204)
-    s['ended_at'] = _now_iso()
+
+    ended = _shift_log_append('END')
+    s['ended_at'] = ended           # <-- esto es lo que verá el front para "— HH:MM hrs"
     s['paused'] = False
     session['hk_shift'] = s
     session.modified = True
     return ('', 204)
+
+@app.get('/api/hk/shift')
+def hk_shift_status():
+    state = _shift_state()
+    # opcional: exponer el log de sesión por si deseas mostrarlo luego
+    state['log'] = session.get('hk_shift_log', [])
+    return jsonify(state)
+
+@app.context_processor
+def inject_hk_flags():
+    return {"HK_SHIFT_ACTIVE": _shift_state()["active"]}
+
 
 
 # ---- SHIFT GUARDS ----------------------------------------------------------
