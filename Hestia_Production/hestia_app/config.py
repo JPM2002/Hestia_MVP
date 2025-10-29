@@ -1,18 +1,48 @@
-# config.py
+# hestia_app/config.py
 import os
+from datetime import timedelta
 
-class Base:
-    SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
-    ENABLE_TECH_DEMO = os.getenv("ENABLE_TECH_DEMO", "0") == "1"
-    DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres on Render
-    SLA_TARGET = float(os.getenv("SLA_TARGET", "0.90"))  # default 90%
+class BaseConfig:
+    SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-env")
+    SESSION_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_HTTPONLY = True
+    PERMANENT_SESSION_LIFETIME = timedelta(days=7)
+    # Add other common settings here (DB, mail, etc.)
+    # Example:
+    # DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///hestia.db")
+    # SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    # SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-class Production(Base):
+class DevelopmentConfig(BaseConfig):
+    DEBUG = True
+    TEMPLATES_AUTO_RELOAD = True
+
+class ProductionConfig(BaseConfig):
     DEBUG = False
 
-class Development(Base):
+class TestingConfig(BaseConfig):
+    TESTING = True
     DEBUG = True
 
-def load_config(app):
-    env = os.getenv("APP_ENV", "production").lower()
-    app.config.from_object(Development if env.startswith("dev") else Production)
+def get_config(env: str | None = None):
+    """
+    Returns a config class based on env.
+    Priority: explicit arg > APP_ENV > FLASK_ENV > default (production on Render, dev otherwise)
+    """
+    if not env:
+        env = (
+            os.getenv("APP_ENV")
+            or os.getenv("FLASK_ENV")
+            or ("production" if os.getenv("RENDER") else "development")
+        )
+
+    env = str(env).lower()
+    mapping = {
+        "dev": DevelopmentConfig,
+        "development": DevelopmentConfig,
+        "prod": ProductionConfig,
+        "production": ProductionConfig,
+        "test": TestingConfig,
+        "testing": TestingConfig,
+    }
+    return mapping.get(env, ProductionConfig)
