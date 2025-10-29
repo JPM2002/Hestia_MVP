@@ -1,0 +1,82 @@
+:root{
+  /* Palette */
+  --bg:#FAFAFB;
+  --bg-elev:#FFFFFF;
+  --text:#16242D;
+  --brand:#16242D;      /* primary brand (navbar/buttons) */
+  --accent:#41D4A8;     /* action/CTA */
+  --warning:#C09B5F;    /* neutral/warn badge */
+  --critical:#E5484D;   /* error/critical */
+
+  /* Typography */
+  --font-head: "Montserrat", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  --font-body: "Open Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+html, body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.bg-soft{ background: var(--bg); color: var(--text); }
+
+h1, h2, h3, .navbar-brand, .page-title{
+  font-family: var(--font-head);
+}
+
+/* Buttons */
+.btn-brand{
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.btn-brand:hover{
+  background: #0f1a22;
+  color:#fff;
+  border-color: #0f1a22;
+}
+
+.btn-accent{
+  background: var(--accent);
+  color: #06281c;
+  border-color: var(--accent);
+}
+.btn-accent:hover{
+  filter: brightness(0.95);
+  color: #06281c;
+}
+
+/* Navbar overrides */
+.navbar .nav-link{ color:#fff !important; }
+
+/* Cards */
+.card{
+  background: var(--bg-elev);
+  border-radius: 14px;
+}
+.stat-card .card-body{ padding: 22px 20px; }
+
+/* Tables */
+.table thead th{ font-weight:600; font-family: var(--font-head); }
+
+/* Forms */
+.form-label{ font-weight:600; font-family: var(--font-head); }
+
+/* Badges */
+.badge-channel{
+  background: #eefaf6;
+  color:#0b3b2c;
+  border:1px solid #c9efe3;
+}
+
+/* Links */
+a{ color: var(--brand); }
+a:hover{ color: #0f1a22; }
+
+/* Utilities */
+.text-brand{ color: var(--brand) !important; }
+.bg-brand{ background: var(--brand) !important; }
+.bg-accent{ background: var(--accent) !important; }
