@@ -1,3 +1,4 @@
+# hestia_app/services/db.py
 from __future__ import annotations
 import sqlite3 as sql
 from contextlib import suppress
@@ -5,12 +6,14 @@ from datetime import datetime
 import time
 import os
 
-from flask import current_app
-from .dsn import is_supabase_pooler, dsn_with_params, IS_SUPABASE_POOLER
+# ✅ FIX: use a relative import; do NOT import top-level "dsn"
+from .dsn import dsn_with_params, is_supabase_pooler, IS_SUPABASE_POOLER, BASE_DATABASE_URL
 
-# Optional psycopg2 import (only when DATABASE_URL is set)
+from flask import current_app
+
 # --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
-DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
+# Prefer env for runtime (Render), but your Config also exposes DATABASE_URL if you need it elsewhere.
+DATABASE_URL = BASE_DATABASE_URL  # e.g. postgresql://...:6543/postgres?sslmode=require
 DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
 USE_PG = bool(DATABASE_URL)
 
@@ -28,7 +31,6 @@ if USE_PG:
 
 PG_POOL = None  # created lazily on first use
 
-# --- Postgres pool init & connection helpers ---
 def _init_pg_pool():
     """Create the global pool once. Keep pool tiny when using Supabase pgbouncer (6543)."""
     global PG_POOL
@@ -39,8 +41,7 @@ def _init_pg_pool():
     if pg is None or pg_pool is None:
         raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements).")
     try:
-        dsn = _dsn_with_params(DATABASE_URL)
-        # very small pool if going through supabase pooler; larger otherwise
+        dsn = dsn_with_params(DATABASE_URL)  # ✅ normalize DSN here
         maxconn_default = '2' if IS_SUPABASE_POOLER else '5'
         maxconn = int(os.getenv('PG_POOL_MAX', maxconn_default))
         PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
@@ -49,6 +50,7 @@ def _init_pg_pool():
     except Exception as e:
         print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
         raise
+
 
 def _pg_conn_with_retry(tries: int = 2, backoff: float = 0.35):
     last = None

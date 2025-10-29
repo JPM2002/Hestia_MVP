@@ -2,6 +2,7 @@ import json
 import urllib.request
 from flask import current_app
 import os
+import requests
 
 # --- WhatsApp notify service (the webhook app you shared) ---
 WA_NOTIFY_BASE  = os.getenv('WA_NOTIFY_BASE', 'https://hestia-whatsapp-webhook.onrender.com/').rstrip('/')   # ej: https://hestia-wa.onrender.com
