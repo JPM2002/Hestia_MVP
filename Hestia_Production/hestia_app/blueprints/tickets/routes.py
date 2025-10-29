@@ -1,7 +1,7 @@
 # app/routes.py
 from __future__ import annotations
 import re
-from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app, g
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from ...core.area import require_perm
@@ -13,6 +13,7 @@ from ...services.notify import _notify_tech_assignment, _notify_guest_final
 from ...core.errors import _err_or_redirect, _ok_or_redirect
 from ...core.status import nice_state
 from ...blueprints.tecnico.routes import _guard_active_shift
+from ...blueprints.tickets.routes import _period_bounds, _safe_is_critical
 
 from flask import (
     request, session, jsonify, render_template,
@@ -64,6 +65,81 @@ def ticket_edit(ticket_id):
     )
 
     return jsonify({"ok": True})
+
+
+@bp.get("/tickets", endpoint="tickets")
+@require_perm("ticket.view.area")
+def ticket_list():
+    """
+    Canonical list/landing for Tickets.
+    Endpoint name = 'tickets.tickets' so the navbar link in base.html works.
+    Renders templates/tickets.html
+    """
+    org_id, _ = current_scope()
+    if not org_id:
+        flash("Sin contexto de organización.", "error")
+        return redirect(url_for("dashboard.index"))
+
+    # --- Filters (match your tickets.html form) ---
+    q        = (request.args.get("q") or "").strip()
+    area     = (request.args.get("area") or "").strip().upper()
+    prioridad= (request.args.get("prioridad") or "").strip().upper()
+    estado   = (request.args.get("estado") or "").strip().upper()
+    period   = (request.args.get("period") or "today").strip()
+
+    where, params = ["org_id=?"], [org_id]
+    if q:
+        where.append("(detalle LIKE ? OR ubicacion LIKE ?)")
+        like = f"%{q}%"
+        params += [like, like]
+    if area:
+        where.append("area=?"); params.append(area)
+    if prioridad:
+        where.append("prioridad=?"); params.append(prioridad)
+    if estado:
+        where.append("estado=?"); params.append(estado)
+
+    start, end = _period_bounds(period)
+    if start and end:
+        where.append("created_at>=? AND created_at<?"); params += [start, end]
+    elif start:
+        where.append("created_at>=?"); params.append(start)
+
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, canal_origen,
+               created_at, due_at, finished_at
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+        LIMIT 200
+    """, tuple(params))
+
+    now = datetime.now()
+    tickets = [{
+        "id": r["id"],
+        "area": r["area"],
+        "prioridad": r["prioridad"],
+        "estado": r["estado"],
+        "detalle": r["detalle"],
+        "ubicacion": r["ubicacion"],
+        "canal": r.get("canal_origen"),
+        "created_at": r["created_at"],
+        "due_at": r.get("due_at"),
+        "finished_at": r.get("finished_at"),
+        "is_critical": _safe_is_critical(now, r.get("due_at")),
+    } for r in rows]
+
+    filters = {
+        "q": q, "area": area, "prioridad": prioridad,
+        "estado": estado, "period": period
+    }
+
+    return render_template("tickets.html",
+                           user=session.get("user"),
+                           tickets=tickets,
+                           filters=filters,
+                           device=getattr(g, "device", None),
+                           view=getattr(g, "view_mode", "auto"))
 
 # ---------------------------- create & confirm ticket ----------------------------
 @bp.route('/tickets/create', methods=['GET', 'POST'])
