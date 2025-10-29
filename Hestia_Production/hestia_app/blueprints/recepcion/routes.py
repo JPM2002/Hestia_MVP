@@ -1,11 +1,65 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from flask import (
+    render_template, jsonify, request, redirect, url_for,
+    session, flash, g
+)
+
+from . import bp
+
+# --- DB helpers ---
+try:
+    from ...services.db import fetchall, fetchone
+except Exception:
+    # Fallback import if relative pathing differs at runtime
+    from hestia_app.services.db import fetchall, fetchone  # type: ignore
+
+# --- Optional SLA helper (only used via _safe_is_critical) ---
+try:
+    from ...services.sla import is_critical  # type: ignore
+except Exception:
+    is_critical = None  # type: ignore
+
+# --- Auth / scope helpers ---
+try:
+    from ...blueprints.auth.routes import current_scope  # type: ignore
+except Exception:
+    try:
+        from ..auth.routes import current_scope  # type: ignore
+    except Exception:
+        # Safe fallback so the module can import even before auth loads
+        def current_scope():
+            return session.get("org_id"), session.get("hotel_id")
+
+# --- Permission decorator (no-op fallback if not available) ---
+try:
+    from ...core.authz import require_perm  # type: ignore
+except Exception:
+    try:
+        from ..auth.routes import require_perm  # type: ignore
+    except Exception:
+        def require_perm(_perm: str):
+            def _decorator(fn):
+                return fn
+            return _decorator
+
+# --- Template chooser helper (fallback picks first) ---
+try:
+    from ...utils.rendering import render_best  # type: ignore
+except Exception:
+    def render_best(candidates: list[str], **ctx):
+        return render_template(candidates[0], **ctx)
+
+
 # ---------------------------- Recepción inbox (triage) ----------------------------
-@app.route('/recepcion/inbox')
+@bp.route('/recepcion/inbox')
 @require_perm('ticket.view.area')
 def recepcion_inbox():
     org_id, _ = current_scope()
     if not org_id:
         flash('Sin contexto de organización.', 'error')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard.dashboard'))
 
     # Inbox: pendientes (típicamente WA huésped o recepcion)
     rows = fetchall("""
@@ -29,19 +83,24 @@ def recepcion_inbox():
         device=g.device, view=view
     )
 
+
 # ---------- Recepción: helpers ----------
 def _safe_is_critical(now, due_at):
     # Uses your is_critical() if present; else simple fallback
     try:
-        return is_critical(now, due_at)
-    except NameError:
-        if not due_at:
-            return False
-        try:
-            dt = datetime.fromisoformat(str(due_at))
-        except Exception:
-            return False
-        return dt <= now
+        if is_critical is not None:
+            return is_critical(now, due_at)  # type: ignore
+    except Exception:
+        pass
+
+    if not due_at:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(due_at))
+    except Exception:
+        return False
+    return dt <= now
+
 
 def _period_bounds(period: str):
     now = datetime.now()
@@ -57,15 +116,17 @@ def _period_bounds(period: str):
         return ((sod - timedelta(days=30)).isoformat(), None)
     return (None, None)
 
+
 # ---------- Recepción: page ----------
-@app.route('/recepcion/dashboard')
+@bp.route('/recepcion/dashboard', endpoint='recepcion_dashboard')
 @require_perm('ticket.view.area')
 def recepcion_dashboard():
     # Bare page; data is fetched via JS
     return render_template('dashboard_recepcion.html', user=session.get('user'), device=g.device, view=g.view_mode)
 
+
 # ---------- Recepción: KPIs ----------
-@app.get('/api/recepcion/kpis')
+@bp.get('/api/recepcion/kpis')
 @require_perm('ticket.view.area')
 def api_recepcion_kpis():
     org_id, _ = current_scope()
@@ -92,8 +153,9 @@ def api_recepcion_kpis():
         "at": now.isoformat()
     })
 
+
 # ---------- Recepción: list ----------
-@app.get('/api/recepcion/list')
+@bp.get('/api/recepcion/list')
 @require_perm('ticket.view.area')
 def api_recepcion_list():
     org_id, _ = current_scope()
@@ -142,8 +204,9 @@ def api_recepcion_list():
         })
     return jsonify({"items": items, "count": len(items)})
 
+
 # ---------- Feed (últimas acciones) ----------
-@app.get('/api/feed/recent')
+@bp.get('/api/feed/recent')
 @require_perm('ticket.view.area')
 def api_feed_recent():
     org_id, _ = current_scope()
