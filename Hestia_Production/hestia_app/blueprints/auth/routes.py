@@ -185,14 +185,14 @@ def demo_tecnico():
     #   de lo contrario cae a tecnico_mobile.html
     # - Si desktop => tecnico_desktop.html
     if not is_m:
-        tpl = "tecnico_desktop.html"
+        tpl = "tecnico/tecnico_desktop.html"
     else:
         area_map = {
-            "MANTENCION": "tecnico_mantencion_mobile.html",
-            "HOUSEKEEPING": "tecnico_housekeeping_mobile.html",
-            "ROOMSERVICE": "tecnico_roomservice_mobile.html",
+            "MANTENCION": "tecnico/tecnico_mantencion_mobile.html",
+            "HOUSEKEEPING": "tecnico/tecnico_housekeeping_mobile.html",
+            "ROOMSERVICE": "tecnico/tecnico_roomservice_mobile.html",
         }
-        tpl = area_map.get(area.upper(), "tecnico_mobile.html")
+        tpl = area_map.get(area.upper(), "tecnico/tecnico_mobile.html")
 
     # Render directo (no depende de DB)
     return render_template(tpl, area=area, demo=True)

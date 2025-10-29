@@ -1,7 +1,7 @@
 # hestia_app/logging_cfg.py
 import logging, sys
 
-def configure_logging(app):
+def setup_logging(app):
     handler = logging.StreamHandler(sys.stdout)
     fmt = "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
     handler.setFormatter(logging.Formatter(fmt))
