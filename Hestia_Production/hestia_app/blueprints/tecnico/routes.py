@@ -1,15 +1,23 @@
+# hestia_app/blueprints/tecnico/routes.py
 # app/routes.py
 from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
+from ...blueprints.gerencia.routes import get_assigned_tickets_for_area, get_in_progress_tickets_for_user, get_area_available_tickets, get_history_tickets_for_user
+from ...blueprints.dashboard.routes import render_best
+from ...core.area import area_from_slug
+from ...core.errors import _err_or_redirect
+from ...core.shift import _shift_log_append, _shift_state
 
 from flask import (
     request, session, jsonify, redirect, url_for,
-    render_template, abort
+    render_template, abort, g
 )
 
-from . import app
- # ---------------------------- Technician mobile routes ----------------------------
+# Use the blueprint defined in tecnico/__init__.py
+from . import bp
+
+# ---------------------------- Technician mobile routes ----------------------------
 from werkzeug.exceptions import NotFound
 
 def _area_or_404(slug: str) -> str:
@@ -18,29 +26,33 @@ def _area_or_404(slug: str) -> str:
         raise NotFound()
     return area
 
-@app.get('/tecnico/<slug>/my')
+@bp.get('/tecnico/<slug>/my')
 def tech_my(slug):
     if 'user' not in session:
         return redirect(url_for('login'))
     area = _area_or_404(slug)
     tickets = get_assigned_tickets_for_area(session['user']['id'], area)
     template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
-    return render_best(template_order,
-                       section="my", area=area, slug=slug, user=session['user'],
-                       device=g.device, view=g.view_mode, tickets=tickets)
+    return render_best(
+        template_order,
+        section="my", area=area, slug=slug, user=session['user'],
+        device=g.device, view=g.view_mode, tickets=tickets
+    )
 
-@app.get('/tecnico/<slug>/in-progress')
+@bp.get('/tecnico/<slug>/in-progress')
 def tech_in_progress(slug):
     if 'user' not in session:
         return redirect(url_for('login'))
     area = _area_or_404(slug)
     tickets = get_in_progress_tickets_for_user(session['user']['id'], area)
     template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
-    return render_best(template_order,
-                       section="in_progress", area=area, slug=slug, user=session['user'],
-                       device=g.device, view=g.view_mode, tickets=tickets)
+    return render_best(
+        template_order,
+        section="in_progress", area=area, slug=slug, user=session['user'],
+        device=g.device, view=g.view_mode, tickets=tickets
+    )
 
-@app.get('/tecnico/<slug>/list')
+@bp.get('/tecnico/<slug>/list')
 def tech_available(slug):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -48,11 +60,13 @@ def tech_available(slug):
     only_unassigned = (request.args.get('unassigned', '1') == '1')
     tickets = get_area_available_tickets(area, only_unassigned=only_unassigned)
     template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
-    return render_best(template_order,
-                       section="available", area=area, slug=slug, user=session['user'],
-                       device=g.device, view=g.view_mode, tickets=tickets)
+    return render_best(
+        template_order,
+        section="available", area=area, slug=slug, user=session['user'],
+        device=g.device, view=g.view_mode, tickets=tickets
+    )
 
-@app.get('/tecnico/<slug>/history')
+@bp.get('/tecnico/<slug>/history')
 def tech_history(slug):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -60,11 +74,13 @@ def tech_history(slug):
     days = request.args.get('days', type=int) or 7
     tickets = get_history_tickets_for_user(session['user']['id'], area, days=days)
     template_order = ["tecnico_mobile_list.html", "tickets_mobile.html", "tickets.html"]
-    return render_best(template_order,
-                       section="history", area=area, slug=slug, user=session['user'],
-                       device=g.device, view=g.view_mode, tickets=tickets, days=days)
+    return render_best(
+        template_order,
+        section="history", area=area, slug=slug, user=session['user'],
+        device=g.device, view=g.view_mode, tickets=tickets, days=days
+    )
 
-@app.get('/tecnico/<slug>/tools')
+@bp.get('/tecnico/<slug>/tools')
 def tech_tools(slug):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -101,12 +117,13 @@ def tech_tools(slug):
         ]
 
     template_order = ["tecnico_mobile_tools.html", "tickets_mobile.html", "tickets.html"]
-    return render_best(template_order,
-                       area=area, slug=slug, user=session['user'],
-                       device=g.device, view=g.view_mode, tools=tools)
+    return render_best(
+        template_order,
+        area=area, slug=slug, user=session['user'],
+        device=g.device, view=g.view_mode, tools=tools
+    )
 
-
-@app.post('/api/tech/shift')
+@bp.post('/api/tech/shift')
 def api_tech_shift():
     if 'user' not in session:
         return jsonify({"error": "unauthorized"}), 401
@@ -138,7 +155,7 @@ from datetime import datetime, timezone, timedelta
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
-@app.get('/api/hk/shift')
+@bp.get('/api/hk/shift')
 def api_hk_shift_status():
     s = session.get('hk_shift') or {}
     # compute elapsed (not counting paused time for MVP simplicity)
@@ -160,7 +177,7 @@ def api_hk_shift_status():
         "elapsed": elapsed
     })
 
-@app.post('/hk/shift/start')
+@bp.post('/hk/shift/start')
 def hk_shift_start():
     # Al iniciar nuevo turno, limpiamos el log anterior (visible hasta el próximo inicio).
     session['hk_shift_log'] = []
@@ -173,7 +190,7 @@ def hk_shift_start():
     session.modified = True
     return ('', 204)
 
-@app.post('/hk/shift/pause')
+@bp.post('/hk/shift/pause')
 def hk_shift_pause():
     s = session.get('hk_shift') or {}
     # Si no hay turno iniciado, nos mantenemos no-op (204) para no romper UI.
@@ -186,7 +203,7 @@ def hk_shift_pause():
     session.modified = True
     return ('', 204)
 
-@app.post('/hk/shift/end')
+@bp.post('/hk/shift/end')
 def hk_shift_end():
     s = session.get('hk_shift') or {}
     if not s.get('started_at') or s.get('ended_at'):
@@ -199,18 +216,16 @@ def hk_shift_end():
     session.modified = True
     return ('', 204)
 
-@app.get('/api/hk/shift')
+@bp.get('/api/hk/shift')
 def hk_shift_status():
     state = _shift_state()
     # opcional: exponer el log de sesión por si deseas mostrarlo luego
     state['log'] = session.get('hk_shift_log', [])
     return jsonify(state)
 
-@app.context_processor
+@bp.app_context_processor
 def inject_hk_flags():
     return {"HK_SHIFT_ACTIVE": _shift_state()["active"]}
-
-
 
 # ---- SHIFT GUARDS ----------------------------------------------------------
 
@@ -235,7 +250,6 @@ def _guard_active_shift(area: str | None):
         )
     return None
 
-
-
 # Maintenance
+
 # Room Service
