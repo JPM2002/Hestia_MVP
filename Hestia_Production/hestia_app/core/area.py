@@ -6,7 +6,7 @@ from flask import session, redirect, url_for, flash
 from .rbac import user_area_codes, current_org_role  # uses rbac wiring
 from ..services.db import fetchone
 from ..core.rbac import role_effective_perms
-from ..blueprints.auth.routes import current_scope
+from .scope import current_scope
 
 _fetchone: Optional[Callable] = None
 _get_scope: Optional[Callable[[], tuple[int | None, int | None]]] = None
