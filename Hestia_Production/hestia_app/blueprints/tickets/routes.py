@@ -10,7 +10,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from . import bp as app
+from . import app
 
 # ----------------- Reutiliza tus estados -----------------
 try:
@@ -88,27 +88,39 @@ def _decorate(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out.append(t)
     return out
 
-# Import database functions
-try:
-    from hestia_app.services.tickets import get_tickets, create_ticket, update_ticket_state, assign_ticket
-except ImportError:
-    # Fallback functions if database is not available
-    def get_tickets(filters=None):
-        return []
-    def create_ticket(data):
-        return int(datetime.now().timestamp())
-    def update_ticket_state(ticket_id, new_state, **kw):
-        return True
-    def assign_ticket(ticket_id, user_id, assigned_by=None):
-        return True
+def get_tickets(filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    TODO: reemplazar con tu consulta real.
+    Respeta filtros: q, area, prioridad, estado, period.
+    """
+    rows: List[Dict[str, Any]] = []
+    # ejemplo de fixture si quieres ver algo en UI:
+    # rows = [{
+    #   "id": 101, "area":"MANTENCION", "prioridad":"ALTA", "estado":"PENDIENTE",
+    #   "detalle":"Fuga en baño", "ubicacion":"1203", "canal":"recepcion",
+    #   "created_at": _now_iso(), "due_at": (datetime.now(timezone.utc)+timedelta(hours=3)).isoformat()
+    # }]
+    return _decorate(rows)
 
-# ----------------- Home dentro del blueprint: redirige al listado -----------------
-@app.route("/home")
-def tickets_home():
-    return redirect(url_for("tickets.tickets"))
+def create_ticket(data: Dict[str, Any]) -> int:
+    """
+    TODO: insert en DB. Retorna ID del ticket.
+    """
+    return int(datetime.now().timestamp())  # stub
+
+def update_ticket_state(ticket_id: int, new_state: str, **kw) -> bool:
+    """
+    TODO: update en DB (estado, timestamps, motivo, user_id, etc.)
+    """
+    return True
+
+# ----------------- Dashboard simple (redirige a tickets móvil/desktop) -----------------
+@app.route("/")
+def dashboard():
+    return redirect(url_for("tickets"))
 
 # ----------------- Tickets: listado (elige mobile/desktop automáticamente) -----------------
-@app.route("/", methods=["GET"])
+@app.route("/tickets", methods=["GET"])
 def tickets():
     filters = {
         "q": (request.args.get("q") or "").strip(),
@@ -119,15 +131,15 @@ def tickets():
     }
 
     rows = get_tickets(filters=filters)
-    tpl = "tickets/tickets_mobile.html" if _is_mobile() else "tickets/tickets.html"
+    tpl = "tickets_mobile.html" if _is_mobile() else "tickets.html"
     return render_template(tpl, tickets=rows, filters=filters)
 
 # ----------------- Crear ticket (form) -----------------
-@app.route("/new", methods=["GET","POST"])
+@app.route("/ticket/new", methods=["GET","POST"])
 def ticket_create():
     if request.method == "GET":
         return render_template(
-            "tickets/ticket_create.html",
+            "ticket_create.html",
             areas=AREAS,
             prioridades=PRIORIDADES,
             canales=CANALES,
@@ -149,27 +161,27 @@ def ticket_create():
     }
     # validaciones mínimas
     if not payload["area"] or payload["area"] not in AREAS:
-        return render_template("tickets/ticket_create.html",
+        return render_template("ticket_create.html",
                                areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
                                error="Área inválida."), 400
     if not payload["prioridad"] or payload["prioridad"] not in PRIORIDADES:
-        return render_template("tickets/ticket_create.html",
+        return render_template("ticket_create.html",
                                areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
                                error="Prioridad inválida."), 400
     if not payload["ubicacion"] or not payload["detalle"]:
-        return render_template("tickets/ticket_create.html",
+        return render_template("ticket_create.html",
                                areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
                                error="Ubicación y detalle son obligatorios."), 400
 
     tid = create_ticket(payload)
-    return redirect(url_for("tickets.tickets", created=str(tid)))
+    return redirect(url_for("tickets", created=str(tid)))
 
 # ----------------- Acciones de ticket (POST) -----------------
 def _json_or_back(ok: bool, ok_msg: str, bad_msg: str):
     if _prefer_json():
         return (jsonify({"ok": ok, "message": ok_msg if ok else bad_msg}),
                 200 if ok else 409)
-    return _redirect_back("tickets.tickets")
+    return _redirect_back("tickets")
 
 @app.post("/ticket/<int:id>/confirm")
 def ticket_confirm(id: int):
@@ -206,7 +218,7 @@ def ticket_finish(id: int):
 @app.get("/voice")
 def voice_page():
     # Renderiza el prototipo de voz
-    return render_template("tickets/voice_ticket.html")
+    return render_template("voice_ticket.html")
 
 @app.post("/api/stt")
 def api_stt():

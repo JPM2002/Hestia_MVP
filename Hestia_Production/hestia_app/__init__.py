@@ -1,12 +1,6 @@
 # hestia_app/__init__.py
 from flask import Flask
-
-# Optional logging setup
-try:
-    from .logging_cfg import setup_logging
-except ImportError:
-    def setup_logging(*args, **kwargs):
-        pass
+from .logging_cfg import setup_logging if False else (lambda *a, **k: None)
 
 def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")

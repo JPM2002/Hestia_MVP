@@ -8,7 +8,7 @@ from flask import (
     render_template, abort
 )
 
-from . import bp as app
+from . import app
 
 # =========================================================
 # Area/Slug helpers
@@ -100,20 +100,6 @@ def _decorate_tickets(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-# Import database functions
-try:
-    from hestia_app.services.tickets import get_tickets_by_user, update_ticket_state, assign_ticket, get_tickets as get_tickets_from_db
-except ImportError:
-    # Fallback functions if database is not available
-    def get_tickets_by_user(user_id, area=None):
-        return []
-    def update_ticket_state(ticket_id, new_state, motivo=None, user_id=None):
-        return True
-    def assign_ticket(ticket_id, user_id, assigned_by=None):
-        return True
-    def get_tickets_from_db(filters=None):
-        return []
-
 # ---------- Replace these with real DB calls ----------
 def get_tickets(area: Optional[str] = None,
                 estado: Optional[str] = None,
@@ -123,19 +109,27 @@ def get_tickets(area: Optional[str] = None,
                 history_days: Optional[int] = None) -> List[Dict[str, Any]]:
     """
     Load tickets according to filters.
+    TODO: Replace with your SQL/ORM queries.
     """
-    if assigned_to_user_id:
-        rows = get_tickets_by_user(assigned_to_user_id, area)
-    else:
-        # Use the general get_tickets function
-        filters = {}
-        if area:
-            filters["area"] = area
-        if estado:
-            filters["estado"] = estado
-        rows = get_tickets_from_db(filters)
-    
+    # Demo: static list (empty) – so UI renders cleanly.
+    # Integrate your DB and return rows with keys used in templates.
+    rows: List[Dict[str, Any]] = []
+    # Apply area / estado filters if you return everything above
+    # Here it's already empty, so decoration returns [].
     return _decorate_tickets(rows)
+
+
+def update_ticket_state(ticket_id: int, new_state: str,
+                        motivo: Optional[str] = None,
+                        user_id: Optional[int] = None) -> bool:
+    """
+    Update state for ticket in DB.
+    Return True on success, False for invalid/failed.
+    TODO: Implement with your DB.
+    """
+    # Example: perform validations based on current state.
+    # For now, pretend success.
+    return True
 # -------------------------------------------------------
 
 
@@ -145,7 +139,7 @@ def get_tickets(area: Optional[str] = None,
 @app.route("/")
 def dashboard():
     # Minimal dashboard – you can replace with your own template
-    return render_template("tecnico/tecnico_mobile.html", tickets=get_tickets())
+    return render_template("tecnico_mobile.html", tickets=get_tickets())
 
 
 @app.route("/tickets")
@@ -179,28 +173,28 @@ def tickets():
 @app.route("/tech")
 def tech_mobile():
     rows = get_tickets(assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_mobile.html", tickets=rows)
+    return render_template("tecnico_mobile.html", tickets=rows)
 
 @app.route("/tech/desktop")
 def tech_desktop():
     rows = get_tickets(assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_desktop.html", tickets=rows)
+    return render_template("tecnico_desktop.html", tickets=rows)
 
 # Specialized mobile pages
 @app.route("/tech/housekeeping")
 def tech_housekeeping():
     rows = get_tickets(area="HOUSEKEEPING", assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_housekeeping_mobile.html", tickets=rows)
+    return render_template("tecnico_housekeeping_mobile.html", tickets=rows)
 
 @app.route("/tech/mantencion")
 def tech_mantencion():
     rows = get_tickets(area="MANTENCION", assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_mantencion_mobile.html", tickets=rows)
+    return render_template("tecnico_mantencion_mobile.html", tickets=rows)
 
 @app.route("/tech/roomservice")
 def tech_roomservice():
     rows = get_tickets(area="ROOMSERVICE", assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_roomservice_mobile.html", tickets=rows)
+    return render_template("tecnico_roomservice_mobile.html", tickets=rows)
 
 
 # =========================================================
@@ -217,21 +211,21 @@ def _area_from_slug_or_abort(slug: str) -> str:
 def tech_in_progress(slug: str):
     area = _area_from_slug_or_abort(slug)
     tickets = get_tickets(area=area, in_progress_only=True, assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_mobile_list.html",
+    return render_template("tecnico_mobile_list.html",
                            tickets=tickets, area=area, slug=slug, section="in_progress")
 
 @app.route("/tech/<slug>/my")
 def tech_my(slug: str):
     area = _area_from_slug_or_abort(slug)
     tickets = get_tickets(area=area, assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_mobile_list.html",
+    return render_template("tecnico_mobile_list.html",
                            tickets=tickets, area=area, slug=slug, section="my")
 
 @app.route("/tech/<slug>/available")
 def tech_available(slug: str):
     area = _area_from_slug_or_abort(slug)
     tickets = get_tickets(area=area, available_only=True)
-    return render_template("tecnico/tecnico_mobile_list.html",
+    return render_template("tecnico_mobile_list.html",
                            tickets=tickets, area=area, slug=slug, section="available")
 
 @app.route("/tech/<slug>/history")
@@ -239,7 +233,7 @@ def tech_history(slug: str):
     area = _area_from_slug_or_abort(slug)
     days = request.args.get("days", type=int) or 7
     tickets = get_tickets(area=area, history_days=days, assigned_to_user_id=get_current_user()["id"])
-    return render_template("tecnico/tecnico_mobile_list.html",
+    return render_template("tecnico_mobile_list.html",
                            tickets=tickets, area=area, slug=slug, section="history", days=days)
 
 @app.route("/tech/<slug>/tools")
@@ -251,7 +245,7 @@ def tech_tools(slug: str):
         ("Procedimientos del área", "#"),
         ("Reportes recientes", "#"),
     ]
-    return render_template("tecnico/tecnico_mobile_tools.html",
+    return render_template("tecnico_mobile_tools.html",
                            tools=tools, area=area, slug=slug)
 
 
@@ -362,7 +356,7 @@ def hk_shift_end():
 @app.route("/ticket/new")
 def ticket_create():
     # You can replace with your form page/template.
-    return render_template("tecnico/blank.html") if _template_exists("tecnico/blank.html") else (
+    return render_template("blank.html") if _template_exists("blank.html") else (
         "<h3>Crear ticket</h3><p>(Implementa aquí tu formulario)</p>", 200
     )
 
