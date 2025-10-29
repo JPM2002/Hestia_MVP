@@ -1,43 +1,52 @@
-import os, pkgutil, importlib
-from flask import Flask, Blueprint, redirect, url_for
-from .config import get_config
-from .filters import register_jinja_filters
+import os
+from flask import Flask
 
-def create_app(env: str | None = None):
-    app = Flask(__name__, template_folder="templates", static_folder="static")
-    app.config.from_object(get_config(env or os.getenv("FLASK_ENV") or "production"))
+def create_app():
+    app = Flask(__name__, static_folder="static", template_folder="templates")
 
-    register_jinja_filters(app)
-    _register_blueprints(app)
+    # Config básica
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-in-env")
+    app.config["ENABLE_TECH_DEMO"] = os.getenv("ENABLE_TECH_DEMO", "0") == "1"
 
-    @app.get("/")
-    def root():
-        return redirect(url_for("auth.login"))
+    # Filtros Jinja
+    try:
+        from filters import init_app as init_filters
+        init_filters(app)
+    except Exception:
+        pass
+
+    # Hooks de device detection (si los tienes en core/device.py)
+    try:
+        from core.device import init_app as init_device
+        init_device(app)
+    except Exception:
+        pass
+
+    # Blueprints
+    from blueprints.auth import bp as auth_bp
+    app.register_blueprint(auth_bp)
+
+    # Registra también el resto (si ya existen):
+    try:
+        from blueprints.admin import bp as admin_bp
+        app.register_blueprint(admin_bp)
+    except Exception:
+        pass
+
+    try:
+        from blueprints.dashboard import bp as dashboard_bp
+        app.register_blueprint(dashboard_bp)
+    except Exception:
+        pass
+
+    try:
+        from blueprints.tickets import bp as tickets_bp
+        app.register_blueprint(tickets_bp)
+    except Exception:
+        pass
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}, 200
-
-    # Útil para depurar endpoints en logs
-    if app.config.get("DEBUG") or os.getenv("PRINT_ROUTES") == "1":
-        for rule in app.url_map.iter_rules():
-            print("ROUTE:", rule, "→ endpoint:", rule.endpoint)
+        return "ok", 200
 
     return app
-
-def _register_blueprints(app: Flask) -> None:
-    base_pkg = "hestia_app.blueprints"
-    base_path = os.path.join(os.path.dirname(__file__), "blueprints")
-    if not os.path.isdir(base_path):
-        return
-    for _finder, pkg_name, is_pkg in pkgutil.iter_modules([base_path]):
-        if not is_pkg:
-            continue
-        mod_name = f"{base_pkg}.{pkg_name}.routes"
-        try:
-            routes = importlib.import_module(mod_name)
-        except ModuleNotFoundError:
-            continue
-        bp = getattr(routes, "bp", None) or getattr(routes, "blueprint", None)
-        if isinstance(bp, Blueprint):
-            app.register_blueprint(bp)

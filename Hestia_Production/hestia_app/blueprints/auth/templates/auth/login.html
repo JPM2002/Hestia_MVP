@@ -1,31 +1,125 @@
 {% extends "base.html" %}
-{% block title %}Iniciar sesión — Hestia{% endblock %}
+{% block title %}Iniciar sesión{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-12 col-md-6 col-lg-5">
-    <div class="card shadow-sm mt-4">
-      <div class="card-body">
-        <h1 class="h4 mb-3">Iniciar sesión</h1>
-        <form method="post" action="{{ url_for('auth.login_post') }}">
-          <div class="mb-3">
-            <label class="form-label">Correo</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Rol</label>
-            <select name="role" class="form-select">
-              <option>RECEPCION</option>
-              <option>GERENTE</option>
-              <option>SUPERVISOR</option>
-              <option>HOUSEKEEPING</option>
-              <option>TECNICO</option>
-            </select>
-          </div>
-          <button class="btn btn-primary w-100" type="submit">Entrar</button>
-        </form>
+<div class="container py-5" style="max-width: 920px;">
+  <!-- Mensajes flash -->
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      {% for cat, msg in msgs %}
+        <div class="alert alert-{{ 'success' if cat=='success' else 'danger' if cat=='error' else 'info' }} alert-dismissible fade show" role="alert">
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- Mensaje directo pasado por el view -->
+  {% if message %}
+    <div class="alert alert-{{ 'success' if success else 'danger' }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  {% endif %}
+
+  <div class="row g-4 align-items-stretch">
+    <div class="col-12 col-lg-7">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body p-4">
+          <h1 class="h4 mb-3">Ingreso a Hestia</h1>
+          <p class="text-muted mb-4">Usa tu correo o usuario y contraseña para entrar.</p>
+
+          <!-- FORM: LOGIN (POST) -->
+          <form method="POST" action="{{ url_for('auth.login') }}" class="needs-validation" novalidate>
+            <div class="mb-3">
+              <label for="email" class="form-label">Correo o usuario</label>
+              <input type="text" class="form-control" id="email" name="email" placeholder="tu@empresa.com" required>
+              <div class="invalid-feedback">Ingresa tu correo o usuario.</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="password" class="form-label">Contraseña</label>
+              <input type="password" class="form-control" id="password" name="password" placeholder="••••••••" required>
+              <div class="invalid-feedback">Ingresa tu contraseña.</div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between">
+              <button type="submit" class="btn btn-primary">Entrar</button>
+              <a class="small text-muted" href="#" onclick="alert('Contacta al administrador para recuperar tu contraseña.'); return false;">¿Olvidaste tu contraseña?</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Columna derecha: Demo rápido -->
+    <div class="col-12 col-lg-5">
+      <div class="card h-100 border-0 bg-light">
+        <div class="card-body p-4">
+          <h2 class="h5">Demo rápido (técnico)</h2>
+          <p class="text-muted mb-3">
+            Prueba la app con un usuario de demostración. No hace cambios reales.
+          </p>
+
+          {% if enable_demo %}
+            <!-- FORM: DEMO (GET) -->
+            <form method="GET">
+              <div class="mb-3">
+                <label for="area" class="form-label">Área</label>
+                <select id="area" name="area" class="form-select">
+                  <option value="MANTENCION">Mantención</option>
+                  <option value="HOUSEKEEPING">Housekeeping</option>
+                  <option value="ROOMSERVICE">Room Service</option>
+                </select>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button type="submit"
+                        class="btn btn-dark"
+                        formaction="{{ url_for('auth.demo_tecnico') }}?view=auto">
+                  Abrir (auto)
+                </button>
+
+                <div class="d-flex gap-2">
+                  <button type="submit"
+                          class="btn btn-outline-primary w-50"
+                          formaction="{{ url_for('auth.demo_tecnico') }}?view=mobile">
+                    Ver como móvil
+                  </button>
+                  <button type="submit"
+                          class="btn btn-outline-secondary w-50"
+                          formaction="{{ url_for('auth.demo_tecnico') }}?view=desktop">
+                    Ver como escritorio
+                  </button>
+                </div>
+              </div>
+            </form>
+          {% else %}
+            <div class="alert alert-warning" role="alert">
+              La demo está deshabilitada en este entorno.
+            </div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Validación Bootstrap opcional -->
+<script>
+  (function () {
+    'use strict';
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        if (!form.checkValidity()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+</script>
 {% endblock %}
