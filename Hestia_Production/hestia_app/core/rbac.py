@@ -1,7 +1,7 @@
+# hestia_app/core/rbac.py
 from functools import wraps
 from flask import session, redirect, url_for, flash, abort
 from ..services.db import fetchone, fetchall
-from .status import OPEN_STATES, ESTADO_NICE
 
 DEFAULT_PERMS = {
     "SUPERADMIN": {"*"},
@@ -40,7 +40,6 @@ def role_effective_perms(role_code: str) -> set[str]:
     """
     Resolve role -> permissions. We always include DEFAULT_PERMS as a base,
     and then union any DB-defined permissions (RolePermissions + Roles.inherits_code).
-    This prevents accidental loss of core perms when DB rows are incomplete.
     """
     if not role_code:
         return set()
@@ -62,17 +61,14 @@ def role_effective_perms(role_code: str) -> set[str]:
         # If RBAC tables are missing, stick to defaults
         return base
 
-
-    # Fallback defaults (keeps the app usable without RBAC rows)
-    return DEFAULT_PERMS.get(role_code, set())
-
 def has_perm(code: str) -> bool:
     role = current_org_role()
-    if not role: return False
+    if not role:
+        return False
     eff = role_effective_perms(role)
     return ("*" in eff) or (code in eff)
 
-def require_perm(code):
+def require_perm(code: str):
     def deco(fn):
         @wraps(fn)
         def wrapper(*a, **kw):
@@ -90,7 +86,7 @@ def is_superadmin() -> bool:
 
 def user_area_codes(org_id: int, user_id: int) -> set[str]:
     """
-    Areas asignadas al usuario en la org (multi-área).
+    Áreas asignadas al usuario en la org (multi-área).
     Fallback a OrgUsers.default_area si OrgUserAreas no existe.
     """
     try:

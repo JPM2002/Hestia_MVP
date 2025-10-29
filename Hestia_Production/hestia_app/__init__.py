@@ -4,11 +4,11 @@ from flask import Flask, redirect, url_for, session, request
 def create_app():
     app = Flask(
         __name__,
-        template_folder="templates",  # hestia_app/templates
-        static_folder="static",       # hestia_app/static
+        template_folder="templates",
+        static_folder="static",
     )
 
-    # Load config (must include SECRET_KEY for sessions)
+    # Config (SECRET_KEY must be present in Config)
     app.config.from_object("hestia_app.config.Config")
     app.config.setdefault("ENABLE_TECH_DEMO", False)
 
@@ -26,8 +26,25 @@ def create_app():
     except Exception:
         pass
 
-    # --- Blueprints ---
-    # Register AUTH FIRST so "/" maps to auth.index (which redirects to login if not logged in)
+    # ✅ Device hooks (before/after request) via initializer
+    try:
+        from .core.device import init_device
+        init_device(app)
+    except Exception:
+        pass
+
+    # ✅ DB error handlers (optional but nice UX)
+    try:
+        from .core.errors import register_db_error_handlers
+        register_db_error_handlers(app)
+    except Exception:
+        pass
+
+    # If you prefer to centralize HK shift flags/endpoints:
+    # from .core.shift import init_shift
+    # init_shift(app)
+
+    # --- Blueprints (auth FIRST so "/" routes correctly) ---
     from .blueprints.auth import bp as auth_bp
     app.register_blueprint(auth_bp)
 
@@ -57,13 +74,11 @@ def create_app():
             "static",            # Flask static files
             "auth.login",        # /login
             "auth.index",        # /
-            "auth.demo_tecnico", # demo route (optional)
+            "auth.demo_tecnico", # optional demo
             "healthz",           # health check
         }
-        # Allow static/* and explicitly whitelisted endpoints
         if ep in public or ep.startswith("static"):
             return
-        # Redirect unauthenticated users to login
         if not session.get("user"):
             nxt = request.full_path if request.query_string else request.path
             return redirect(url_for("auth.login", next=nxt))

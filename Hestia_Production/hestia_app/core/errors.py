@@ -1,4 +1,4 @@
-# errors.py
+# hestia_app/core/errors.py
 from __future__ import annotations
 from flask import request, redirect, url_for, jsonify, flash
 
@@ -19,7 +19,7 @@ def _wants_json():
         return True
     return False
 
-def _redirect_back(default_endpoint='dashboard'):
+def _redirect_back(default_endpoint='dashboard.dashboard'):
     target = request.args.get('next') or request.referrer
     if target:
         try:
@@ -51,4 +51,4 @@ def register_db_error_handlers(app):
     def _db_down(e):
         app.logger.error(f"DB error: {e}")
         flash("Base de datos no disponible. Intenta de nuevo en unos segundos.", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("auth.login"))
