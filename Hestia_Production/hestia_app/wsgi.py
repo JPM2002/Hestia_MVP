@@ -4,5 +4,7 @@ from . import create_app
 
 app = create_app(os.getenv("FLASK_ENV", "production"))
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+# Optional: list routes once at boot
+if os.getenv("PRINT_ROUTES") == "1":
+    for rule in app.url_map.iter_rules():
+        print("ROUTE:", rule, "→ endpoint:", rule.endpoint)
