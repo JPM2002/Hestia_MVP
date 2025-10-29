@@ -6,7 +6,8 @@ from flask import jsonify, request, session
 from . import bp
 
 # --- your original imports, fixed to correct packages/levels ---
-from ...core.status import OPEN_STATES, is_critical
+from ...core.status import OPEN_STATES
+from ...services.sla import is_critical
 from ...services.db import fetchall, fetchone, USE_PG
 
 # Avoid circular blueprint imports by importing current_scope from auth via absolute import.
