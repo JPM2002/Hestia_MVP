@@ -1,11 +1,7 @@
-from flask import Blueprint, render_template, redirect, url_for
+from flask import render_template
+from . import bp
 
-bp = Blueprint('dashboards', __name__)
-
-@bp.route('/')
-def root():
-    return redirect(url_for('dashboards.dashboard_home'))
-
-@bp.route('/home')
+@bp.get("/")
 def dashboard_home():
-    return render_template('dashboards/dashboard_gerente.html')
+    # Buscará exactamente este archivo:
+    return render_template("dashboards/dashboard_gerente.html")
