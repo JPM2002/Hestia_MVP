@@ -1,7 +1,11 @@
 from flask import Blueprint
 
-# Usa el mismo nombre del blueprint para que funcione url_for("dashboard.dashboard")
-bp = Blueprint("dashboard", __name__, template_folder="templates")
+bp = Blueprint(
+    "dashboard",
+    __name__,
+    url_prefix="/dashboard",
+    # Your files live at blueprints/dashboard/templates/dashboards/*.html
+    template_folder="templates/dashboards",
+)
 
-# Carga las rutas
 from . import routes  # noqa: E402,F401
