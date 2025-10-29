@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Administrar hoteles{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Hoteles</h2>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Volver</a>
+</div>
+
+<form method="post" class="row g-3 mb-4">
+  <div class="col-md-5">
+    <select name="org_id" class="form-select" required>
+      <option value="">-- Organización --</option>
+      {% for org in orgs %}
+        <option value="{{ org.id }}">{{ org.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-5">
+    <input type="text" name="name" class="form-control" placeholder="Nombre del hotel" required>
+  </div>
+  <div class="col-md-2">
+    <button class="btn btn-brand w-100">Crear hotel</button>
+  </div>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white fw-semibold">Hoteles existentes</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>Hotel</th><th>Organización</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for h in hotels %}
+        <tr>
+          <td>{{ h.id }}</td>
+          <td>{{ h.name }}</td>
+          <td>{{ h.org }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="text-center text-muted py-4">Sin hoteles</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

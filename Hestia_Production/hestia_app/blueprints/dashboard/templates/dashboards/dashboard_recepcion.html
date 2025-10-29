@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+{% block title %}Recepción — Tickets{% endblock %}
+
+{% block content %}
+
+<style>
+  .list-item-flex { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .list-item-main { min-width:0; }
+  .list-item-detail { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+  .list-item-meta { flex:0 0 auto; max-width:34%; text-align:right; }
+  .pill { display:inline-block; padding:.15rem .4rem; border-radius:.5rem; background:#f2f2f2; }
+  .tiny { font-size:.8rem; }
+  .btn-row { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem; }
+  .pending-approval { background: #fff6e6; }  /* resalta por aprobar */
+  .toolbar { gap:.5rem; }
+  .toolbar .form-select, .toolbar .form-control { height: 36px; }
+  .sidebar-stats .card + .card { margin-top:.75rem; }
+  .section-title { display:flex; justify-content:space-between; align-items:center; margin:.5rem 0; }
+</style>
+
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">📟 Recepción — Tickets</h1>
+  <div class="d-flex gap-2">
+    <!-- Abre modal para ticket manual (auto-aprobado por rol recepción) -->
+    <button class="btn btn-accent" data-bs-toggle="modal" data-bs-target="#manualModal">Ingresar ticket manual</button>
+    <a class="btn btn-outline-dark" href="{{ url_for('tickets') }}">Ver todos</a>
+  </div>
+</header>
+
+<!-- Toolbar: búsqueda + filtros (cliente) -->
+<div class="card mb-3">
+  <div class="card-body d-flex flex-wrap toolbar">
+    <input id="flt-q" class="form-control" placeholder="Buscar por detalle, huésped, ubicación…" style="min-width: 240px; flex: 1 1 320px;">
+    <select id="flt-estado" class="form-select" style="width: 160px;">
+      <option value="">Estado (todos)</option>
+      <option value="PENDIENTE">Pendiente</option>
+      <option value="EN_CURSO">En curso</option>
+      <option value="RESUELTO">Resuelto hoy</option>
+    </select>
+    <select id="flt-prio" class="form-select" style="width: 160px;">
+      <option value="">Prioridad (todas)</option>
+      <option>URGENTE</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option>
+    </select>
+    <select id="flt-area" class="form-select" style="width: 180px;">
+      <option value="">Área (todas)</option>
+      <option>MANTENCION</option><option>HOUSEKEEPING</option><option>ROOMSERVICE</option>
+    </select>
+    <button id="flt-clear" class="btn btn-light ms-auto">Limpiar</button>
+  </div>
+</div>
+
+<!-- Layout: principal (lista unificada) + sidebar (contadores) -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-8">
+    <div class="section-title">
+      <h5 class="mb-0">🗂️ Todos los Tickets</h5>
+    </div>
+
+    <!-- Críticos header + countdown -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">🔥 Críticos (SLA en riesgo)</h6>
+      <div class="d-flex align-items-center gap-2 small text-muted">
+        <span id="crit-timer">Actualizando en 10s</span>
+        <span id="crit-busy" class="spinner-border spinner-border-sm" hidden></span>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <ul id="list-critical" class="list-group list-group-flush small"></ul>
+    </div>
+
+    <!-- Lista unificada -->
+    <div class="card">
+      <ul id="list-all" class="list-group list-group-flush small"></ul>
+    </div>
+  </div>
+
+  <!-- Sidebar con contadores -->
+  <div class="col-12 col-lg-4">
+    <div class="sidebar-stats">
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Por aprobar</div>
+        <div id="kpi-toapprove" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Pendientes</div>
+        <div id="kpi-pending" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">En curso</div>
+        <div id="kpi-inprogress" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Resueltos (hoy)</div>
+        <div id="kpi-resolved" class="h3 mb-0">—</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="text-muted">Críticos</div>
+        <div id="kpi-critical" class="h3 mb-0">—</div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Feed -->
+<div class="card mt-3">
+  <div class="card-header py-2">📰 Últimos movimientos</div>
+  <ul id="feed" class="list-group list-group-flush small"></ul>
+</div>
+
+<!-- Ding -->
+<audio id="ding" preload="auto">
+  <source src="{{ url_for('static', filename='snd/new-ticket.mp3') }}" type="audio/mpeg">
+</audio>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar ticket <span id="edit-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="ticket_id" id="edit-ticket-id">
+        <div class="mb-2">
+          <label class="form-label">Detalle</label>
+          <textarea name="detalle" id="edit-detalle" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Prioridad</label>
+          <select name="prioridad" id="edit-prioridad" class="form-select">
+            <option value="">—</option>
+            <option>URGENTE</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Ubicación</label>
+          <input name="ubicacion" id="edit-ubicacion" class="form-control" />
+        </div>
+        <div class="small text-muted">Se registrará en el historial.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete (soft) Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="deleteForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Eliminar ticket <span id="del-id" class="text-muted"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="delete-ticket-id" name="ticket_id">
+        <label class="form-label">Motivo</label>
+        <textarea name="motivo" id="delete-motivo" class="form-control" rows="3" placeholder="Ej: ticket duplicado / creado por error"></textarea>
+        <div class="small text-muted mt-1">Se registrará como baja lógica (soft delete).</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-danger" type="submit">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Ticket manual (auto-aprobado por recepción) -->
+<div class="modal fade" id="manualModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="manualForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Ingresar ticket manual</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <!-- TODO backend : aceptar approved=true y created_by_role='RECEPCION' para auto-omitir aprobación -->
+        <div class="mb-2">
+          <label class="form-label">Área</label>
+          <select name="area" class="form-select" required>
+            <option value="">—</option>
+            <option>MANTENCION</option><option>HOUSEKEEPING</option><option>ROOMSERVICE</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Prioridad</label>
+          <select name="prioridad" class="form-select" required>
+            <option>MEDIA</option><option>URGENTE</option><option>ALTA</option><option>BAJA</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Detalle</label>
+          <textarea name="detalle" class="form-control" rows="3" required></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Ubicación</label>
+          <input name="ubicacion" class="form-control" placeholder="Ej: 302" />
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Huésped (opcional)</label>
+          <input name="guest_name" class="form-control" placeholder="Nombre del huésped" />
+          <input name="guest_id" class="form-control mt-1" placeholder="ID / PMS" />
+        </div>
+        <input type="hidden" name="approved" value="true">
+        <input type="hidden" name="created_by_role" value="RECEPCION">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+// RBAC flags (puedes renderizarlas desde servidor)
+const CAN_EDIT = true;
+const CAN_APPROVE = true;
+const CAN_DELETE = false;
+
+// --- Modales ---
+let editModal, editForm, deleteModal, deleteForm, manualModal, manualForm;
+
+window.addEventListener('DOMContentLoaded', () => {
+  editModal   = new bootstrap.Modal(document.getElementById('editModal'));
+  editForm    = document.getElementById('editForm');
+  deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+  deleteForm  = document.getElementById('deleteForm');
+  manualModal = new bootstrap.Modal(document.getElementById('manualModal'));
+  manualForm  = document.getElementById('manualForm');
+
+  editForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('edit-ticket-id').value;
+    const fd = new FormData(editForm);
+    const r = await fetch(`/tickets/${id}/edit`, { method:'POST', body: fd });
+    if (r.ok) { editModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo guardar.'); }
+  });
+
+  deleteForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('delete-ticket-id').value;
+    const fd = new FormData(deleteForm);
+    const r = await fetch(`/tickets/${id}/delete`, { method:'POST', body: fd });
+    if (r.ok) { deleteModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo eliminar.'); }
+  });
+
+  manualForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(manualForm);
+    // TODO: si creas /tickets/manual usa esa URL; por ahora reusa el create general.
+    const r = await fetch(`/tickets/create`, { method:'POST', body: fd });
+    if (r.ok) { manualModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo crear el ticket.'); }
+  });
+
+  // Filtros UI
+  const inputs = ['flt-q','flt-estado','flt-prio','flt-area'].map(id=>document.getElementById(id));
+  inputs.forEach(i => i.addEventListener('input', () => renderFromCache()));
+  document.getElementById('flt-clear').addEventListener('click', () => {
+    document.getElementById('flt-q').value = '';
+    document.getElementById('flt-estado').value = '';
+    document.getElementById('flt-prio').value = '';
+    document.getElementById('flt-area').value = '';
+    renderFromCache();
+  });
+});
+
+window.openEdit = (t) => {
+  document.getElementById('edit-id').textContent = `#${t.id}`;
+  document.getElementById('edit-ticket-id').value = t.id;
+  document.getElementById('edit-detalle').value = t.detalle || '';
+  document.getElementById('edit-prioridad').value = (t.prioridad || '').toUpperCase();
+  document.getElementById('edit-ubicacion').value = t.ubicacion || '';
+  editModal.show();
+};
+
+window.openDelete = (id) => {
+  document.getElementById('del-id').textContent = `#${id}`;
+  document.getElementById('delete-ticket-id').value = id;
+  document.getElementById('delete-motivo').value = '';
+  deleteModal.show();
+};
+
+window.approveTicket = async (id) => {
+  const r = await fetch(`/tickets/${id}/confirm`, { method:'POST' });
+  if (r.ok) { await window.refreshAll?.(); } else { alert('No se pudo aprobar.'); }
+};
+</script>
+
+<script>
+/* ===== Robust countdown + refresh for Críticos (timestamp-based, no jumps) ===== */
+(function () {
+  const EVERY_MS = 10_000;               // 10s exact
+  const TIMEOUT_MS = 15_000;             // safety timeout for hanging requests
+  const label = document.getElementById('crit-timer');
+  const busy  = document.getElementById('crit-busy');
+
+  let nextAt   = Date.now() + EVERY_MS;  // when the next refresh should happen
+  let inFlight = false;
+
+  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+
+  async function doRefresh(){
+    if (inFlight) return;
+    inFlight = true;
+    if (busy)  busy.hidden = false;
+    if (label) label.textContent = 'Actualizando…';
+
+    try {
+      const job = (window.loadCriticos?.() || window.refreshAll?.() || sleep(300));
+      // Avoid spinner stuck forever
+      await Promise.race([ job, sleep(TIMEOUT_MS) ]);
+    } finally {
+      inFlight = false;
+      if (busy)  busy.hidden = true;
+      if (label) label.textContent = 'Actualizado';
+      nextAt = Date.now() + EVERY_MS;    // schedule next refresh from now
+      setTimeout(update, 900);           // brief “Actualizado” then resume countdown
+    }
+  }
+
+  function update(){
+    const now = Date.now();
+    const remaining = Math.max(0, nextAt - now);
+    const secs = Math.ceil(remaining / 1000);
+
+    if (!inFlight){
+      // Show a short “pre-spinner” in the last 2 seconds
+      if (busy)  busy.hidden = !(secs <= 2);
+      if (label) label.textContent = (secs > 0) ? `Actualizando en ${secs}s` : 'Actualizando…';
+    }
+
+    if (remaining === 0 && !inFlight){
+      doRefresh();
+    } else {
+      // tighter tick for smoother UX and exact 0
+      setTimeout(update, 250);
+    }
+  }
+
+  // Optional: expose a **non-fighting** reset if something else wants to push the next refresh
+  window.resetCritCountdown = (pushMs = 0) => {
+    if (!inFlight) nextAt = Date.now() + (EVERY_MS + pushMs);
+  };
+
+  update();
+})();
+</script>
+
+<script>
+/* ===== Datos + render con filtros (lista unificada) ===== */
+const el = {
+  kpiToApprove: document.getElementById('kpi-toapprove'),
+  kpiPending:  document.getElementById('kpi-pending'),
+  kpiInProg:   document.getElementById('kpi-inprogress'),
+  kpiResolved: document.getElementById('kpi-resolved'),
+  kpiCritical: document.getElementById('kpi-critical'),
+  listCrit:    document.getElementById('list-critical'),
+  listAll:     document.getElementById('list-all'),
+  feed:        document.getElementById('feed'),
+  ding:        document.getElementById('ding'),
+};
+
+let cache = { toapprove: [], pending: [], progress: [], resolved: [], all: [] };
+let prev = { pendingIds: new Set() };
+
+function pill(text){ return `<span class="pill tiny">${text}</span>`; }
+
+function metaAssigned(t){
+  const who = t.assigned_name || '(sin asignar)';
+  const due = t.due_at ? `Vence ${t.due_at}` : 'Sin SLA';
+  const crit = t.is_critical ? ` <span class="text-danger fw-semibold">⚠</span>` : '';
+  return `${pill('Asignado: ' + who)}<br><span class="text-muted">${due}${crit}</span>`;
+}
+
+function headerWithGuest(t){
+  const priClass = t.prioridad==='URGENTE' ? 'text-bg-danger' :
+                   t.prioridad==='ALTA'    ? 'text-bg-warning' :
+                   t.prioridad==='MEDIA'   ? 'text-bg-primary' : 'text-bg-secondary';
+  const room = t.ubicacion ? ` · ${t.ubicacion}` : '';
+  const guest = (t.guest_name || t.huesped || '') ? ` · Huésped: ${(t.guest_name || t.huesped || '')}${t.guest_id ? ' ('+t.guest_id+')':''}` : '';
+  return `<div class="d-flex align-items-center flex-wrap gap-1">
+            <span class="badge ${priClass} me-1">${t.prioridad || '—'}</span>
+            <span>${t.area || '—'}${room}${guest}</span>
+          </div>`;
+}
+
+function actionButtonsPending(t){
+  // “Por aprobar” => estado explícito PENDIENTE_APROBACION
+  const isAwaiting = (t.estado === 'PENDIENTE_APROBACION');
+
+  const editBtn = CAN_EDIT
+    ? `<button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button>`
+    : '';
+
+  const approveBtn = (CAN_APPROVE && isAwaiting)
+    ? `<button class="btn btn-sm btn-success" onclick="approveTicket(${t.id})">Aprobar</button>`
+    : '';
+
+  const deleteBtn  = ''; // (soft delete deshabilitado aquí)
+
+  return `<div class="btn-row">${approveBtn}${deleteBtn}${editBtn}</div>`;
+}
+
+function liTicketPending(t){
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        ${headerWithGuest(t)}
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${actionButtonsPending(t)}
+      </div>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
+    </div>
+  </li>`;
+}
+
+function liTicketGeneric(t){
+  return `<li class="list-group-item">
+    <div class="list-item-flex">
+      <div class="list-item-main">
+        ${headerWithGuest(t)}
+        <div class="text-muted list-item-detail">${t.detalle || ''}</div>
+        ${CAN_EDIT ? `<div class="btn-row"><button class="btn btn-sm btn-outline-secondary" onclick='openEdit(${JSON.stringify(t)})'>Editar</button></div>` : ''}
+      </div>
+      <div class="list-item-meta small">${metaAssigned(t)}</div>
+    </div>
+  </li>`;
+}
+
+function liFeed(x){
+  const who = x.actor || 'sistema';
+  const room = x.ubicacion ? ` · ${x.ubicacion}` : '';
+  return `<li class="list-group-item">
+    <span class="text-muted">${x.at}</span> — Ticket #${x.ticket_id} ${x.action} por ${who} (${x.area || '—'}${room})
+    ${x.motivo ? ` · <span class="text-muted">${x.motivo}</span>` : ''}
+  </li>`;
+}
+
+async function loadKPIs(){
+  const [k, pend] = await Promise.all([
+    fetch('/api/recepcion/kpis'),
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=500')
+  ]);
+
+  if(k.ok){
+    const j = await k.json();
+    el.kpiPending.textContent   = j.pending ?? '0';
+    el.kpiInProg.textContent    = j.in_progress ?? '0';
+    el.kpiResolved.textContent  = j.resolved_today ?? '0';
+  }
+
+  // “Por aprobar” = items con estado PENDIENTE_APROBACION
+  if(pend.ok){
+    const jp = await pend.json();
+    const toApproveCount = (jp.items || []).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION').length;
+    el.kpiToApprove.textContent = String(toApproveCount);
+  }
+}
+
+async function loadLists(){
+  const [p, e, r] = await Promise.all([
+    fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=300'),
+    fetch('/api/recepcion/list?estado=EN_CURSO&period=7d&limit=300'),
+    fetch('/api/recepcion/list?estado=RESUELTO&period=today&limit=300'),
+  ]);
+  const jp = p.ok ? await p.json() : {items:[]};
+  const je = e.ok ? await e.json() : {items:[]};
+  const jr = r.ok ? await r.json() : {items:[]};
+
+  // Divide PENDIENTES entre por aprobar (PENDIENTE_APROBACION) y pendientes ya aprobados (PENDIENTE)
+  const toapprove = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION');
+  const pend      = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE');
+
+  cache = {
+    toapprove,
+    pending: pend,
+    progress: (je.items||[]),
+    resolved: (jr.items||[])
+  };
+
+  // Construye lista unificada (orden: por aprobar → pendientes → en curso → resueltos hoy)
+  const tag = (t, cls='') => ({...t, __cls: cls});
+  cache.all = [
+    ...toapprove.map(t => tag(t, 'pending-approval')),
+    ...cache.pending,
+    ...cache.progress,
+    ...cache.resolved
+  ];
+
+  // Ding si crecen los pendientes (los por aprobar no disparan el ding)
+  const ids = new Set(pend.map(x=>x.id));
+  const newId = [...ids].find(id => !prev.pendingIds.has(id));
+  if ((ids.size > prev.pendingIds.size || newId) && el.ding) {
+    try { el.ding.currentTime = 0; el.ding.play().catch(()=>{}); } catch(e){}
+  }
+  prev.pendingIds = ids;
+
+  renderFromCache();
+}
+
+function applyFilters(list, forceEstado=''){
+  const q = (document.getElementById('flt-q').value || '').toLowerCase();
+  const estado = forceEstado || (document.getElementById('flt-estado').value || '');
+  const prio   = (document.getElementById('flt-prio').value || '');
+  const area   = (document.getElementById('flt-area').value || '');
+
+  return (list||[]).filter(t => {
+    if (estado && !((t.estado||'').includes(estado))) return false;
+    if (prio && (t.prioridad||'') !== prio) return false;
+    if (area && (t.area||'') !== area) return false;
+    if (q) {
+      const hay = `${t.detalle||''} ${t.guest_name||''} ${t.guest_id||''} ${t.ubicacion||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderFromCache(){
+  // Críticos: solo pendientes aprobados + en curso
+  const criticalItems = [...cache.pending, ...cache.progress].filter(x=>x.is_critical);
+  el.listCrit.innerHTML = criticalItems.slice(0,8).map(liTicketGeneric).join('') ||
+                          '<li class="list-group-item text-muted">Sin críticos</li>';
+  if (el.kpiCritical) el.kpiCritical.textContent = String(criticalItems.length || 0);
+
+  // Lista unificada con filtros; PENDIENTE_APROBACION resaltados
+  const ALL = applyFilters(cache.all);
+  el.listAll.innerHTML = ALL.map(t => {
+    const html = (t.estado === 'PENDIENTE_APROBACION') ? liTicketPending(t) : liTicketGeneric(t);
+    return (t.__cls === 'pending-approval')
+      ? html.replace('class="list-group-item"', 'class="list-group-item pending-approval"')
+      : html;
+  }).join('') || '<li class="list-group-item text-muted">Sin tickets</li>';
+}
+
+async function loadFeed(){
+  const r = await fetch('/api/feed/recent');
+  if(!r.ok) return;
+  const j = await r.json();
+  el.feed.innerHTML = (j.items||[]).map(liFeed).join('') || '<li class="list-group-item text-muted">Sin movimientos</li>';
+}
+
+// expose helpers
+window.loadCriticos = async () => { await loadLists(); };
+window.refreshAll   = async () => { await loadKPIs(); await loadLists(); await loadFeed(); };
+
+function tick(){
+  loadKPIs();
+  loadLists();
+  loadFeed();
+}
+
+tick();
+setInterval(tick, 8000);
+
+</script>
+{% endblock %}

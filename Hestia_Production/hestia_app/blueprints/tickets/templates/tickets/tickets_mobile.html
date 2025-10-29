@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% set F = filters or {} %}
+{% set q = (F.q or '') %}
+{% set can_new = user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+{% set can_transition = user and user.role in ['TECNICO','SUPERVISOR','GERENTE'] %}
+{% block title %}📋 Tickets{% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h1 class="h5 mb-0">📋 Tickets</h1>
+    <div class="small text-muted">
+      {% if F.area %}<span class="badge text-bg-light me-1">{{ F.area }}</span>{% endif %}
+      {% if F.estado %}<span class="badge text-bg-light me-1">{{ F.estado|nice_state }}</span>{% endif %}
+      {% if F.prioridad %}<span class="badge text-bg-light me-1">{{ F.prioridad }}</span>{% endif %}
+      {% if F.period and F.period!='today' %}<span class="badge text-bg-light me-1">{{ F.period }}</span>{% endif %}
+      {% if q %}<span class="badge text-bg-light">“{{ q }}”</span>{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if can_new %}
+      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    {% endif %}
+  </div>
+</header>
+
+<div class="mb-2">
+  <input id="tk-q" class="form-control form-control-sm" placeholder="Buscar por ubicación / detalle / estado..." value="{{ q }}">
+</div>
+
+<ul id="tk-list" class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) %}
+  <li class="card {% if t.is_critical %}border-danger{% endif %}"
+      data-key="{{ ((t.ubicacion or '') ~ ' ' ~ (t.detalle or '') ~ ' ' ~ (t.estado or '') ~ ' ' ~ (t.prioridad or '') ~ ' ' ~ (t.area or ''))|lower }}">
+    <div class="card-body p-2">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="me-2">
+          <div class="fw-semibold">
+            {{ t.ubicacion or '—' }}
+            <span class="small text-muted ms-1">({{ t.area or '—' }})</span>
+          </div>
+          <div class="small text-muted text-truncate" style="max-width: 75vw">{{ t.detalle }}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %}text-bg-danger
+            {% elif t.prioridad=='ALTA' %}text-bg-warning
+            {% elif t.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad or '—' }}
+          </span>
+          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+            {% if t.estado == 'RESUELTO' %}
+              resuelto {{ (t.finished_at or t.due_at)|short_dt if (t.finished_at or t.due_at) else '' }}
+            {% else %}
+              {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if t.due_at and t.estado != 'RESUELTO' %}
+      <div class="progress mt-2" style="height:6px">
+        {% set w = 100 if t.is_critical else 60 %}
+        <div class="progress-bar {{ 'bg-danger' if t.is_critical else 'bg-success' }}" style="width: {{ w }}%;"></div>
+      </div>
+      {% endif %}
+
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {# Confirmar (Recepción, Supervisor, Gerente) cuando está pendiente #}
+        {% if t.estado == 'PENDIENTE' and (user and user.role in ['RECEPCION','SUPERVISOR','GERENTE']) %}
+          <form method="post" action="{{ url_for('ticket_confirm', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-primary">Confirmar</button>
+          </form>
+        {% endif %}
+
+        {# Transiciones (Técnico / Supervisor / Gerente) #}
+        {% if can_transition %}
+          {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+            <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+              <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+            </form>
+          {% endif %}
+          {% if t.estado in ['ACEPTADO'] %}
+            <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+              <button class="btn btn-sm btn-dark">Iniciar</button>
+            </form>
+            <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+              <input type="hidden" name="motivo" value="En espera">
+              <button class="btn btn-sm btn-outline-warning">Pausa</button>
+            </form>
+          {% endif %}
+          {% if t.estado in ['EN_CURSO'] %}
+            <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+              <input type="hidden" name="motivo" value="Bloqueado">
+              <button class="btn btn-sm btn-outline-warning">Pausa</button>
+            </form>
+            <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+              <button class="btn btn-sm btn-success">Finalizar</button>
+            </form>
+          {% endif %}
+          {% if t.estado == 'PAUSADO' %}
+            <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+              <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+            </form>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">No hay tickets para mostrar.</li>
+  {% endfor %}
+</ul>
+
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('tickets') }}">📋 Todos</a>
+    {% if can_new %}
+      <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    {% else %}
+      <span class="btn btn-link disabled">➕ Nuevo</span>
+    {% endif %}
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+  </div>
+</nav>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const q = document.getElementById('tk-q');
+  const items = Array.from(document.querySelectorAll('#tk-list > li.card'));
+  function applyFilter() {
+    const s = (q.value || '').toLowerCase().trim();
+    items.forEach(li => {
+      const key = li.getAttribute('data-key') || '';
+      li.style.display = (!s || key.includes(s)) ? '' : 'none';
+    });
+  }
+  q?.addEventListener('input', applyFilter);
+</script>
+{% endblock %}

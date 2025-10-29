@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Mi trabajo (Móvil){% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-2">
+  <h1 class="h4 mb-0">👷 Mi trabajo</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tickets', estado='PENDIENTE') }}">Todos</a>
+    <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+  </div>
+</header>
+
+{# === ADDED: shift banner & flag === #}
+{% set shift_ok = HK_SHIFT_ACTIVE %}
+{% if not shift_ok %}
+<div class="alert alert-warning small py-2">⚠️ Debes iniciar tu turno para iniciar/pausar/finalizar tickets.</div>
+{% endif %}
+
+<div class="mb-2">
+  <input id="mx-q" class="form-control form-control-sm" placeholder="Buscar por ubicación / detalle..." />
+</div>
+
+<ul id="mx-list" class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) %}
+  <li class="card {% if t.is_critical %}border-warning{% endif %}" data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle ~ ' ' ~ t.area)|lower }}">
+    <div class="card-body p-2">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fw-semibold">{{ t.area }} · {{ t.ubicacion or 'Ubicación' }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 90vw">{{ t.detalle }}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge {% if t.prioridad=='URGENTE' %}text-bg-danger{% elif t.prioridad=='ALTA' %}text-bg-warning{% elif t.prioridad=='MEDIA' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ t.prioridad }}</span>
+          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">{{ t.due_at or 'sin SLA' }}</div>
+        </div>
+      </div>
+
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}"><button class="btn btn-sm btn-outline-primary">Aceptar</button></form>
+        {% endif %}
+        {% if t.estado in ['ACEPTADO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-dark" {{ 'disabled' if not shift_ok }}>Iniciar</button>
+          </form>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pausa">
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['EN_CURSO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pausa">
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
+          </form>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-success" {{ 'disabled' if not shift_ok }}>Resolver</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['PAUSADO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not shift_ok }}>Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado }}</span>
+        <span>Creado: {{ t.created_at }}</span>
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">No tienes tickets asignados.</li>
+  {% endfor %}
+</ul>
+
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('tickets', estado='PENDIENTE') }}">📋 Lista</a>
+    <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+  </div>
+</nav>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // === ADDED: expose shift flag to JS ===
+  const HK_SHIFT_ACTIVE = {{ 'true' if HK_SHIFT_ACTIVE else 'false' }};
+
+  const q = document.getElementById('mx-q');
+  const items = Array.from(document.querySelectorAll('#mx-list > li.card'));
+  q?.addEventListener('input', e=>{
+    const s=(e.target.value||'').toLowerCase();
+    items.forEach(li=>{
+      li.style.display = !s || (li.dataset.key||'').includes(s) ? '' : 'none';
+    });
+  });
+
+  // === ADDED: block submits that require turno when inactivo ===
+  (function blockActionsWithoutShift(){
+    if (HK_SHIFT_ACTIVE) return;
+    document.querySelectorAll('form.requires-shift').forEach(form=>{
+      form.addEventListener('submit', (ev)=>{
+        ev.preventDefault();
+        alert('🔒 Debes iniciar tu turno para realizar esta acción.');
+      }, { once:false });
+    });
+  })();
+</script>
+{% endblock %}

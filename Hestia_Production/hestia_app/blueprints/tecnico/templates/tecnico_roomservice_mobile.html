@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Room Service — Mi trabajo{% endblock %}
+
+{% block content %}
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h5 mb-0">🍽️ Room Service</h1>
+    <div class="small text-muted">Vista móvil</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('tickets', area='ROOMSERVICE') }}">Todos</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    {% endif %}
+  </div>
+</header>
+
+<!-- Quick Actions (6 buttons) -->
+<section class="mb-3">
+  <div class="row g-2 row-cols-2">
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tech_in_progress', slug='roomservice') }}">
+        <div class="fw-semibold">En curso</div>
+        <div class="small text-muted">lo que estoy haciendo</div>
+      </a>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tech_my', slug='roomservice') }}">
+        <div class="fw-semibold">Mis asignados</div>
+        <div class="small text-muted">todo lo mío</div>
+      </a>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tech_available', slug='roomservice') }}">
+        <div class="fw-semibold">Lista</div>
+        <div class="small text-muted">disponibles del área</div>
+      </a>
+    </div>
+    <div class="col">
+      {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+        <a class="btn w-100 btn-light py-3 border rounded-3"
+           href="{{ url_for('ticket_create') }}">
+          <div class="fw-semibold">Nuevo</div>
+          <div class="small text-muted">crear ticket</div>
+        </a>
+      {% else %}
+        <button class="btn w-100 py-3 border rounded-3" disabled>
+          <div class="fw-semibold">Nuevo</div>
+          <div class="small text-muted">sin permiso</div>
+        </button>
+      {% endif %}
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tech_tools', slug='roomservice') }}">
+        <div class="fw-semibold">Herramientas</div>
+        <div class="small text-muted">checklists y recursos</div>
+      </a>
+    </div>
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+         href="{{ url_for('tech_history', slug='roomservice', days=7) }}">
+        <div class="fw-semibold">Historial</div>
+        <div class="small text-muted">últimos 7 días</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<!-- Búsqueda simple para la pre-lista -->
+<div class="mb-2">
+  <input id="rs-search" class="form-control form-control-sm"
+         placeholder="Buscar habitación / pedido / canal..." />
+</div>
+
+<!-- Previa: Mis asignados (top 10) -->
+<h2 class="h6 text-muted mb-2">Mis asignados</h2>
+<ul id="rs-list" class="list-unstyled d-grid gap-2">
+  {% set _items = (tickets or [])[:10] %}
+  {% for t in _items %}
+  <li class="card {% if t.is_critical %}border-danger{% endif %}"
+      data-key="{{ (('hab ' ~ (t.ubicacion or '')) ~ ' ' ~ (t.detalle or '') ~ ' ' ~ (t.canal or '') ~ ' ' ~ (t.estado or '') ~ ' ' ~ (t.prioridad or ''))|lower }}">
+    <div class="card-body p-2">
+      <div class="d-flex justify-content-between">
+        <div class="me-2">
+          <div class="fw-semibold">Hab. {{ t.ubicacion or '—' }}
+            <span class="small text-muted">({{ t.canal or 'canal desconocido' }})</span>
+          </div>
+          <div class="small text-muted text-truncate" style="max-width: 70vw">{{ t.detalle }}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %}text-bg-danger
+            {% elif t.prioridad=='ALTA' %}text-bg-warning
+            {% elif t.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad }}
+          </span>
+          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+            {% if t.due_at %}entrega {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if t.due_at %}
+      <div class="progress mt-2" style="height:6px">
+        <div class="progress-bar {% if t.is_critical %}bg-danger{% else %}bg-success{% endif %}"
+             style="width: {{ 100 if t.is_critical else 60 }}%"></div>
+      </div>
+      {% endif %}
+
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['ACEPTADO'] %}
+          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-dark">Preparar</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="En espera de cocina">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['EN_CURSO'] %}
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="En camino">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-success">Entregado</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['PAUSADO'] %}
+          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado: {{ t.created_at|short_dt }}</span>
+
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">No tienes tickets asignados.</li>
+  {% endfor %}
+</ul>
+
+<!-- Navegación inferior -->
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('tickets', area='ROOMSERVICE') }}">📋 Lista</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    {% else %}
+      <span class="btn btn-link disabled">➕ Nuevo</span>
+    {% endif %}
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+  </div>
+</nav>
+
+<!-- Offcanvas: Herramientas -->
+<div class="offcanvas offcanvas-bottom" tabindex="-1" id="rsTools">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Herramientas — Room Service</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body small">
+    <div class="list-group">
+      <a href="#" class="list-group-item list-group-item-action">Menú actual &amp; descripciones</a>
+      <a href="#" class="list-group-item list-group-item-action">Guía de alérgenos</a>
+      <a href="#" class="list-group-item list-group-item-action">Checklist de bandeja / mise en place</a>
+      <a href="#" class="list-group-item list-group-item-action">Rutas de entrega por piso</a>
+      <a href="#" class="list-group-item list-group-item-action">Menú nocturno</a>
+      <a href="#" class="list-group-item list-group-item-action">Stock de amenities / extras</a>
+    </div>
+    <div class="text-muted mt-2">*(enlaces de ejemplo; conectar cuando estén listos)*</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filtro rápido en la pre-lista
+  const search = document.getElementById('rs-search');
+  const items  = Array.from(document.querySelectorAll('#rs-list > li.card'));
+  search?.addEventListener('input', (e)=>{
+    const q = (e.target.value || '').trim().toLowerCase();
+    items.forEach(li => {
+      const key = li.getAttribute('data-key') || '';
+      li.style.display = (!q || key.includes(q)) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

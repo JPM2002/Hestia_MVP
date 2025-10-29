@@ -1,0 +1,635 @@
+{% extends "base.html" %}
+{% block title %}Housekeeping — Mi trabajo{% endblock %}
+
+{% block content %}
+<style>
+  /* keep right column inside card on small screens */
+  .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .tk-main { min-width:0; }
+  .tk-meta { flex:0 0 auto; max-width:40%; text-align:right; }
+  .tk-meta .small { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.1; }
+  .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
+  @media (max-width:420px){ .tk-meta{ max-width:46%; } }
+
+  /* Small busy spinner inline */
+  .btn[aria-busy="true"]::after{
+    content:"";
+    display:inline-block;
+    width:1rem;height:1rem;margin-left:.4rem;
+    border:.15rem solid currentColor;border-right-color:transparent;border-radius:50%;
+    vertical-align:-.2rem; animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  /* === Tiny toast === */
+  .hk-toast {
+    position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
+    background: #111; color: #fff; padding: .6rem .9rem; border-radius: .75rem;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    font-size: .95rem; z-index: 1080; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .hk-toast.show  { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .hk-toast.success{ background:#28a745; }  /* <- green per spec */
+  .hk-toast.warn   { background:#ffc107; color:#111; } /* yellow */
+  .hk-toast.error  { background:#dc3545; } /* red */
+</style>
+
+<header class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h5 mb-0">🧹 Housekeeping</h1>
+    <div class="small text-muted">Vista móvil</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('tickets', area='HOUSEKEEPING') }}">Todos</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    {% endif %}
+  </div>
+</header>
+
+<!-- Shift controls -->
+<section class="mb-3">
+  <div class="d-flex gap-2">
+    <!-- Start as outline; turns solid when activo -->
+    <button id="btn-shift-start" class="btn btn-outline-success flex-fill">Iniciar turno</button>
+    <!-- Pause is outline; turns solid when pausado -->
+    <button id="btn-shift-pause" class="btn btn-outline-warning flex-fill">Pausa</button>
+    <button id="btn-shift-stop"  class="btn btn-outline-danger flex-fill">Cerrar turno</button>
+  </div>
+  <div class="small text-muted mt-1" id="shift-status">Turno: inactivo</div>
+</section>
+
+{# === ADDED: compute shift flag + banner when turno inactivo === #}
+{% set shift_ok = HK_SHIFT_ACTIVE %}
+{% if not shift_ok %}
+<div class="alert alert-warning small py-2">⚠️ Debes iniciar tu turno para iniciar/pausar/finalizar tickets.</div>
+{% endif %}
+
+<!-- Optional small search for the list -->
+<div class="mb-2">
+  <input id="hk-search" class="form-control form-control-sm"
+         placeholder="Buscar habitación / detalle..." />
+</div>
+
+<!-- Featured: en curso o lo más urgente pendiente (Ticket en foco va inmediatamente después del turno) -->
+{% set ns = namespace(featured=None) %}
+{% for t in (tickets or []) %}
+  {% if t.estado in ['EN_CURSO','ACEPTADO','ASIGNADO'] and ns.featured is none %}
+    {% set ns.featured = t %}
+  {% endif %}
+{% endfor %}
+
+{% if ns.featured %}
+  <h2 class="h6 text-muted mb-2">🟢 Ticket en foco</h2>
+  <div class="card border-2 border-success mb-3" id="hk-featured"
+       data-created="{{ ns.featured.created_at }}"
+       {% if ns.featured.started_at %}data-started="{{ ns.featured.started_at }}"{% endif %}>
+    <div class="card-body p-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="me-3">
+          <div class="fw-semibold">
+            Ticket {{ '%03d' % ns.featured.id }} · Hab. {{ ns.featured.ubicacion or '—' }}
+          </div>
+          <div class="small text-muted list-item-detail" style="max-width: 75vw">
+            {{ ns.featured.detalle }}
+          </div>
+          <div class="small mt-1">
+            Estado: <span class="fw-semibold">{{ ns.featured.estado|nice_state }}</span>
+            · Creado:
+            <span class="hk-created"
+                  data-created="{{ ns.featured.created_at }}"
+                  title="{{ ns.featured.created_at|short_dt }}">—</span>
+            {% if ns.featured.due_at %} · SLA: {{ ns.featured.due_at|short_dt }}{% endif %}
+          </div>
+
+          {% if ns.featured.estado in ['PENDIENTE','ASIGNADO','ACEPTADO'] %}
+          <div class="small text-muted mt-1">
+            ⏱ Esperando inicio: <span id="hk-wait-timer">—</span>
+          </div>
+          {% endif %}
+
+          {% if ns.featured.estado == 'EN_CURSO' and ns.featured.started_at %}
+          <div class="small text-muted mt-1">
+            ⏱ En curso: <span id="hk-active-timer">—</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="text-end">
+          <span class="badge
+            {% if ns.featured.prioridad=='URGENTE' %}text-bg-danger
+            {% elif ns.featured.prioridad=='ALTA' %}text-bg-warning
+            {% elif ns.featured.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ ns.featured.prioridad or '—' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="mt-3 d-grid gap-2">
+        {% if ns.featured.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=ns.featured.id) }}?next={{ request.path }}">
+            <button class="btn btn-lg btn-primary w-100">Aceptar</button>
+          </form>
+        {% endif %}
+
+        {% if ns.featured.estado in ['ACEPTADO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=ns.featured.id) }}?next={{ request.path }}">
+            <button class="btn btn-lg btn-dark w-100" {{ 'disabled' if not shift_ok }}>Iniciar</button>
+          </form>
+        {% endif %}
+
+        {% if ns.featured.estado == 'EN_CURSO' %}
+          <div class="d-flex gap-2">
+            {# === ADDED: requires-shift + disabled when turno inactivo === #}
+            <form class="flex-fill requires-shift" method="post" action="{{ url_for('ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
+              <input type="hidden" name="motivo" value="Esperando habitación">
+              <button class="btn btn-lg btn-outline-warning w-100" {{ 'disabled' if not shift_ok }}>Pausar</button>
+            </form>
+            <form class="flex-fill requires-shift" method="post" action="{{ url_for('ticket_finish', id=ns.featured.id) }}?next={{ request.path }}">
+              <button class="btn btn-lg btn-danger w-100" {{ 'disabled' if not shift_ok }}>Finalizar</button>
+            </form>
+          </div>
+        {% endif %}
+
+        {% if ns.featured.estado == 'PAUSADO' %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=ns.featured.id) }}?next={{ request.path }}">
+            <button class="btn btn-lg btn-outline-secondary w-100" {{ 'disabled' if not shift_ok }}>Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Quick Actions -->
+<section class="mb-3">
+  <div class="row g-2 row-cols-2">
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+        href="{{ url_for('tech_in_progress', slug='housekeeping') }}">
+        <div class="fw-semibold">En curso</div>
+        <div class="small text-muted">lo que estoy haciendo</div>
+      </a>
+    </div>
+
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+        href="{{ url_for('tech_my', slug='housekeeping') }}">
+        <div class="fw-semibold">Mis asignados</div>
+        <div class="small text-muted">incluye historial</div>
+      </a>
+    </div>
+
+    <div class="col">
+      <a class="btn w-100 btn-light py-3 border rounded-3"
+        href="{{ url_for('tech_available', slug='housekeeping') }}">
+        <div class="fw-semibold">Lista</div>
+        <div class="small text-muted">disponibles del área</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- En espera / pendientes (lista compacta) -->
+<h2 class="h6 text-muted mb-2">En espera</h2>
+<ul id="hk-list" class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) if t.id != (ns.featured.id if ns.featured else -1) %}
+  <li class="card {% if t.is_critical %}border-warning{% endif %}"
+      data-key="{{ (t.ubicacion ~ ' ' ~ t.detalle ~ ' ' ~ t.estado ~ ' ' ~ t.prioridad)|lower }}"
+      data-created="{{ t.created_at }}">
+    <div class="card-body p-2">
+      <div class="tk-row">
+        <div class="tk-main">
+          <div class="fw-semibold">{{ t.ubicacion or 'Ubicación' }}</div>
+          <div class="small text-muted text-truncate" style="max-width: 60vw">{{ t.detalle }}</div>
+        </div>
+        <div class="tk-meta">
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %}text-bg-danger
+            {% elif t.prioridad=='ALTA' %}text-bg-warning
+            {% elif t.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad or '—' }}
+          </span>
+          {% if t.due_at %}
+            <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+              vence {{ t.due_at|short_dt }}
+            </div>
+          {% else %}
+            <div class="small text-muted">Sin SLA</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+          </form>
+        {% endif %}
+        {% if t.estado == 'ACEPTADO' %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_start', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-dark" {{ 'disabled' if not shift_ok }}>Iniciar</button>
+          </form>
+        {% endif %}
+
+        {% if t.estado in ['EN_CURSO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_pause', id=t.id) }}?next={{ request.path }}">
+            <input type="hidden" name="motivo" value="Pendiente insumos">
+            <button class="btn btn-sm btn-outline-warning" {{ 'disabled' if not shift_ok }}>Pausa</button>
+          </form>
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_finish', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-danger" {{ 'disabled' if not shift_ok }}>Finalizar</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['PAUSADO'] %}
+          {# === ADDED: requires-shift + disabled when turno inactivo === #}
+          <form class="requires-shift" method="post" action="{{ url_for('ticket_resume', id=t.id) }}?next={{ request.path }}">
+            <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not shift_ok }}>Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>Creado:
+          <span class="hk-created"
+                data-created="{{ t.created_at }}"
+                title="{{ t.created_at|short_dt }}">—</span>
+        </span>
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">No tienes tickets en espera.</li>
+  {% endfor %}
+</ul>
+<div id="hk-toast" class="hk-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+
+<!-- Bottom nav for quick access -->
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+    <a class="btn btn-link"
+       href="{{ url_for('tickets', area='HOUSEKEEPING') }}">📋 Lista</a>
+  </div>
+</nav>
+
+<!-- Offcanvas: Herramientas (placeholder, oculto hasta tener links reales) -->
+<!-- (dejar marcado para futuro; no hay botón que lo abra en esta vista) -->
+<div class="offcanvas offcanvas-bottom" tabindex="-1" id="hkTools">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Herramientas — Housekeeping</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body small">
+    <div class="list-group">
+      <a href="#" class="list-group-item list-group-item-action">Checklist de salida</a>
+      <a href="#" class="list-group-item list-group-item-action">Reposición de amenities</a>
+      <a href="#" class="list-group-item list-group-item-action">Reporte Lost &amp; Found</a>
+      <a href="#" class="list-group-item list-group-item-action">Protocolos de limpieza</a>
+      <a href="#" class="list-group-item list-group-item-action">Comunicar habitación lista</a>
+    </div>
+    <div class="text-muted mt-2">*(enlaces de ejemplo; conectar cuando estén listos)*</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // === ADDED: expose shift flag to JS ===
+  const HK_SHIFT_ACTIVE = {{ 'true' if HK_SHIFT_ACTIVE else 'false' }};
+
+  // ---- Toast helpers ----
+const hkToastEl = document.getElementById('hk-toast');
+let hkToastTimer = null;
+
+function showToast(msg, kind='success', ms=2200){
+  if(!hkToastEl) return;
+  hkToastEl.className = `hk-toast ${kind}`;
+  hkToastEl.textContent = msg;
+  // show
+  requestAnimationFrame(()=> hkToastEl.classList.add('show'));
+  // auto-hide
+  clearTimeout(hkToastTimer);
+  hkToastTimer = setTimeout(()=> hkToastEl.classList.remove('show'), ms);
+}
+
+// === HH:MM local, 24h si el dispositivo está en es-ES/es-PE, etc. ===
+function fmtHHMM(isoOrDate){
+  try{
+    const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }catch(_){ return ''; }
+}
+
+
+// Map endpoint -> human message
+function actionMessageFromUrl(url){
+  if (url.includes('ticket_accept')) return '✅ Has tomado este ticket.';
+  if (url.includes('ticket_start'))  return '▶️ Has iniciado el ticket.';
+  if (url.includes('ticket_pause'))  return '⏸️ Has pausado el ticket.';
+  if (url.includes('ticket_finish')) return '🏁 Has finalizado el ticket.';
+  if (url.includes('ticket_resume')) return '⏯️ Has reanudado el ticket.';
+  if (url.endsWith('/start'))        return '✅ Turno iniciado.';
+  if (url.endsWith('/pause'))        return '⏸️ Turno en pausa.';
+  if (url.endsWith('/end'))          return '🏁 Turno finalizado.';
+  return '✔️ Acción realizada.';
+}
+
+function toastKindFromUrl(url){
+  // Shift actions
+  if (url.endsWith('/start')) return 'success'; // green
+  if (url.endsWith('/pause')) return 'warn';    // yellow
+  if (url.endsWith('/end'))   return 'error';   // red
+
+  // (Optional) Ticket actions – keep green by default, but show yellow on ticket pause
+  if (url.includes('ticket_pause')) return 'warn';
+
+  return 'success';
+}
+
+
+  // ========= HK Shift controls (uses /api/hk/shift) =========
+  const shiftStatus = document.getElementById('shift-status');
+  const btnStart = document.getElementById('btn-shift-start');
+  const btnPause = document.getElementById('btn-shift-pause');
+  const btnStop  = document.getElementById('btn-shift-stop');
+
+  function setSolid(btn, base){
+    // base: "success" | "warning" | "danger"
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(solid);
+  }
+  function setOutline(btn, base){
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(outline);
+  }
+
+  function applyVisualState(j){
+    // Default outlines
+    setOutline(btnStart,'success');
+    setOutline(btnPause,'warning');
+    setOutline(btnStop,'danger');
+
+    if (!j || (!j.active && !j.started_at)) {
+      // inactivo -> todo outline (start NOT solid)
+      return;
+    }
+    if (j.ended_at) {
+      // finalizado -> keep stop outline (we already show label)
+      return;
+    }
+    if (j.paused) {
+      // pausado -> pausa SOLID
+      setSolid(btnPause,'warning');
+    } else {
+      // activo -> iniciar SOLID
+      setSolid(btnStart,'success');
+    }
+  }
+
+  function labelFromState(j){
+  // Sin turno en curso ni marcas
+  if (!j || (!j.active && !j.started_at && !j.ended_at)) return 'Turno: inactivo';
+
+  // Finalizado -> mostrar hora de cierre
+  if (j.ended_at){
+    const hhmm = fmtHHMM(j.ended_at);
+    return `Turno: finalizado — ${hhmm} hrs`;
+  }
+
+  // Pausado -> igual que antes
+  if (j.paused) return 'Turno: en pausa';
+
+  // Activo -> conserva el formato con hora de inicio
+  try{
+    const hhmm = fmtHHMM(j.started_at);
+    return `Turno: activo desde ${hhmm} hrs`;
+  }catch(_){
+    return 'Turno: activo';
+  }
+}
+
+
+  async function refreshShiftStatus(){
+    try{
+      const r = await fetch('/api/hk/shift');
+      if(!r.ok) throw new Error();
+      const j = await r.json();
+      shiftStatus.textContent = labelFromState(j);
+      applyVisualState(j);
+    } catch(_){
+      shiftStatus.textContent = 'Turno: inactivo';
+      applyVisualState(null);
+    }
+  }
+
+  async function postNoContent(url, btn){
+  try{
+    if (btn) { btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+    const r = await fetch(url, { method: 'POST' });
+    await refreshShiftStatus();
+    if (r.ok) {
+      showToast(actionMessageFromUrl(url), toastKindFromUrl(url));
+    } else {
+      showToast('❌ No se pudo actualizar el estado del turno.', 'error', 2800);
+    }
+    return r.ok;
+  } catch(e){
+    showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
+    return false;
+  } finally {
+    if (btn) { btn.removeAttribute('aria-busy'); btn.disabled = false; }
+  }
+}
+
+
+  btnStart?.addEventListener('click', ()=>postNoContent('/hk/shift/start', btnStart));
+  btnPause?.addEventListener('click', ()=>postNoContent('/hk/shift/pause', btnPause));
+  btnStop ?.addEventListener('click', ()=>postNoContent('/hk/shift/end',   btnStop));
+
+  // Initial state
+  refreshShiftStatus();
+
+  // ---- Intercept ticket action forms to show toast and stay on page ----
+function wireTicketForms(){
+  const forms = document.querySelectorAll('form[action*="ticket_"]');
+  forms.forEach(form=>{
+    // avoid double-binding
+    if (form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const btn = form.querySelector('button[type="submit"], button:not([type])');
+
+      try{
+        if (btn){ btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+
+        const fd = new FormData(form);
+        const r  = await fetch(form.action, {
+          method: (form.method || 'POST').toUpperCase(),
+          body: fd,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',     // ensure JSON from backend
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+
+        // if session expired and server redirected us to /login
+        if (r.redirected && new URL(r.url, location.origin).pathname.includes('/login')) {
+          window.location.href = r.url;
+          return;
+        }
+
+        if (r.ok){
+          // try to read server message (when JSON path is taken)
+          let msg = actionMessageFromUrl(form.action);
+          try {
+            const j = await r.json();
+            if (j && j.message) msg = j.message;
+          } catch(_) { /* 204/empty or non-json, ignore */ }
+
+          showToast(msg, toastKindFromUrl(form.action));
+          // Give the toast a moment, then refresh to reflect new state
+          setTimeout(()=>window.location.reload(), 700);
+        } else {
+          // Prefer backend JSON message when available
+          let msg = '❌ No se pudo actualizar el ticket.';
+          try {
+            const j = await r.json();
+            if (j && j.message) msg = j.message;
+          } catch(_) {}
+
+          const kind = (r.status === 409) ? 'warn' : 'error'; // 409 = flujo inválido
+          showToast(msg, kind, 3000);
+
+          if (r.status === 401) {
+            // unauthorized -> reload (may land on login)
+            setTimeout(()=>window.location.reload(), 600);
+          }
+        }
+      } catch(_){
+        showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
+      } finally {
+        if (btn){ btn.removeAttribute('aria-busy'); btn.disabled = false; }
+      }
+    });
+  });
+}
+
+
+wireTicketForms(); // run once on load
+
+
+  // ========= Search filter for list =========
+  const search = document.getElementById('hk-search');
+  const listItems  = Array.from(document.querySelectorAll('#hk-list > li.card'));
+  search?.addEventListener('input', (e)=>{
+    const q = (e.target.value || '').trim().toLowerCase();
+    listItems.forEach(li => {
+      const key = li.getAttribute('data-key') || '';
+      li.style.display = (!q || key.includes(q)) ? '' : 'none';
+    });
+  });
+
+  // ========= Relative "created" labels =========
+  function fmtAgoFrom(iso){
+    const t = Date.parse(iso);
+    if (isNaN(t)) return '';
+    const diff = Date.now() - t;
+
+    const s = Math.floor(diff/1000);
+    if (s < 45) return 'hace un instante';
+
+    const m = Math.floor(s/60);
+    if (m < 60) return `hace ${m} ${m===1 ? 'minuto' : 'minutos'}`;
+
+    const h = Math.floor(m/60);
+    if (h < 24) return `hace ${h} ${h===1 ? 'hora' : 'horas'}`;
+
+    const d = Math.floor(h/24);
+    if (d < 7) return `hace ${d} ${d===1 ? 'día' : 'días'}`;
+
+    // Fallback: DD/MM HH:mm
+    const dt = new Date(t);
+    const pad = (n)=>String(n).padStart(2,'0');
+    return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
+
+  function updateCreatedLabels(){
+    document.querySelectorAll('.hk-created').forEach(el => {
+      const src = el.getAttribute('data-created') || '';
+      const txt = fmtAgoFrom(src);
+      if (txt) el.textContent = txt;
+    });
+  }
+
+  // ========= Live timers (wait time + created labels + active timer) =========
+  function fmtDHMS(ms){
+    if (!ms || ms < 0) return '—';
+    const s = Math.floor(ms/1000);
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const sec = s%60;
+    if (h>0) return `${h}h ${m}m ${sec}s`;
+    if (m>0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+
+  function tickTimers(){
+    const now = Date.now();
+
+    // featured "waiting to start"
+    const feat = document.getElementById('hk-featured');
+    const spanFeat = document.getElementById('hk-wait-timer');
+    if (feat && spanFeat) {
+      const created = Date.parse(feat.getAttribute('data-created') || '');
+      if (!isNaN(created)) spanFeat.textContent = fmtDHMS(now - created);
+    }
+
+    // featured "active timer" (elapsed since started_at)
+    const activeSpan = document.getElementById('hk-active-timer');
+    if (feat && activeSpan) {
+      const started = Date.parse(feat.getAttribute('data-started') || '');
+      if (!isNaN(started)) activeSpan.textContent = fmtDHMS(now - started);
+    }
+
+    // optional hooks per list item
+    document.querySelectorAll('.hk-wait').forEach(el=>{
+      const created = Date.parse(el.getAttribute('data-created') || '');
+      if (!isNaN(created)) el.textContent = fmtDHMS(now - created);
+    });
+
+    // update "Creado: hace …"
+    updateCreatedLabels();
+  }
+
+  updateCreatedLabels();
+  tickTimers();
+  setInterval(tickTimers, 1000);
+
+  // === ADDED: block submits that require turno when inactivo ===
+  (function blockActionsWithoutShift(){
+    if (HK_SHIFT_ACTIVE) return;
+    document.querySelectorAll('form.requires-shift').forEach(form=>{
+      form.addEventListener('submit', (ev)=>{
+        ev.preventDefault();
+        showToast('🔒 Debes iniciar tu turno para realizar esta acción.', 'warn', 2600);
+      });
+    });
+  })();
+
+</script>
+{% endblock %}

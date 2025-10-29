@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Nuevo ticket – Hestia{% endblock %}
+{% block content %}
+<h2 class="page-title mb-3">Nuevo ticket</h2>
+
+<form method="post" class="row g-3">
+  <div class="col-md-3">
+    <label class="form-label">Área</label>
+    <select class="form-select" name="area" required>
+      {% for a in areas %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Prioridad</label>
+    <select class="form-select" name="prioridad" required>
+      {% for p in prioridades %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Canal de origen</label>
+    <select class="form-select" name="canal_origen">
+      {% for c in canales %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Huésped ID (opcional)</label>
+    <input class="form-control" name="huesped_id" placeholder="ej: PMS12345">
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Ubicación / Habitación</label>
+    <input class="form-control" name="ubicacion" required placeholder="Ej: Hab 1203 o Lobby">
+  </div>
+
+  <div class="col-md-12">
+    <label class="form-label">Detalle</label>
+    <textarea class="form-control" name="detalle" rows="3" required placeholder="Describa el problema"></textarea>
+  </div>
+
+  <div class="col-md-12 form-check">
+    <input class="form-check-input" type="checkbox" id="qrreq" name="qr_required" value="1">
+    <label class="form-check-label" for="qrreq">Requerir validación por QR</label>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-accent">Crear ticket</button>
+    <a class="btn btn-outline-dark" href="{{ url_for('tickets') }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

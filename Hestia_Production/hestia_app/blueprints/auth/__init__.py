@@ -1,10 +1,6 @@
 from flask import Blueprint
 
-bp = Blueprint(
-    "auth",
-    __name__,
-    url_prefix="/auth",
-    template_folder="templates",
-)
+bp = Blueprint("auth", __name__, template_folder="templates")
 
-from . import routes  # noqa: F401
+# Registra las rutas al cargar el blueprint
+from . import routes  # noqa: E402,F401

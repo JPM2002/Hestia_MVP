@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set A = (area or 'GENERAL') %}
+{% set S = (section or 'my') %}
+{% set is_hk = (A == 'HOUSEKEEPING') %}
+{% set is_mn = (A == 'MANTENCION') %}
+{% set is_rs = (A == 'ROOMSERVICE') %}
+{% set icon = '🧹' if is_hk else ('🛠️' if is_mn else ('🍽️' if is_rs else '📋')) %}
+
+{% block title %}{{ icon }} {{ A|title }} — {{ 'Mis asignados' if S=='my' else ('En curso' if S=='in_progress' else ('Disponibles' if S=='available' else ('Historial' if S=='history' else 'Listado'))) }}{% endblock %}
+
+{% block content %}
+
+<style>
+  /* keep right column inside card on small screens */
+  .tk-row { display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .tk-main { min-width:0; } /* allow text to wrap */
+  .tk-meta { flex:0 0 auto; max-width:40%; text-align:right; }
+  .tk-meta .small { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.1; }
+  .tk-meta .badge { display:inline-block; margin-bottom:.15rem; }
+  @media (max-width:420px){ .tk-meta{ max-width:46%; } }
+</style>
+
+<header class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h1 class="h5 mb-0">{{ icon }} {{ A|title }}</h1>
+    <div class="small text-muted">
+      {% if S == 'my' %}Mis asignados{% elif S == 'in_progress' %}En curso{% elif S == 'available' %}Disponibles{% elif S == 'history' %}Historial ({{ days or 7 }}d){% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if S != 'available' %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tech_available', slug=slug) }}">Disponibles</a>
+    {% endif %}
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+    {% endif %}
+  </div>
+</header>
+
+<div class="mb-2">
+  <input id="q" class="form-control form-control-sm" placeholder="Buscar por ubicación / detalle / estado..." />
+</div>
+
+<ul id="list" class="list-unstyled d-grid gap-2">
+  {% for t in (tickets or []) %}
+  <li class="card {% if t.is_critical %}border-danger{% endif %}"
+      data-key="{{ ((t.ubicacion or '') ~ ' ' ~ (t.detalle or '') ~ ' ' ~ (t.estado or '') ~ ' ' ~ (t.prioridad or ''))|lower }}">
+    <div class="card-body p-2">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="me-2">
+          <div class="fw-semibold">
+            {{ 'Hab. ' if is_hk or is_rs else '' }}{{ t.ubicacion or '—' }}
+            {% if is_rs %}<span class="small text-muted">({{ t.canal or 'canal desconocido' }})</span>{% endif %}
+          </div>
+          <div class="small text-muted text-truncate" style="max-width: 60vw">{{ t.detalle }}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %}text-bg-danger
+            {% elif t.prioridad=='ALTA' %}text-bg-warning
+            {% elif t.prioridad=='MEDIA' %}text-bg-primary
+            {% else %}text-bg-secondary{% endif %}">
+            {{ t.prioridad or '—' }}
+          </span>
+          <div class="small {% if t.is_critical %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+            {% if S == 'history' %}
+              {% if t.finished_at %}resuelto {{ t.finished_at|short_dt }}{% else %}resuelto{% endif %}
+            {% else %}
+              {% if t.due_at %}vence {{ t.due_at|short_dt }}{% else %}sin SLA{% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if t.due_at and S != 'history' %}
+        <div class="progress mt-2" style="height:6px">
+        {% set w = 100 if t.is_critical else 60 %}
+        <div class="progress-bar {{ 'bg-danger' if t.is_critical else 'bg-success' }}"
+            style="width: {{ w }}%;"></div>
+        </div>
+      {% endif %}
+
+      {% if S != 'history' %}
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['ACEPTADO'] %}
+          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-dark">{{ 'Iniciar' if not is_rs else 'Preparar' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo"
+                   value="{{ 'Esperando habitación' if is_hk else ('Espera repuestos' if is_mn else 'En espera de cocina') }}">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['EN_CURSO'] %}
+          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo"
+                   value="{{ 'Pendiente insumos' if is_hk else ('Bloqueado' if is_mn else 'En camino') }}">
+            <button class="btn btn-sm btn-outline-warning">Pausa</button>
+          </form>
+          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-success">{{ 'Finalizar' if not is_rs else 'Entregado' }}</button>
+          </form>
+        {% endif %}
+        {% if t.estado in ['PAUSADO'] %}
+          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+          </form>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <span>Estado: {{ t.estado|nice_state }}</span>
+        <span>
+          {{ 'Creado' if S!='history' else 'Resuelto' }}:
+          {{ (t.created_at if S!='history' else (t.finished_at or t.created_at))|short_dt }}
+        </span>
+
+      </div>
+    </div>
+  </li>
+  {% else %}
+    <li class="text-center text-muted py-4">
+      {% if S == 'my' %}No tienes tickets asignados.{% elif S == 'in_progress' %}No hay tickets en curso.{% elif S == 'available' %}No hay tickets disponibles.{% else %}Sin historial en el período.{% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+<nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
+  <div class="container-fluid d-flex justify-content-around">
+    <a class="btn btn-link" href="{{ url_for('tech_available', slug=slug) }}">📋 Lista</a>
+    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
+      <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+    {% else %}
+      <span class="btn btn-link disabled">➕ Nuevo</span>
+    {% endif %}
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">🏠 Inicio</a>
+  </div>
+</nav>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const q = document.getElementById('q');
+  const items = Array.from(document.querySelectorAll('#list > li.card'));
+  q?.addEventListener('input', (e)=>{
+    const s = (e.target.value || '').toLowerCase().trim();
+    items.forEach(li=>{
+      const key = li.getAttribute('data-key') || '';
+      li.style.display = (!s || key.includes(s)) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

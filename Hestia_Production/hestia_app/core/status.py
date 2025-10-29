@@ -15,3 +15,5 @@ def nice_state(code: str) -> str:
     if not code:
         return ""
     return ESTADO_NICE.get(str(code).upper(), str(code).title())
+
+OPEN_STATES = ("PENDIENTE_APROBACION","PENDIENTE","ASIGNADO","ACEPTADO","EN_CURSO","PAUSADO","DERIVADO")

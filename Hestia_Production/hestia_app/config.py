@@ -1,48 +1,19 @@
-# hestia_app/config.py
 import os
-from datetime import timedelta
 
-class BaseConfig:
+class Config:
+    # Flask
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-env")
-    SESSION_COOKIE_HTTPONLY = True
-    REMEMBER_COOKIE_HTTPONLY = True
-    PERMANENT_SESSION_LIFETIME = timedelta(days=7)
-    # Add other common settings here (DB, mail, etc.)
-    # Example:
-    # DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///hestia.db")
-    # SQLALCHEMY_DATABASE_URI = DATABASE_URL
-    # SQLALCHEMY_TRACK_MODIFICATIONS = False
+    ENABLE_TECH_DEMO = os.getenv("ENABLE_TECH_DEMO", "0") == "1"
 
-class DevelopmentConfig(BaseConfig):
-    DEBUG = True
-    TEMPLATES_AUTO_RELOAD = True
+    # DB
+    DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None  # postgres DSN or None
+    DATABASE_PATH = os.getenv("DATABASE_PATH", "hestia_V2.db")
+    PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "2"))   # keep tiny if using pooler
+    PG_STMT_TIMEOUT_MS = os.getenv("PG_STMT_TIMEOUT_MS")  # optional
 
-class ProductionConfig(BaseConfig):
-    DEBUG = False
+    # WA notifications (external webhook)
+    WA_NOTIFY_BASE = (os.getenv("WA_NOTIFY_BASE", "").rstrip("/") or None)
+    WA_NOTIFY_TOKEN = os.getenv("WA_NOTIFY_TOKEN", "200220022002")
 
-class TestingConfig(BaseConfig):
-    TESTING = True
-    DEBUG = True
-
-def get_config(env: str | None = None):
-    """
-    Returns a config class based on env.
-    Priority: explicit arg > APP_ENV > FLASK_ENV > default (production on Render, dev otherwise)
-    """
-    if not env:
-        env = (
-            os.getenv("APP_ENV")
-            or os.getenv("FLASK_ENV")
-            or ("production" if os.getenv("RENDER") else "development")
-        )
-
-    env = str(env).lower()
-    mapping = {
-        "dev": DevelopmentConfig,
-        "development": DevelopmentConfig,
-        "prod": ProductionConfig,
-        "production": ProductionConfig,
-        "test": TestingConfig,
-        "testing": TestingConfig,
-    }
-    return mapping.get(env, ProductionConfig)
+    # SLA default target (only used in later Phase 2 KPIs)
+    SLA_TARGET = float(os.getenv("SLA_TARGET", "0.90"))  # 0.0–1.0

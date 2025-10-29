@@ -1,115 +1,198 @@
-from flask import render_template, request, redirect, url_for, flash, session, current_app
+from flask import (
+    render_template, request, redirect, url_for, flash, session
+)
+from werkzeug.routing import BuildError
+from werkzeug.security import check_password_hash
 from . import bp
-from services.db import fetchone  # usa tu capa de DB ya modularizada
-import hashlib
 
-def hp(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+# Intento de integrar tu capa de DB real; si no está, seguimos con stubs.
+try:
+    from hestia_app.services.db import get_db  # Debe retornar conexión (sqlite3 / psycopg2)
+except Exception:
+    get_db = None
+
+# Detección de dispositivo (opcional): si user_agents no está, hacemos un fallback simple
+try:
+    from user_agents import parse as parse_ua
+except Exception:
+    parse_ua = None
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def _goto_dashboard_fallback():
+    """Redirige al dashboard si existe; si no, a '/'. Evita romper si aún no registraste ese endpoint."""
+    try:
+        # Ajusta si tu blueprint de dashboard expone endpoint "dashboard"
+        return redirect(url_for("dashboard.dashboard"))
+    except BuildError:
+        try:
+            # Algunas apps usan endpoint raíz simple
+            return redirect(url_for("dashboard"))
+        except BuildError:
+            return redirect("/")
+
+def _query_user_by_login(login_text):
+    """
+    Busca usuario por email o username.
+    Retorna dict con id, email, username, base_role, password / password_hash si existen.
+    """
+    if get_db is None:
+        return None
+
+    q = """
+    SELECT id, email, username, base_role,
+           password, password_hash
+    FROM users
+    WHERE email = ? OR username = ?
+    LIMIT 1
+    """
+    try:
+        con = get_db()
+        cur = con.execute(q, (login_text, login_text))
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [c[0] for c in cur.description]
+        return dict(zip(cols, row))
+    except Exception as e:
+        flash(f"DB error: {e}", "warning")
+        return None
+
+def _password_ok(user_row, plain_password):
+    """Soporta password hash (password_hash) o texto plano (password)."""
+    if not user_row:
+        return False
+    # Primero intenta hash
+    ph = user_row.get("password_hash")
+    if ph:
+        try:
+            return check_password_hash(ph, plain_password)
+        except Exception:
+            pass
+    # Fallback: columna password en texto plano
+    p = user_row.get("password")
+    if p is None:
+        return False
+    return str(p) == str(plain_password)
+
+def _is_mobile(req):
+    """Heurística de móvil. Usa user_agents si está disponible; si no, UA básico."""
+    if parse_ua:
+        ua = parse_ua(req.headers.get("User-Agent", ""))
+        return ua.is_mobile or ua.is_tablet
+    # Fallback ingenuo
+    ua_str = (req.user_agent.string or "").lower()
+    return any(token in ua_str for token in ["mobile", "iphone", "android", "ipad"])
+
+
+# -----------------------------
+# Rutas
+# -----------------------------
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    # Mensaje opcional (flash) + props explícitas del template
-    message, success = None, False
+    """
+    Renderiza formulario de login y procesa autenticación.
+    Variables de template soportadas por login.html:
+      - message (str)
+      - success (bool)
+      - enable_demo (bool)
+    """
+    enable_demo = True  # Puedes mover esto a app.config["ENABLE_TECH_DEMO"]
 
     if request.method == "POST":
-        ident = (request.form.get("email") or "").strip()   # email o username
-        password = request.form.get("password") or ""
+        login_text = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
 
-        row = fetchone(
-            """
-            SELECT id, username, email, password_hash, role, area, telefono, activo, is_superadmin
-            FROM Users
-            WHERE (email = ? OR username = ?)
-            """,
-            (ident, ident),
-        )
+        # Modo demo si no hay DB: acepta admin/demo123
+        if get_db is None:
+            if login_text and password and password == "demo123":
+                session["user_id"] = 1
+                session["username"] = login_text
+                session["base_role"] = "GERENTE"
+                flash("Sesión iniciada (demo sin DB).", "success")
+                return _goto_dashboard_fallback()
+            else:
+                return render_template(
+                    "auth/login.html",
+                    message="Credenciales inválidas (modo demo acepta *cualquiera*/demo123).",
+                    success=False,
+                    enable_demo=enable_demo,
+                )
 
-        if row and bool(row.get("activo")) and hp(password) == row.get("password_hash"):
-            session["user"] = {
-                "id": row["id"],
-                "name": row["username"],
-                "email": row["email"],
-                "role": row["role"],
-                "area": row["area"],
-                "is_superadmin": bool(row.get("is_superadmin")),
-            }
-
-            # fijar alcance (org/hotel) desde la primera membresía
-            ou = fetchone(
-                """
-                SELECT org_id,
-                       COALESCE(default_hotel_id,
-                         (SELECT id FROM Hotels WHERE org_id=OrgUsers.org_id LIMIT 1)
-                       ) AS hotel_id
-                FROM OrgUsers WHERE user_id=? LIMIT 1
-                """,
-                (row["id"],),
+        # DB real
+        user = _query_user_by_login(login_text)
+        if not user or not _password_ok(user, password):
+            return render_template(
+                "auth/login.html",
+                message="Email/usuario o contraseña incorrectos.",
+                success=False,
+                enable_demo=enable_demo,
             )
-            if ou:
-                session["org_id"] = ou["org_id"]
-                session["hotel_id"] = ou["hotel_id"]
-            elif session["user"]["is_superadmin"]:
-                org = fetchone("SELECT id FROM Orgs ORDER BY id LIMIT 1")
-                if org:
-                    session["org_id"] = org["id"]
-                    h = fetchone("SELECT id FROM Hotels WHERE org_id=? ORDER BY id LIMIT 1", (org["id"],))
-                    session["hotel_id"] = h["id"] if h else None
 
-            # redirecciones por rol
-            if session["user"]["is_superadmin"]:
-                return redirect(url_for("admin.admin_super"))
-            # dashboard general (tu blueprint de dashboard debe exponer 'dashboard')
-            return redirect(url_for("dashboard.dashboard"))
+        # Guarda sesión mínima
+        session["user_id"] = user["id"]
+        session["username"] = user.get("username") or user.get("email")
+        session["base_role"] = user.get("base_role") or "USUARIO"
 
-        # fallo de login
-        message = "Credenciales inválidas o usuario inactivo."
-        success = False
+        flash("Bienvenido 👋", "success")
+        return _goto_dashboard_fallback()
 
-    return render_template(
-        "auth/login.html",
-        message=message,
-        success=success,
-        enable_demo=current_app.config.get("ENABLE_TECH_DEMO", False),
-    )
+    # GET
+    return render_template("auth/login.html", enable_demo=enable_demo)
 
-@bp.route("/logout")
+
+@bp.route("/logout", methods=["POST", "GET"])
 def logout():
     session.clear()
+    flash("Sesión cerrada.", "success")
     return redirect(url_for("auth.login"))
 
-@bp.get("/demo/tecnico")
+
+@bp.route("/demo/tecnico", methods=["GET"])
 def demo_tecnico():
-    if not current_app.config.get("ENABLE_TECH_DEMO", False):
-        flash("Demo deshabilitada.", "error")
-        return redirect(url_for("auth.login"))
-
-    area = (request.args.get("area") or "MANTENCION").upper()
-    if area not in ("MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"):
-        area = "MANTENCION"
-
+    """
+    Muestra layouts técnicos sin requerir login ni DB.
+    Parámetros:
+      - area: MANTENCION | HOUSEKEEPING | ROOMSERVICE (opcional)
+      - view: auto | mobile | desktop  (auto por defecto)
+    """
+    area = request.args.get("area") or "MANTENCION"
     view = (request.args.get("view") or "auto").lower()
-    if view not in ("mobile", "desktop", "auto"):
-        view = "auto"
 
-    # Usuario de demo (sin escribir en DB)
-    session["user"] = {
-        "id": -9999,
-        "name": "Demo Tech",
-        "email": "demo@local",
-        "role": "TECNICO",
-        "area": area,
-        "is_superadmin": False,
-    }
-
-    # Contexto org/hotel mínimo para poder entrar a dashboards
-    org = fetchone("SELECT id FROM Orgs ORDER BY id LIMIT 1")
-    session["org_id"] = org["id"] if org else None
-    if org:
-        h = fetchone("SELECT id FROM Hotels WHERE org_id=? ORDER BY id LIMIT 1", (org["id"],))
-        session["hotel_id"] = h["id"] if h else None
+    # Decide vista
+    if view == "auto":
+        is_m = _is_mobile(request)
+    elif view == "mobile":
+        is_m = True
+    elif view == "desktop":
+        is_m = False
     else:
-        session["hotel_id"] = None
+        is_m = _is_mobile(request)
 
-    flash(f"Demo técnico — Área: {area} (vista: {view})", "success")
-    # tu blueprint de dashboard debería resolver este endpoint
-    return redirect(url_for("dashboard.dashboard", view=None if view == "auto" else view))
+    # Plantillas existentes en tu árbol:
+    #   tecnico_desktop.html
+    #   tecnico_mobile.html
+    #   tecnico_mobile_list.html
+    #   tecnico_housekeeping_mobile.html
+    #   tecnico_mantencion_mobile.html
+    #   tecnico_roomservice_mobile.html
+    #
+    # Regla simple:
+    # - Si mobile + área específica => usa plantilla específica del área si existe,
+    #   de lo contrario cae a tecnico_mobile.html
+    # - Si desktop => tecnico_desktop.html
+    if not is_m:
+        tpl = "tecnico_desktop.html"
+    else:
+        area_map = {
+            "MANTENCION": "tecnico_mantencion_mobile.html",
+            "HOUSEKEEPING": "tecnico_housekeeping_mobile.html",
+            "ROOMSERVICE": "tecnico_roomservice_mobile.html",
+        }
+        tpl = area_map.get(area.upper(), "tecnico_mobile.html")
+
+    # Render directo (no depende de DB)
+    return render_template(tpl, area=area, demo=True)

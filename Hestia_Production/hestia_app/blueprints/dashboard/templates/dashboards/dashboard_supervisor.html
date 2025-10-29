@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Supervisor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="page-title mb-0">Área: {{ kpis.area or 'Supervisor' }}</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-outline-dark">Ver tickets</a>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">Activos</div>
+      <div class="display-6 fw-bold">{{ kpis.active or kpis.active_area or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">Críticos</div>
+      <div class="display-6 fw-bold">{{ kpis.critical or kpis.critical_area or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">SLA cumplido (30d)</div>
+      <div class="display-6 fw-bold">{{ (kpis.sla_rate or 0) }}%</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Backlog por técnico</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="techChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Prioridades en curso</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="prioChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- row: tipo + performance -->
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Incidencias por tipo (abiertos)</div>
+      <div class="card-body" style="height:320px">
+        <canvas id="typeChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Desempeño del equipo (últimos 30 días)</div>
+      <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Usuario</th>
+              <th>Abiertos</th>
+              <th>Resueltos</th>
+              <th>% SLA</th>
+              <th>TTR (min)</th>
+            </tr>
+          </thead>
+          <tbody id="sup-perf-tbody">
+            <tr><td colspan="5" class="text-center text-muted py-3">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="card mt-3" id="open-card">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span>Tickets abiertos ({{ kpis.area or 'área' }})</span>
+    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle" id="open-table">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>Prioridad</th><th>Estado</th><th>Detalle</th><th>Técnico</th><th>Creado</th><th>Vence</th><th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="open-tbody">
+      {% for t in (tickets or []) %}
+        <tr class="data-row {% if t.is_critical %}table-warning{% endif %}">
+          <td class="fw-semibold">{{ t.id }}</td>
+          <td>{{ t.prioridad }}</td>
+          <td>{{ t.estado|nice_state }}</td>
+          <td class="text-truncate" style="max-width: 420px">{{ t.detalle }}</td>
+          <td>{{ t.assigned_name or t.assigned_to or '-' }}</td>
+          <td><small class="text-muted">{{ t.created_at|short_dt }}</small></td>
+          <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}">
+            <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
+          </td>
+          <td class="text-end">
+            {% if techs %}
+              <form class="d-inline" method="post" action="{{ url_for('ticket_reassign', id=t.id) }}">
+                <select name="assigned_to" class="form-select form-select-sm d-inline w-auto align-text-top me-1">
+                  {% for tech in techs %}
+                    <option value="{{ tech.id }}" {% if (t.assigned_to|string) == (tech.id|string) %}selected{% endif %}>
+                      {{ tech.username }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-sm btn-outline-primary">Reasignar</button>
+              </form>
+            {% else %}
+              <button class="btn btn-sm btn-outline-secondary me-1" disabled>Reasignar</button>
+            {% endif %}
+            <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+              <input type="hidden" name="motivo" value="Pausa operativa">
+              <button class="btn btn-sm btn-outline-warning">Pausar</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr class="empty-row"><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pager -->
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small" id="open-pager">
+    <div id="open-range" class="text-muted">Mostrando 0–0 de 0</div>
+    <div class="d-flex align-items-center gap-2">
+      <label class="mb-0 text-muted">Por pág.</label>
+      <select id="open-size" class="form-select form-select-sm w-auto">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+      <button class="btn btn-sm btn-outline-dark" id="open-prev">‹</button>
+      <span id="open-page" class="mx-1">1/1</span>
+      <button class="btn btn-sm btn-outline-dark" id="open-next">›</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Desempeño del equipo (30d) -->
+<div class="card mt-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span>Desempeño del equipo (30 días)</span>
+    <small class="text-muted">SLA y TTR por usuario</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Usuario</th>
+          <th class="text-center">Asignados abiertos</th>
+          <th class="text-center">En curso</th>
+          <th class="text-center">Resueltos (30d)</th>
+          <th class="text-center">TTR prom. (min)</th>
+          <th class="text-center">SLA (30d)</th>
+        </tr>
+      </thead>
+      <tbody id="sup-team-tbody">
+        <tr><td colspan="6" class="text-center text-muted py-3">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Ranking por SLA (30d)</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="sup-rank-bar"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Incidencias por prioridad (30d)</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="sup-prio-donut"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<script>
+  // -------- Palette & helpers --------
+  const css      = getComputedStyle(document.documentElement);
+  const BRAND    = css.getPropertyValue('--brand').trim()    || '#16242D';
+  const ACCENT   = css.getPropertyValue('--accent').trim()   || '#41D4A8';
+  const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
+  const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
+
+  // Area coming from server (empty string if None so endpoints can default)
+  const AREA = {{ (kpis.area or '') | tojson }};
+
+  // Generic safe fetch with fallback
+  async function getJSON(url, fallback){
+    try{
+      const r = await fetch(url);
+      if(!r.ok) return fallback;
+      const j = await r.json();
+      if (!j) return fallback;
+      // treat empty shapes as "no data"
+      if (Array.isArray(j) && j.length === 0) return fallback;
+      if (j.labels && Array.isArray(j.labels) && j.labels.length === 0) return fallback;
+      if (j.values && Array.isArray(j.values) && j.values.length === 0) return fallback;
+      if (j.rows && Array.isArray(j.rows) && j.rows.length === 0) return fallback;
+      return j;
+    } catch { return fallback; }
+  }
+
+  // --------- MOCKS (only used if APIs fail/empty) ----------
+  const MOCK_BACKLOG_BY_TECH = { labels: ['Ana','Luis','María','(sin asignar)'], values: [6,5,3,2] };
+  const MOCK_OPEN_BY_PRIORITY = { labels: ['URGENTE','ALTA','MEDIA','BAJA'], values: [3,7,10,5] };
+  const MOCK_OPEN_BY_TYPE = { labels: ['AGUA','ELECTRICIDAD','LIMPIEZA','GAS','OTROS'], values: [12,8,6,4,3] };
+  const MOCK_PERF_ROWS = [
+    { user:'Ana Pérez',  open_now:3, resolved:18, sla_pct:92.5, ttr_avg_min:38 },
+    { user:'Luis Soto',  open_now:2, resolved:15, sla_pct:88.0, ttr_avg_min:44 },
+    { user:'M. Díaz',    open_now:4, resolved:12, sla_pct:79.3, ttr_avg_min:51 },
+    { user:'(sin asignar)', open_now:5, resolved:0, sla_pct:0.0, ttr_avg_min:0 }
+  ];
+  const MOCK_TEAM_STATS = {
+    rows: [
+      { username:'Ana Pérez', assigned_open:3, in_progress:1, resolved_30d:18, avg_ttr_min:38, sla_rate:92.5 },
+      { username:'Luis Soto', assigned_open:2, in_progress:2, resolved_30d:15, avg_ttr_min:44, sla_rate:88.0 },
+      { username:'M. Díaz',   assigned_open:4, in_progress:1, resolved_30d:12, avg_ttr_min:51, sla_rate:79.3 },
+      { username:'(sin asignar)', assigned_open:5, in_progress:0, resolved_30d:0, avg_ttr_min:0, sla_rate:0.0 },
+    ],
+    prio: { labels:['URGENTE','ALTA','MEDIA','BAJA'], values:[4,9,12,6] }
+  };
+</script>
+
+<script>
+  // ---------- Quick probes passing AREA (for early load / debugging hooks you had) ----------
+  fetch(`{{ url_for('api_sup_open_by_type') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {labels:[],values:[]})
+    .then(() => { /* draw handled below with fallback renderer */ });
+
+  fetch(`{{ url_for('api_sup_performance_by_user') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {items:[]})
+    .then(() => { /* table filled below with fallback renderer */ });
+
+  fetch(`{{ url_for('api_supervisor_team_stats') }}?area=${encodeURIComponent(AREA)}`)
+    .then(r => r.ok ? r.json() : {})
+    .then(() => { /* used below for rank/prio/teams */ });
+</script>
+
+<script>
+  // ---------- Charts: backlog_by_tech ----------
+  (async () => {
+    const j = await getJSON("{{ url_for('api_sup_backlog_by_tech') }}", MOCK_BACKLOG_BY_TECH);
+    const ctx = document.getElementById('techChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'bar',
+      data: { labels: j.labels || MOCK_BACKLOG_BY_TECH.labels,
+              datasets: [{ label: 'Tickets', data: j.values || MOCK_BACKLOG_BY_TECH.values, backgroundColor: ACCENT }] },
+      options: { responsive: true, maintainAspectRatio: false,
+                 scales: { y: { beginAtZero: true, ticks: { precision:0 } } } }
+    });
+  })();
+
+  // ---------- Charts: open_by_priority ----------
+  (async () => {
+    const j = await getJSON("{{ url_for('api_sup_open_by_priority') }}", MOCK_OPEN_BY_PRIORITY);
+    const ctx = document.getElementById('prioChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: j.labels || MOCK_OPEN_BY_PRIORITY.labels,
+              datasets: [{ data: j.values || MOCK_OPEN_BY_PRIORITY.values,
+                           backgroundColor: [ACCENT, WARNING, BRAND, '#999'] }] },
+      options: { responsive: true, maintainAspectRatio: false,
+                 plugins: { legend: { position: 'bottom' } } }
+    });
+  })();
+</script>
+
+<script>
+  // ---------- Team stats table + ranking + incidencias por prioridad (30d) ----------
+  (async function(){
+    const url = new URL("{{ url_for('api_supervisor_team_stats') }}", window.location.origin);
+    if (AREA) url.searchParams.set('area', AREA);
+    const j = await getJSON(url, MOCK_TEAM_STATS);
+
+    // Team table
+    const T = document.getElementById('sup-team-tbody');
+    if (T){
+      T.innerHTML = (j.rows || MOCK_TEAM_STATS.rows).map(x => `
+        <tr>
+          <td class="fw-semibold">${x.username || '(sin asignar)'}</td>
+          <td class="text-center">${x.assigned_open ?? 0}</td>
+          <td class="text-center">${x.in_progress ?? 0}</td>
+          <td class="text-center">${x.resolved_30d ?? 0}</td>
+          <td class="text-center">${x.avg_ttr_min ?? 0}</td>
+          <td class="text-center">${(x.sla_rate ?? 0).toFixed(1)}%</td>
+        </tr>
+      `).join('') || `<tr><td colspan="6" class="text-center text-muted py-3">Sin datos</td></tr>`;
+    }
+
+    // Ranking by SLA (top 8)
+    const rank = [...(j.rows || MOCK_TEAM_STATS.rows)]
+      .sort((a,b) => (b.sla_rate||0)-(a.sla_rate||0)).slice(0,8);
+    const labels = rank.map(x => x.username);
+    const values = rank.map(x => x.sla_rate ?? 0);
+    const rctx = document.getElementById('sup-rank-bar');
+    if (rctx){
+      new Chart(rctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label:'SLA (30d) %', data: values, backgroundColor: ACCENT }] },
+        options: { responsive:true, maintainAspectRatio:false,
+          scales:{ y:{ beginAtZero:true, max:100, ticks:{ precision:0 } } },
+          plugins:{ legend:{ display:false } } }
+      });
+    }
+
+    // Incidencias por prioridad (30d)
+    const p = j.prio || MOCK_TEAM_STATS.prio;
+    const pd = document.getElementById('sup-prio-donut');
+    if (pd){
+      new Chart(pd, {
+        type: 'doughnut',
+        data: { labels: p.labels, datasets: [{ data: p.values, backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }] },
+        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+      });
+    }
+  })();
+</script>
+
+<script>
+  // ---------- Incidencias por tipo (abiertos, área actual) ----------
+  (async () => {
+    const url = new URL("{{ url_for('api_sup_open_by_type') }}", window.location.origin);
+    if (AREA) url.searchParams.set('area', AREA);
+    const byType = await getJSON(url, MOCK_OPEN_BY_TYPE);
+
+    const el = document.getElementById('typeChart');
+    if (!el) return;
+    new Chart(el, {
+      type: 'doughnut',
+      data: {
+        labels: byType.labels || MOCK_OPEN_BY_TYPE.labels,
+        datasets: [{ data: byType.values || MOCK_OPEN_BY_TYPE.values,
+                     backgroundColor: [ACCENT, WARNING, BRAND, '#999', '#555'] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+  })();
+
+  // ---------- Desempeño del equipo (tabla compacta 30d) ----------
+  (async () => {
+    const url = new URL("{{ url_for('api_sup_performance_by_user') }}", window.location.origin);
+    if (AREA) url.searchParams.set('area', AREA);
+    const perf = await getJSON(url, { rows: MOCK_PERF_ROWS });
+
+    const T = document.getElementById('sup-perf-tbody');
+    if (!T) return;
+    const rows = (perf.rows || MOCK_PERF_ROWS).map(x => `
+      <tr>
+        <td>${x.user}</td>
+        <td>${x.open_now ?? 0}</td>
+        <td>${x.resolved ?? 0}</td>
+        <td>${(x.sla_pct ?? 0).toFixed(1)}%</td>
+        <td>${x.ttr_avg_min ?? 0}</td>
+      </tr>
+    `).join('');
+    T.innerHTML = rows || `<tr><td colspan="5" class="text-center text-muted py-3">Sin datos (30d)</td></tr>`;
+  })();
+</script>
+
+<script>
+(function(){
+  const tbody   = document.getElementById('open-tbody');
+  const rowsAll = Array.from(tbody.querySelectorAll('tr.data-row'));
+  const emptyRow= tbody.querySelector('tr.empty-row');
+  const prevBtn = document.getElementById('open-prev');
+  const nextBtn = document.getElementById('open-next');
+  const pageLbl = document.getElementById('open-page');
+  const rangeEl = document.getElementById('open-range');
+  const sizeSel = document.getElementById('open-size');
+
+  let page = 1;
+  let size = parseInt(sizeSel.value, 10) || 10;
+
+  function render(){
+    const total = rowsAll.length;
+    const pages = Math.max(1, Math.ceil(total / size));
+
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+
+    // hide all then show slice
+    rowsAll.forEach(tr => tr.style.display = 'none');
+
+    if (total === 0) {
+      if (emptyRow) emptyRow.style.display = '';
+      pageLbl.textContent = '1/1';
+      rangeEl.textContent = 'Mostrando 0–0 de 0';
+      prevBtn.disabled = nextBtn.disabled = true;
+      return;
+    } else if (emptyRow) {
+      emptyRow.style.display = 'none';
+    }
+
+    const start = (page - 1) * size;
+    const end   = Math.min(start + size, total);
+    rowsAll.slice(start, end).forEach(tr => tr.style.display = '');
+
+    pageLbl.textContent = `${page}/${pages}`;
+    rangeEl.textContent = `Mostrando ${start + 1}–${end} de ${total}`;
+    prevBtn.disabled = (page <= 1);
+    nextBtn.disabled = (page >= pages);
+  }
+
+  prevBtn?.addEventListener('click', () => { page--; render(); });
+  nextBtn?.addEventListener('click', () => { page++; render(); });
+  sizeSel?.addEventListener('change', (e) => { size = parseInt(e.target.value, 10) || 10; page = 1; render(); });
+
+  // initial paint
+  render();
+})();
+</script>
+
+
+{% endblock %}
+
+
+

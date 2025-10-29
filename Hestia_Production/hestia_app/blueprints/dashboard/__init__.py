@@ -1,12 +1,7 @@
-from flask import Blueprint, render_template
+from flask import Blueprint
 
-bp = Blueprint(
-    "dashboard",
-    __name__,
-    url_prefix="/home",
-    template_folder="templates"
-)
+# Usa el mismo nombre del blueprint para que funcione url_for("dashboard.dashboard")
+bp = Blueprint("dashboard", __name__, template_folder="templates")
 
-@bp.get("/", endpoint="dashboard")   # ← alias: ahora existe endpoint 'dashboard'
-def dashboard_home():
-    return render_template("dashboards/dashboard_gerente.html")
+# Carga las rutas
+from . import routes  # noqa: E402,F401

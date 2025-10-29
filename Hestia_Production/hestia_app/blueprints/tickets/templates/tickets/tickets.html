@@ -1,13 +1,127 @@
-{% extends 'base.html' %}
-{% block title %}Tickets � Hestia{% endblock %}
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+
 {% block content %}
-<h2>Tickets</h2>
-<p>Placeholder de listado.</p>
-<ul>
-  {% for t in tickets %}
-    <li>#{{ t.id }} � {{ t.detalle }}</li>
-  {% else %}
-    <li>(sin datos)</li>
-  {% endfor %}
-</ul>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="page-title mb-0">Tickets</h3>
+  <a class="btn btn-accent" href="{{ url_for('ticket_create') }}">Nuevo ticket</a>
+</div>
+
+<form class="row g-2 mb-3" method="get" action="{{ url_for('tickets') }}">
+  <div class="col-sm-4">
+    <input class="form-control" type="search" name="q" placeholder="Buscar detalle / ubicación / huésped"
+           value="{{ filters.q or '' }}">
+  </div>
+  <div class="col-sm-2">
+    <select class="form-select" name="area">
+      <option value="">Área</option>
+      {% for a in ['MANTENCION','HOUSEKEEPING','ROOMSERVICE'] %}
+        <option value="{{ a }}" {{ 'selected' if filters.area==a else '' }}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-2">
+    <select class="form-select" name="prioridad">
+      <option value="">Prioridad</option>
+      {% for p in ['BAJA','MEDIA','ALTA','URGENTE'] %}
+        <option value="{{ p }}" {{ 'selected' if filters.prioridad==p else '' }}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-2">
+    <select class="form-select" name="estado">
+      <option value="">Estado</option>
+      {% for e in ['PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO','RESUELTO'] %}
+        <option value="{{ e }}" {{ 'selected' if filters.estado==e else '' }}>{{ e }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-2">
+    <select class="form-select" name="period">
+      {% set periods = {'today':'Hoy','yesterday':'Ayer','7d':'7 días','30d':'30 días','all':'Todo'} %}
+      {% for val, lbl in periods.items() %}
+        <option value="{{ val }}" {{ 'selected' if filters.period==val else '' }}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-dark" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>ID</th>
+        <th>Área</th>
+        <th>Prioridad</th>
+        <th>Estado</th>
+        <th>Detalle</th>
+        <th>Ubicación</th>
+        <th>Canal</th>
+        <th>Creado</th>
+        <th>Vence</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in tickets %}
+      <tr class="{{ 'table-warning' if t.is_critical else '' }}">
+        <td>#{{ t.id }}</td>
+        <td>{{ t.area }}</td>
+        <td>
+          <span class="badge
+            {% if t.prioridad=='URGENTE' %} bg-danger
+            {% elif t.prioridad=='ALTA' %} bg-warning text-dark
+            {% elif t.prioridad=='MEDIA' %} bg-info
+            {% else %} bg-secondary {% endif %}">
+            {{ t.prioridad }}
+          </span>
+        </td>
+        <td>{{ t.estado|nice_state }}</td>
+        <td style="max-width: 260px">{{ t.detalle }}</td>
+        <td>{{ t.ubicacion }}</td>
+        <td>
+          {% if t.canal %}
+            <span class="badge badge-channel text-uppercase">{{ t.canal }}</span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td><small>{{ t.created_at|short_dt }}</small></td>
+        <td>
+          {% if t.due_at %}
+            <small>{{ t.due_at|short_dt }}</small>
+            {% if t.is_critical %}<span class="badge badge-critical ms-1">crítico</span>{% endif %}
+          {% else %}
+            <small class="text-muted">—</small>
+          {% endif %}
+
+        </td>
+        <td class="text-nowrap">
+          <form class="d-inline" method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-primary" {% if t.estado!='PENDIENTE' and t.estado!='ASIGNADO' %}disabled{% endif %}>Aceptar</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-success" {% if t.estado not in ['ACEPTADO','PAUSADO'] %}disabled{% endif %}>Iniciar</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <input type="hidden" name="motivo" value="Pausa operativa">
+            <button class="btn btn-sm btn-outline-warning" {% if t.estado!='EN_CURSO' %}disabled{% endif %}>Pausar</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary" {% if t.estado!='PAUSADO' %}disabled{% endif %}>Reanudar</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+            <button class="btn btn-sm btn-outline-dark" {% if t.estado not in ['EN_CURSO','ACEPTADO'] %}disabled{% endif %}>Resolver</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10" class="text-center text-muted py-4">Sin resultados</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
