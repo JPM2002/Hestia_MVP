@@ -159,10 +159,5 @@ def demo_tecnico():
     return redirect(url_for("dashboard.index"))
 
 
-# ---- tenant helpers (kept here if other auth routes need them) ----
-def current_scope():
-    return session.get("org_id"), session.get("hotel_id")
-
-
 def is_superadmin():
     return bool(session.get("user", {}).get("is_superadmin"))

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ...core.scope import current_scope
 
 from datetime import datetime, timedelta
 from flask import (
@@ -21,16 +22,6 @@ try:
 except Exception:
     is_critical = None  # type: ignore
 
-# --- Auth / scope helpers ---
-try:
-    from ...blueprints.auth.routes import current_scope  # type: ignore
-except Exception:
-    try:
-        from ..auth.routes import current_scope  # type: ignore
-    except Exception:
-        # Safe fallback so the module can import even before auth loads
-        def current_scope():
-            return session.get("org_id"), session.get("hotel_id")
 
 # --- Permission decorator (no-op fallback if not available) ---
 try:

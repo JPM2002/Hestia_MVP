@@ -623,14 +623,6 @@ def compute_due(created_at: datetime, area: str, prioridad: str) -> datetime | N
     mins = sla_minutes(area, prioridad)
     return created_at + timedelta(minutes=mins) if mins else None
 
-
-
-
-
-# ---- tenant helpers
-def current_scope():
-    return session.get('org_id'), session.get('hotel_id')
-
 def is_superadmin():
     return bool(session.get('user', {}).get('is_superadmin'))
 

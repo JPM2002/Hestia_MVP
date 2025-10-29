@@ -1,11 +1,29 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
-from flask import jsonify, request, session
+from flask import jsonify, request, session, abort
+from . import bp
+
+# DB & helpers
 from ...services.db import fetchone, fetchall, USE_PG
-from ...core.rbac import current_org_role, current_scope
+from ...core.rbac import current_org_role
+from ...core.scope import current_scope
 from ...core.status import OPEN_STATES
 
+# ---------------------------------------------------------------------
+# Small shared helpers (module-level so multiple endpoints can use them)
+# ---------------------------------------------------------------------
+def _minutes_between(a_iso, b_iso):
+    try:
+        a = datetime.fromisoformat(str(a_iso))
+        b = datetime.fromisoformat(str(b_iso))
+        return max(0, int((b - a).total_seconds() // 60))
+    except Exception:
+        return None
 
-# --- Area helpers (Supervisor scope) -----------------------------------------
+def _must_login_json():
+    return jsonify({"error": "unauthorized"}), 401
+
 def _user_primary_area(org_id: int, user_id: int):
     row = fetchone("""
         SELECT area
@@ -51,23 +69,32 @@ def _user_has_area(area: str) -> bool:
     org_id, _ = current_scope()
     uid = session['user']['id']
     row = fetchone("""
-        SELECT 1
         FROM OrgUserAreas
+        SELECT 1
         WHERE org_id=? AND user_id=? AND area=?
         LIMIT 1
     """, (org_id, uid, area))
     return bool(row)
 
-def _must_login_json():
-    return jsonify({"error": "unauthorized"}), 401
+def _require_area_manage(area: str):
+    """Abort 403 if current user can't manage the area."""
+    role = current_org_role()
+    if role == 'GERENTE':
+        return
+    if role == 'SUPERVISOR' and area and _user_has_area(area):
+        return
+    abort(403)
 
-@app.get('/api/supervisor/backlog_by_tech')
+# ---------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------
+@bp.get('/api/supervisor/backlog_by_tech')
 def api_sup_backlog_by_tech():
     user = session.get('user')
     if not user:
         return _must_login_json()
     org_id, _hotel_id = current_scope()
-    where = ["t.org_id = ?","t.estado IN (" + ",".join(["?"]*len(OPEN_STATES)) + ")"]
+    where = ["t.org_id = ?", "t.estado IN (" + ",".join(["?"] * len(OPEN_STATES)) + ")"]
     params = [org_id, *OPEN_STATES]
 
     rows = fetchall(
@@ -86,13 +113,13 @@ def api_sup_backlog_by_tech():
         "values": [r['c'] for r in rows],
     })
 
-@app.get('/api/supervisor/open_by_priority')
+@bp.get('/api/supervisor/open_by_priority')
 def api_sup_open_by_priority():
     user = session.get('user')
     if not user:
         return _must_login_json()
     org_id, _hotel_id = current_scope()
-    where = ["org_id = ?","estado IN (" + ",".join(["?"]*len(OPEN_STATES)) + ")"]
+    where = ["org_id = ?", "estado IN (" + ",".join(["?"] * len(OPEN_STATES)) + ")"]
     params = [org_id, *OPEN_STATES]
 
     rows = fetchall(
@@ -115,9 +142,14 @@ def api_sup_open_by_priority():
         "values": [r['c'] for r in rows],
     })
 
-# ---------------------------- Supervisor: team performance (30d) ----------------------------
-@app.get('/api/supervisor/team_stats')
+@bp.get('/api/supervisor/team_stats')
 def api_supervisor_team_stats():
+    """
+    Team snapshot for a supervisor's area:
+      - critical_open
+      - open_by_priority
+      - (extended) rows/ranking + prio mix for last 30d (folded from your dangling block)
+    """
     if 'user' not in session:
         return jsonify({"ok": False}), 401
 
@@ -152,18 +184,109 @@ def api_supervisor_team_stats():
         p = (r.get("prioridad") or "MEDIA").upper()
         prio_counts[p] = prio_counts.get(p, 0) + 1
 
+    # -------- Extended section (30d aggregates) --------
+    since_dt = datetime.now() - timedelta(days=30)
+    since = since_dt.isoformat()
+
+    # Open snapshot with assigned names
+    open_rows_full = fetchall("""
+        SELECT t.id, t.estado, t.prioridad, t.created_at, t.due_at,
+               t.assigned_to, u.username AS assigned_name
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+    """, (org_id, area or ""))
+
+    # Resolved last 30d in this area
+    res_rows = fetchall("""
+        SELECT t.id, t.assigned_to, u.username AS assigned_name,
+               t.created_at, t.finished_at, t.due_at, t.prioridad
+        FROM Tickets t
+        LEFT JOIN Users u ON u.id = t.assigned_to
+        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
+    """, (org_id, area or "", since))
+
+    # Aggregate per user
+    from collections import Counter
+    team = {}
+    for r in open_rows_full + res_rows:
+        uid = r.get('assigned_to')
+        name = r.get('assigned_name') or '(sin asignar)'
+        if uid is not None:
+            team[uid] = name
+
+    assigned_open = Counter()
+    in_progress   = Counter()
+    ttr_sum       = Counter()
+    ttr_n         = Counter()
+    sla_hit       = Counter()
+    sla_n         = Counter()
+
+    for r in open_rows_full:
+        uid = r.get('assigned_to')
+        if uid is None:
+            continue
+        assigned_open[uid] += 1
+        if r.get('estado') == 'EN_CURSO':
+            in_progress[uid] += 1
+
+    for r in res_rows:
+        uid = r.get('assigned_to')
+        if uid is None:
+            continue
+        ttr = _minutes_between(r.get('created_at'), r.get('finished_at'))
+        if ttr is not None:
+            ttr_sum[uid] += ttr
+            ttr_n[uid]   += 1
+
+        if r.get('due_at'):
+            sla_n[uid] += 1
+            try:
+                f = datetime.fromisoformat(str(r.get('finished_at')))
+                d = datetime.fromisoformat(str(r.get('due_at')))
+                if f <= d:
+                    sla_hit[uid] += 1
+            except Exception:
+                pass
+
+    rows = []
+    for uid, name in sorted(team.items(), key=lambda kv: (kv[1] or '').lower()):
+        avg_ttr = int(round(ttr_sum[uid]/ttr_n[uid])) if ttr_n[uid] else 0
+        sla_pct = round(100.0 * (sla_hit[uid]/sla_n[uid]), 1) if sla_n[uid] else 0.0
+        rows.append({
+            "user_id": uid,
+            "username": name,
+            "assigned_open": assigned_open[uid],
+            "in_progress": in_progress[uid],
+            "resolved_30d": ttr_n[uid],
+            "avg_ttr_min": avg_ttr,
+            "sla_rate": sla_pct,
+        })
+
+    ranking = sorted(rows, key=lambda x: (-x["sla_rate"], x["avg_ttr_min"] or 10**9, -x["resolved_30d"]))
+
+    # "Incidencias por tipo": use PRIORIDAD mix over last 30d resolved
+    prio_mix = Counter()
+    for r in res_rows:
+        prio_mix[r.get('prioridad') or '—'] += 1
+    labels_ext = ['URGENTE', 'ALTA', 'MEDIA', 'BAJA']
+    values_ext = [prio_mix[l] for l in labels_ext]
+
     return jsonify({
         "area": area,
         "critical_open": critical_open,
         "open_by_priority": {
             "labels": list(prio_counts.keys()),
             "values": [prio_counts[k] for k in prio_counts.keys()]
-        }
+        },
+        # Extended (kept to preserve your added logic)
+        "rows": rows,
+        "ranking": ranking,
+        "prio": {"labels": labels_ext, "values": values_ext},
+        "since": since
     })
 
-
-
-@app.get('/api/sup/open_by_type')
+@bp.get('/api/sup/open_by_type')
 def api_sup_open_by_type():
     """
     Open tickets grouped by 'tipo' (we'll approximate with canal_origen since you don't store 'tipo').
@@ -199,111 +322,8 @@ def api_sup_open_by_type():
 
     return jsonify({"area": area, "labels": labels, "values": values})
 
-
-
-    # Open tickets in this area (snapshot)
-    open_rows = fetchall("""
-        SELECT t.id, t.estado, t.prioridad, t.created_at, t.due_at,
-               t.assigned_to, u.username AS assigned_name
-        FROM Tickets t
-        LEFT JOIN Users u ON u.id = t.assigned_to
-        WHERE t.org_id=? AND t.area=? AND t.estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
-    """, (org_id, area))
-
-    # Resolved tickets last 30d in this area
-    res_rows = fetchall("""
-        SELECT t.id, t.assigned_to, u.username AS assigned_name,
-               t.created_at, t.finished_at, t.due_at, t.prioridad
-        FROM Tickets t
-        LEFT JOIN Users u ON u.id = t.assigned_to
-        WHERE t.org_id=? AND t.area=? AND t.estado='RESUELTO' AND t.finished_at >= ?
-    """, (org_id, area, since))
-
-    # Team list: all techs that appear in either open or resolved set
-    from collections import defaultdict, Counter
-    team = {}
-    for r in open_rows + res_rows:
-        uid = r.get('assigned_to')
-        name = r.get('assigned_name') or '(sin asignar)'
-        if uid is not None:
-            team[uid] = name
-
-    def minutes_between(a_iso, b_iso):
-        try:
-            a = datetime.fromisoformat(str(a_iso))
-            b = datetime.fromisoformat(str(b_iso))
-            return max(0, int((b - a).total_seconds() // 60))
-        except Exception:
-            return None
-
-    # Per-user aggregates
-    assigned_open  = Counter()   # count of open assigned tickets
-    in_progress    = Counter()   # count of EN_CURSO for visibility
-    ttr_sum        = Counter()
-    ttr_n          = Counter()
-    sla_hit        = Counter()
-    sla_n          = Counter()
-
-    for r in open_rows:
-        uid = r.get('assigned_to')
-        if uid is None:
-            continue
-        assigned_open[uid] += 1
-        if r.get('estado') == 'EN_CURSO':
-            in_progress[uid] += 1
-
-    for r in res_rows:
-        uid = r.get('assigned_to')
-        if uid is None:
-            continue
-        ttr = minutes_between(r.get('created_at'), r.get('finished_at'))
-        if ttr is not None:
-            ttr_sum[uid] += ttr
-            ttr_n[uid]   += 1
-
-        if r.get('due_at'):
-            sla_n[uid] += 1
-            try:
-                f = datetime.fromisoformat(str(r.get('finished_at')))
-                d = datetime.fromisoformat(str(r.get('due_at')))
-                if f <= d:
-                    sla_hit[uid] += 1
-            except Exception:
-                pass
-
-    rows = []
-    for uid, name in sorted(team.items(), key=lambda kv: (kv[1] or '').lower()):
-        avg_ttr = int(round(ttr_sum[uid]/ttr_n[uid])) if ttr_n[uid] else 0
-        sla_pct = round(100.0 * (sla_hit[uid]/sla_n[uid]), 1) if sla_n[uid] else 0.0
-        rows.append({
-            "user_id": uid,
-            "username": name,
-            "assigned_open": assigned_open[uid],
-            "in_progress": in_progress[uid],
-            "resolved_30d": ttr_n[uid],
-            "avg_ttr_min": avg_ttr,
-            "sla_rate": sla_pct,
-        })
-
-    # Ranking by SLA (desc), then by lower TTR
-    ranking = sorted(rows, key=lambda x: (-x["sla_rate"], x["avg_ttr_min"] or 10**9, -x["resolved_30d"]))
-
-    # "Incidencias por tipo": we will use PRIORIDAD within this area for the last 30 days
-    prio_mix = Counter()
-    for r in res_rows:
-        prio_mix[r.get('prioridad') or '—'] += 1
-    labels = ['URGENTE', 'ALTA', 'MEDIA', 'BAJA']
-    values = [prio_mix[l] for l in labels]
-
-    return jsonify({
-        "area": area,
-        "rows": rows,
-        "ranking": ranking,
-        "prio": {"labels": labels, "values": values}
-    })
-
 # ---------- Supervisor: performance by user (last N days) ----------
-@app.get('/api/sup/performance_by_user')
+@bp.get('/api/sup/performance_by_user')
 def api_sup_performance_by_user():
     """
     KPIs por usuario (técnico) dentro de un área, para los últimos N días.
@@ -332,9 +352,6 @@ def api_sup_performance_by_user():
 
     since_dt = datetime.now() - timedelta(days=days)
     since = since_dt.isoformat()
-
-    # Estados "abiertos"
-    OPEN_STATES = ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
 
     # 1) Tickets creados en el periodo, por assigned_to (para "totales 30d")
     created_rows = fetchall("""
@@ -365,8 +382,7 @@ def api_sup_performance_by_user():
         GROUP BY t.assigned_to, u.username
     """, (org_id, area, since))
 
-    # 4) TTR promedio de resueltos (minutos) por usuario
-    #    Traemos created_at/finished_at y lo calculamos en Python para robustez.
+    # 4) TTR promedio de resueltos (minutos) por usuario (Python-side)
     ttr_rows = fetchall("""
         SELECT t.assigned_to, u.username, t.created_at, t.finished_at
         FROM Tickets t
@@ -375,9 +391,7 @@ def api_sup_performance_by_user():
     """, (org_id, area, since))
 
     # --- Agregación ---
-    from collections import defaultdict
-
-    users = {}  # user_id -> {"user_id","username","total","resolved","sla_hit","sla_n","ttr_sum","ttr_n"}
+    users = {}  # user_id -> metrics
 
     def ensure(uid, uname):
         if uid not in users:
@@ -414,11 +428,10 @@ def api_sup_performance_by_user():
             u["ttr_sum"] += t
             u["ttr_n"]   += 1
 
-    # Compute rates/averages and produce arrays also useful for charts
+    # Compute rates/averages and arrays for charts
     rows_out = []
     labels, totals, resolved, sla, ttr = [], [], [], [], []
 
-    # order by resolved desc, then total desc
     def sort_key(item):
         return (-item[1]["resolved"], -item[1]["total"], (item[1]["username"] or ""))
 
@@ -443,11 +456,9 @@ def api_sup_performance_by_user():
         "area": area,
         "period_days": days,
         "users": rows_out,
-        # arrays útiles si gráficas
         "labels": labels,
         "totals": totals,
         "resolved": resolved,
         "sla": sla,
         "ttr": ttr
     })
-

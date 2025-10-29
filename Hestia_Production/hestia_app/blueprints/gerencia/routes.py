@@ -9,15 +9,10 @@ from . import bp
 from ...core.status import OPEN_STATES
 from ...services.sla import is_critical
 from ...services.db import fetchall, fetchone, USE_PG
+from ...core.scope import current_scope
 
 # Avoid circular blueprint imports by importing current_scope from auth via absolute import.
 # (auth.routes does not import gerencia, so this is safe.)
-try:
-    from hestia_app.blueprints.auth.routes import current_scope  # type: ignore
-except Exception:
-    # Minimal fallback if needed (keeps logic working)
-    def current_scope():
-        return session.get("org_id"), session.get("hotel_id")
 
 
 # --- tiny helper used by your code (local, to avoid NameError) ---
