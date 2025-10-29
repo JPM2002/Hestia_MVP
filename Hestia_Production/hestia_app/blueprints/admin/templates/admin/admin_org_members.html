@@ -5,15 +5,15 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="mb-0">Miembros — {{ org.name }}</h2>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary" href="{{ url_for('admin_super') }}">Superadmin</a>
-    <a class="btn btn-outline-secondary" href="{{ url_for('admin_hotels') }}">Hoteles</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.admin_super') }}">Superadmin</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.admin_hotels') }}">Hoteles</a>
   </div>
 </div>
 
 <div class="card shadow-sm mb-3">
   <div class="card-header bg-white fw-semibold">Agregar miembro</div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('admin_org_members_add', org_id=org.id) }}" class="row g-2">
+    <form method="post" action="{{ url_for('admin.admin_org_members_add', org_id=org.id) }}" class="row g-2">
       <div class="col-md-3">
         <input class="form-control" name="email" type="email" placeholder="email@hotel.com" required>
       </div>
@@ -80,7 +80,8 @@
             <td>{{ m.default_area or '—' }}</td>
             <td>{{ m.default_hotel or '—' }}</td>
             <td class="text-end">
-              <form method="post" action="{{ url_for('admin_org_members_remove', org_id=org.id, org_user_id=m.org_user_id) }}"
+              <form method="post"
+                    action="{{ url_for('admin.admin_org_members_remove', org_id=org.id, org_user_id=m.org_user_id) }}"
                     onsubmit="return confirm('¿Remover a {{ m.username }} de {{ org.name }}?');">
                 <button class="btn btn-sm btn-outline-danger">Remover</button>
               </form>

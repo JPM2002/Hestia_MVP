@@ -226,6 +226,9 @@ const CAN_EDIT = true;
 const CAN_APPROVE = true;
 const CAN_DELETE = false;
 
+// ✅ Add this:
+const TICKETS_BASE = "{{ url_for('tickets.tickets') }}"; // e.g. "/tickets"
+
 // --- Modales ---
 let editModal, editForm, deleteModal, deleteForm, manualModal, manualForm;
 
@@ -241,7 +244,7 @@ window.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const id = document.getElementById('edit-ticket-id').value;
     const fd = new FormData(editForm);
-    const r = await fetch(`/tickets/${id}/edit`, { method:'POST', body: fd });
+    const r = await fetch(`${TICKETS_BASE}/${id}/edit`, { method:'POST', body: fd });
     if (r.ok) { editModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo guardar.'); }
   });
 
@@ -249,7 +252,7 @@ window.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const id = document.getElementById('delete-ticket-id').value;
     const fd = new FormData(deleteForm);
-    const r = await fetch(`/tickets/${id}/delete`, { method:'POST', body: fd });
+    const r = await fetch(`${TICKETS_BASE}/${id}/delete`, { method:'POST', body: fd });
     if (r.ok) { deleteModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo eliminar.'); }
   });
 
@@ -257,7 +260,7 @@ window.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const fd = new FormData(manualForm);
     // TODO: si creas /tickets/manual usa esa URL; por ahora reusa el create general.
-    const r = await fetch(`/tickets/create`, { method:'POST', body: fd });
+    const r = await fetch(`${TICKETS_BASE}/create`, { method:'POST', body: fd });
     if (r.ok) { manualModal.hide(); await window.refreshAll?.(); } else { alert('No se pudo crear el ticket.'); }
   });
 
@@ -290,7 +293,7 @@ window.openDelete = (id) => {
 };
 
 window.approveTicket = async (id) => {
-  const r = await fetch(`/tickets/${id}/confirm`, { method:'POST' });
+  const r = await fetch(`${TICKETS_BASE}/${id}/confirm`, { method:'POST' });
   if (r.ok) { await window.refreshAll?.(); } else { alert('No se pudo aprobar.'); }
 };
 </script>

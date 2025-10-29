@@ -4,7 +4,7 @@
 {% block content %}
 <h2 class="mb-4">Cambiar contexto (SUDO)</h2>
 
-<form method="post" class="row g-3">
+<form method="post" action="{{ url_for('admin.sudo_form') }}" class="row g-3">
   <div class="col-md-6">
     <label class="form-label">Organización</label>
     <select name="org_id" class="form-select">
