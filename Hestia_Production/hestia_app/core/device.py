@@ -1,69 +1,54 @@
-# hestia_app/core/device.py
-from flask import request, g, current_app, render_template
+# device.py
+from __future__ import annotations
+from flask import request, g, render_template
 from user_agents import parse as parse_ua
 
-def _is_mobile(ua_str: str) -> bool:
-    if not ua_str:
-        return False
+MOBILE_COOKIE = "view_mode"   # 'mobile' | 'desktop' | 'auto'
+
+def _detect_device_from_ua(ua_string: str) -> dict:
     try:
-        ua = parse_ua(ua_str)
-        return ua.is_mobile or ua.is_tablet
+        ua = parse_ua(ua_string or "")
+        if ua.is_mobile and not ua.is_tablet:
+            cls = "mobile"
+        elif ua.is_tablet:
+            cls = "tablet"
+        else:
+            cls = "desktop"
+        return {"class": cls, "is_mobile": cls == "mobile", "is_tablet": cls == "tablet", "is_desktop": cls == "desktop"}
     except Exception:
-        return False
+        return {"class":"desktop","is_mobile":False,"is_tablet":False,"is_desktop":True}
 
-def render_best(template_name: str, **ctx):
-    """
-    If g.view_mode == 'mobile', try a *_m.html variant; else fallback to the base template.
-    Example: 'tickets/list.html' -> 'tickets/list_m.html'
-    """
-    if getattr(g, "view_mode", "desktop") == "mobile":
-        if "." in template_name:
-            base, ext = template_name.rsplit(".", 1)
-            mobile_name = f"{base}_m.{ext}"
-        else:
-            mobile_name = f"{template_name}_m.html"
+def _decide_view_mode(req):
+    q = (req.args.get("view") or "").lower()
+    if q in ("mobile","desktop","auto"):
+        g._set_view_cookie = q
+        if q != "auto":
+            return q
+    cv = (req.cookies.get(MOBILE_COOKIE) or "").lower()
+    if cv in ("mobile","desktop"):
+        return cv
+    dev = _detect_device_from_ua(req.headers.get("User-Agent",""))
+    return "mobile" if dev["is_mobile"] else "desktop"
 
-        loader = current_app.jinja_loader
-        if loader:
-            try:
-                loader.get_source(current_app.jinja_env, mobile_name)
-                return render_template(mobile_name, **ctx)
-            except Exception:
-                pass
-    return render_template(template_name, **ctx)
-
-def register_device_hooks(app):
-    """
-    - Sets g.view_mode = 'mobile' or 'desktop' based on cookie, ?view=, or User-Agent.
-    - Persists explicit ?view= choice into a 'view' cookie.
-    - Injects {is_mobile, view_mode, render_best} into templates.
-    """
+def init_device(app):
     @app.before_request
-    def _ua_to_g():
-        q_view = request.args.get("view")
-        if q_view in ("mobile", "desktop"):
-            g.view_mode = q_view
-            g._set_view_cookie = q_view
-        else:
-            c_view = request.cookies.get("view")
-            if c_view in ("mobile", "desktop"):
-                g.view_mode = c_view
-            else:
-                ua = request.headers.get("User-Agent", "")
-                g.view_mode = "mobile" if _is_mobile(ua) else "desktop"
-        g.is_mobile = (g.view_mode == "mobile")
+    def _inject_device():
+        dev = _detect_device_from_ua(request.headers.get("User-Agent",""))
+        g.device = dev
+        g.view_mode = _decide_view_mode(request)
 
     @app.after_request
-    def _persist_view(resp):
-        val = getattr(g, "_set_view_cookie", None)
-        if val:
-            resp.set_cookie("view", val, max_age=60*60*24*365, httponly=False, samesite="Lax")
+    def _persist_view_cookie(resp):
+        v = getattr(g, "_set_view_cookie", None)
+        if v:
+            resp.set_cookie(MOBILE_COOKIE, v, max_age=30*24*3600, samesite="Lax")
         return resp
 
-    @app.context_processor
-    def _inject():
-        return {
-            "is_mobile": getattr(g, "is_mobile", False),
-            "view_mode": getattr(g, "view_mode", "desktop"),
-            "render_best": render_best,
-        }
+def render_best(templates: list[str], **ctx):
+    last = templates[-1]
+    for name in templates:
+        try:
+            return render_template(name, **ctx)
+        except Exception:
+            continue
+    return render_template(last, **ctx)
