@@ -1,8 +1,18 @@
 # app/routes.py
 from __future__ import annotations
 import re
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from ...core.area import require_perm
+from ...core.scope import current_scope
+from ...services.db import execute, insert_and_get_id, fetchone, fetchall, using_pg
+from ...services.sla import compute_due
+from ...core.rbac import current_org_role, _require_area_manage
+from ...services.notify import _notify_tech_assignment, _notify_guest_final
+from ...core.errors import _err_or_redirect, _ok_or_redirect
+from ...core.status import nice_state
+from ...blueprints.tecnico.routes import _guard_active_shift
 
 from flask import (
     request, session, jsonify, render_template,
