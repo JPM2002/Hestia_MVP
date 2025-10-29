@@ -15,6 +15,7 @@
 
   <!-- Brand CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/hestia.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 
   <style>
     :root{
@@ -47,13 +48,13 @@
 <!-- Add navbar-dark so the HC icon + contrast styles apply -->
 <nav class="navbar navbar-expand-lg navbar-dark mb-3">
   <div class="container">
-    <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard') }}">Hestia</a>
+    <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard.dashboard_home') }}">Hestia</a>
 
     {# HOUSEKEEPING: show a direct logout on mobile and hide the hamburger #}
     {% set role = session.get('user', {}).get('role') %}
     {% if role == 'HOUSEKEEPING' %}
       <div class="ms-auto d-lg-none">
-        <a class="btn btn-warning fw-semibold" href="{{ url_for('logout') }}" aria-label="Cerrar sesión">Salir</a>
+        <a class="btn btn-warning fw-semibold" href="{{ url_for('auth.logout') }}" aria-label="Cerrar sesión">Salir</a>
       </div>
     {% else %}
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"
@@ -65,18 +66,19 @@
     <div id="nav" class="collapse navbar-collapse">
       <ul class="navbar-nav me-auto">
         {% if session.get('user') %}
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('tickets') }}">Tickets</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard.dashboard_home') }}">Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('tickets.tickets') }}">Tickets</a></li>
           {% if session.get('user', {}).get('role') in ['GERENTE','SUPERVISOR','RECEPCION'] %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('ticket_create') }}">Nuevo ticket</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('tickets.ticket_create') }}">Nuevo ticket</a></li>
           {% endif %}
           {% if session.get('user', {}).get('is_superadmin') %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('sudo_form') }}">Sudo</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.admin_home') }}">Sudo</a></li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown">Admin</a>
               <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="{{ url_for('admin_orgs') }}">Organizaciones</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_hotels') }}">Hoteles</a></li>
+                <!-- Hasta que implementes vistas específicas, apunta al home de admin -->
+                <li><a class="dropdown-item" href="{{ url_for('admin.admin_home') }}">Organizaciones</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin.admin_home') }}">Hoteles</a></li>
               </ul>
             </li>
           {% endif %}
@@ -97,9 +99,9 @@
           </span>
 
           {# Desktop logout always visible. On mobile, HK gets the top-right button above. #}
-          <a class="btn btn-sm btn-light d-none d-lg-inline-flex" href="{{ url_for('logout') }}">Salir</a>
+          <a class="btn btn-sm btn-light d-none d-lg-inline-flex" href="{{ url_for('auth.logout') }}">Salir</a>
           {% if role != 'HOUSEKEEPING' %}
-            <a class="btn btn-sm btn-light d-lg-none" href="{{ url_for('logout') }}">Salir</a>
+            <a class="btn btn-sm btn-light d-lg-none" href="{{ url_for('auth.logout') }}">Salir</a>
           {% endif %}
         {% endif %}
       </div>
