@@ -1,10 +1,8 @@
-# hestia_app/wsgi.py
 import os
-from . import create_app
+from hestia_app import create_app
 
-app = create_app(os.getenv("FLASK_ENV", "production"))
+# Do NOT pass any positional arg if your factory takes none
+app = create_app()
 
-# Optional: list routes once at boot
-if os.getenv("PRINT_ROUTES") == "1":
-    for rule in app.url_map.iter_rules():
-        print("ROUTE:", rule, "→ endpoint:", rule.endpoint)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
