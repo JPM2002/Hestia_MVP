@@ -20,7 +20,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from . import app
+from . import bp
+
 
 # ----------------- Reutiliza tus estados -----------------
 try:
@@ -29,7 +30,7 @@ except Exception:
     OPEN_STATES = ("PENDIENTE","ASIGNADO","ACEPTADO","EN_CURSO","PAUSADO","DERIVADO")
 
 # ---------- Editar ticket (Recepción/Supervisor/Gerente) ----------
-@app.post('/tickets/<int:ticket_id>/edit')
+@bp.post('/tickets/<int:ticket_id>/edit')
 @require_perm('ticket.update')  # or a custom check for roles RECEPCION/SUPERVISOR/GERENTE
 def ticket_edit(ticket_id):
     user = session.get('user') or {}
@@ -65,7 +66,7 @@ def ticket_edit(ticket_id):
     return jsonify({"ok": True})
 
 # ---------------------------- create & confirm ticket ----------------------------
-@app.route('/tickets/create', methods=['GET', 'POST'])
+@bp.route('/tickets/create', methods=['GET', 'POST'])
 @require_perm('ticket.create')
 def ticket_create():
     if 'user' not in session:
@@ -127,7 +128,7 @@ def ticket_create():
     return render_template('ticket_create.html', user=session['user'],
                            areas=areas, prioridades=prioridades, canales=canales)
 
-@app.post('/tickets/<int:id>/confirm')
+@bp.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
     """Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION), auto-asignan y notifican por WA."""
@@ -252,7 +253,7 @@ def _get_ticket_or_abort(id: int):
         return None
     return t
 
-@app.post('/tickets/<int:id>/accept')
+@bp.post('/tickets/<int:id>/accept')
 @require_perm('ticket.transition.accept')
 def ticket_accept(id):
     if 'user' not in session:
@@ -293,7 +294,7 @@ def ticket_accept(id):
 
 
 
-@app.post('/tickets/<int:id>/start')
+@bp.post('/tickets/<int:id>/start')
 @require_perm('ticket.transition.start')
 def ticket_start(id):
     if 'user' not in session:
@@ -326,7 +327,7 @@ def ticket_start(id):
 
 
 
-@app.post('/tickets/<int:id>/pause')
+@bp.post('/tickets/<int:id>/pause')
 @require_perm('ticket.transition.pause')
 def ticket_pause(id):
     if 'user' not in session:
@@ -356,7 +357,7 @@ def ticket_pause(id):
 
 
 
-@app.post('/tickets/<int:id>/resume')
+@bp.post('/tickets/<int:id>/resume')
 @require_perm('ticket.transition.resume')
 def ticket_resume(id):
     if 'user' not in session:
@@ -385,7 +386,7 @@ def ticket_resume(id):
 
 
 
-@app.post('/tickets/<int:id>/finish')
+@bp.post('/tickets/<int:id>/finish')
 @require_perm('ticket.transition.finish')
 def ticket_finish(id):
     if 'user' not in session:
