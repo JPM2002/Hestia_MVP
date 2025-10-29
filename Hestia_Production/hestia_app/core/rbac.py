@@ -76,7 +76,7 @@ def require_perm(code: str):
                 return redirect(url_for('auth.login'))
             if not has_perm(code):
                 flash('No tienes permisos para esta acción.', 'error')
-                return redirect(url_for('dashboard.dashboard'))
+                return redirect(url_for('dashboard.index'))
             return fn(*a, **kw)
         return wrapper
     return deco

@@ -77,36 +77,22 @@ def index():
         return render_template("dashboard_gerente.html", user=user, kpis=kpis, charts=charts)
 
     if role == "SUPERVISOR":
-        kpis, tickets = get_area_data(None)  # UI puede filtrar por área
+        kpis, tickets = get_area_data(None)
         return render_template("dashboard_supervisor.html", user=user, kpis=kpis, tickets=tickets)
 
     if role == "RECEPCION":
-        # Assumes your recepcion blueprint exposes an index at /recepcion -> endpoint "recepcion.index"
-        # If your endpoint is different, adjust the url_for target accordingly.
-        return redirect(url_for("recepcion.index"))
+        # Canonical Recepción landing handled by recepcion blueprint
+        return redirect(url_for("recepcion.recepcion_dashboard"))
 
-    # TECNICO / others
     if role == "TECNICO":
-        area = default_area_for_user()  # e.g., 'MANTENCION' | 'HOUSEKEEPING' | 'ROOMSERVICE'
-        slug = area_slug(area)
-        view = getattr(g, "view_mode", "auto")  # 'mobile' | 'desktop' | 'auto'
-        tickets = get_assigned_tickets_for_area(user["id"], area)
+        # Canonical Técnico landing handled by tecnico blueprint
+        try:
+            area = default_area_for_user() or "MANTENCION"
+        except Exception:
+            area = "MANTENCION"
+        slug = area_slug(area)  # "mantencion" | "housekeeping" | "roomservice"
+        return redirect(url_for("tecnico.tech_my", slug=slug))
 
-        # Try specialized templates first, then fall back.
-        template_order = [
-            f"tecnico_{slug}_{view}.html",  # e.g., tecnico_mantencion_mobile.html
-            f"tecnico_{view}.html",         # tecnico_mobile.html / tecnico_desktop.html
-            "dashboard_tecnico.html",       # generic fallback in dashboard templates
-        ]
-        return render_best(
-            template_order,
-            user=user,
-            tickets=tickets,
-            area=area,
-            device=getattr(g, "device", None),
-            view=view,
-        )
-
-    # default (non-recognized roles) => generic technician page for now
+    # Fallback (unknown role) → generic tech page
     tickets = get_assigned_tickets(user["id"])
     return render_template("dashboard_tecnico.html", user=user, tickets=tickets)

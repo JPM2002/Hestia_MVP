@@ -27,7 +27,7 @@ def hp(password: str) -> str:
 @bp.route("/")
 def index():
     if session.get("user"):
-        # Adjust endpoint name if your dashboard uses a different one (e.g., "dashboard.dashboard")
+        # Adjust endpoint name if your dashboard uses a different one (e.g., "dashboard.index")
         return redirect(url_for("dashboard.index"))
     return redirect(url_for("auth.login"))
 

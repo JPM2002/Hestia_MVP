@@ -50,7 +50,7 @@ def recepcion_inbox():
     org_id, _ = current_scope()
     if not org_id:
         flash('Sin contexto de organización.', 'error')
-        return redirect(url_for('dashboard.dashboard'))
+        return redirect(url_for('dashboard.index'))
 
     # Inbox: pendientes (típicamente WA huésped o recepcion)
     rows = fetchall("""

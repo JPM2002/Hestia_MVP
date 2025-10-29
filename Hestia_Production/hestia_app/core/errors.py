@@ -19,7 +19,7 @@ def _wants_json():
         return True
     return False
 
-def _redirect_back(default_endpoint='dashboard.dashboard'):
+def _redirect_back(default_endpoint='dashboard.index'):
     target = request.args.get('next') or request.referrer
     if target:
         try:

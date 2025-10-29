@@ -19,7 +19,7 @@ except Exception:
 @bp.route("/", methods=["GET", "POST"])
 def admin_super():
     if not is_superadmin():
-        # Adjust endpoint if your dashboard uses a different name, e.g. "dashboard.dashboard"
+        # Adjust endpoint if your dashboard uses a different name, e.g. "dashboard.index"
         return redirect(url_for("dashboard.index"))
 
     # quick-create org from this page
