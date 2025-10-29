@@ -1,19 +1,39 @@
-# core wiring
-from .core.timefmt import register_jinja_filters
-from .core.device import init_device
-from .core.errors import register_db_error_handlers
-from .core.shift import init_shift
-from .core.rbac import init_rbac_helpers
-from .core.area import init_area
+# hestia_app/__init__.py
+from flask import Flask
+from .config import get_config
+from .filters import register_jinja_filters
+from .logging_cfg import configure_logging  # optional
+# If you already have error handlers in core/errors.py, import and use:
+# from .core.errors import register_error_handlers
 
-register_jinja_filters(app)
-init_device(app)
-register_db_error_handlers(app)
-init_shift(app)
+# Import blueprints that already have routes
+from .blueprints.tickets import tickets_bp
+from .blueprints.admin import admin_bp
+from .blueprints.auth import auth_bp
+from .blueprints.dashboard import dashboard_bp
 
-# Provide DB + scope callables to RBAC & Area modules
-def _current_scope():
-    return session.get('org_id'), session.get('hotel_id')
+def create_app(env: str | None = None) -> Flask:
+    app = Flask(__name__, template_folder="templates", static_folder="static")
 
-init_rbac_helpers(app, fetchone_fn=fetchone, fetchall_fn=fetchall, current_scope_fn=_current_scope)
-init_area(fetchone_fn=fetchone, current_scope_fn=_current_scope)
+    # Config
+    app.config.from_object(get_config(env))
+
+    # Logging (optional)
+    try:
+        configure_logging(app)
+    except Exception:
+        pass
+
+    # Jinja filters
+    register_jinja_filters(app)
+
+    # Blueprints (only register ones that have routes/templates now)
+    app.register_blueprint(tickets_bp,   url_prefix="/tickets")
+    app.register_blueprint(admin_bp,     url_prefix="/admin")
+    app.register_blueprint(auth_bp,      url_prefix="/auth")
+    app.register_blueprint(dashboard_bp, url_prefix="/dashboards")
+
+    # Error handlers (uncomment if you have them)
+    # register_error_handlers(app)
+
+    return app
