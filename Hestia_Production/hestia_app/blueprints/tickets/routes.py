@@ -24,7 +24,7 @@ from werkzeug.utils import secure_filename
 from . import bp
 
 # If i change this in teh futuer will need to udpate here
-
+# Helpers
 def _period_bounds(period: str):
     """
     Returns (start_iso, end_iso or None) for filter periods.
