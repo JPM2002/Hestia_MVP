@@ -1,9 +1,32 @@
-from ...core.status import OPEN_STATES, is_critical
-from ....services.db import fetchall, fetchone
-from ....services.db import USE_PG
+from __future__ import annotations
 from datetime import datetime, timedelta
-from .auth.routes import current_scope
-from 
+import os
+
+from flask import jsonify, request, session
+from . import bp
+
+# --- your original imports, fixed to correct packages/levels ---
+from ...core.status import OPEN_STATES, is_critical
+from ...services.db import fetchall, fetchone, USE_PG
+
+# Avoid circular blueprint imports by importing current_scope from auth via absolute import.
+# (auth.routes does not import gerencia, so this is safe.)
+try:
+    from hestia_app.blueprints.auth.routes import current_scope  # type: ignore
+except Exception:
+    # Minimal fallback if needed (keeps logic working)
+    def current_scope():
+        return session.get("org_id"), session.get("hotel_id")
+
+
+# --- tiny helper used by your code (local, to avoid NameError) ---
+def date_key(iso_str):
+    """Return YYYY-MM-DD for an ISO timestamp; None if parse fails."""
+    try:
+        return datetime.fromisoformat(str(iso_str)).date().isoformat()
+    except Exception:
+        return None
+
 
 def get_global_kpis():
     """KPIs para GERENTE (visión por ORG)."""
@@ -55,9 +78,8 @@ def get_global_kpis():
 
     charts = {
         "resolved_last7": [{"date": d, "count": cnt[d]} for d in sorted(cnt.keys())]
-    }   
+    }
     return kpis, charts
-
 
 
 def get_area_data(area: str | None):
@@ -95,7 +117,6 @@ def get_area_data(area: str | None):
         """, params + [cut24]
     )['c']
 
-
     kpis = {
         "area": area,
         "critical": critical,
@@ -121,12 +142,14 @@ def get_area_data(area: str | None):
     } for r in rows]
     return kpis, tickets
 
+
 def get_assigned_tickets_for_area(user_id: int, area: str | None):
     now = datetime.now()
     org_id, _ = current_scope()
-    if not org_id: return []
+    if not org_id:
+        return []
     params = [org_id, user_id]
-    where = ["org_id=?","assigned_to=?",
+    where = ["org_id=?", "assigned_to=?",
              "estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')"]
     if area:
         where.append("area=?"); params.append(area)
@@ -196,7 +219,6 @@ def get_in_progress_tickets_for_user(user_id: int, area: str | None):
     } for r in rows]
 
 
-
 def get_area_available_tickets(area: str, only_unassigned: bool = False):
     """
     Tickets del área en estado PENDIENTE.
@@ -217,21 +239,20 @@ def get_area_available_tickets(area: str, only_unassigned: bool = False):
             # SQLite legacy: algunos registros pueden tener '' en vez de NULL
             where.append("(assigned_to IS NULL OR assigned_to='')")
 
-        rows = fetchall(f"""
-            SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
-            FROM Tickets
-            WHERE {' AND '.join(where)}
-            ORDER BY
-            CASE prioridad
-                WHEN 'URGENTE' THEN 0
-                WHEN 'ALTA'    THEN 1
-                WHEN 'MEDIA'   THEN 2
-                WHEN 'BAJA'    THEN 3
-                ELSE 9
-            END ASC,
-            created_at ASC
-        """, tuple(params))
-
+    rows = fetchall(f"""
+        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to
+        FROM Tickets
+        WHERE {' AND '.join(where)}
+        ORDER BY
+        CASE prioridad
+            WHEN 'URGENTE' THEN 0
+            WHEN 'ALTA'    THEN 1
+            WHEN 'MEDIA'   THEN 2
+            WHEN 'BAJA'    THEN 3
+            ELSE 9
+        END ASC,
+        created_at ASC
+    """, tuple(params))
 
     now = datetime.now()
     return [{
@@ -267,7 +288,6 @@ def get_history_tickets_for_user(user_id: int, area: str | None, days: int = 7):
     } for r in rows]
 
 
-
 def get_assigned_tickets(user_id: int):
     """Tickets asignados a un técnico/operador (scoped by ORG)."""
     now = datetime.now()
@@ -287,8 +307,11 @@ def get_assigned_tickets(user_id: int):
         "due_at": r["due_at"], "is_critical": is_critical(now, r["due_at"])
     } for r in rows]
 
+
 # ---------------------------- Gerencia summary API (30d window) ----------------------------
+
 from math import isfinite
+from collections import defaultdict, Counter  # used in summary
 
 def _minutes_between(a_iso, b_iso):
     try:
@@ -299,7 +322,7 @@ def _minutes_between(a_iso, b_iso):
         return None
 
 
-@app.get('/api/gerencia/summary')
+@bp.get('/api/gerencia/summary')
 def api_gerencia_summary():
     """Org-level metrics for last 30 days + open snapshot (+ type metrics + per-scope SLA targets)."""
     if 'user' not in session:
@@ -328,7 +351,6 @@ def api_gerencia_summary():
         "open_unassigned": sum(1 for r in open_rows if not r.get("assigned_to")),
         "by_tech": {},
     }
-    from collections import defaultdict, Counter
     by_tech = defaultdict(int)
     for r in open_rows:
         tech = r.get("assigned_name") or "(sin asignar)"
@@ -356,7 +378,8 @@ def api_gerencia_summary():
     for r in resolved:
         area = r.get("area") or "GENERAL"
         tipo = safe_tipo(r)
-        if r.get("ubicacion"): by_loc[r["ubicacion"]] += 1
+        if r.get("ubicacion"):
+            by_loc[r["ubicacion"]] += 1
 
         # TTR
         ttr = _minutes_between(r.get("created_at"), r.get("finished_at"))
@@ -390,8 +413,7 @@ def api_gerencia_summary():
         for t in set(list(sla_n_tipo.keys()) + list(sla_hit_tipo.keys()))
     }
 
-    # Reincidents (rooms with >1 tickets in 30d), list top tuples by (tipo, ubicacion)
-    # Build (tipo, ubicacion) counters using resolved+created>=since (use all tickets in 30d)
+    # Reincidents (rooms with >1 tickets in 30d)
     recent_rows = fetchall("""
         SELECT canal_origen, ubicacion, MAX(created_at) AS last_seen, COUNT(1) AS c
         FROM Tickets
@@ -417,7 +439,7 @@ def api_gerencia_summary():
         WHERE org_id=? AND created_at >= ?
         GROUP BY area
     """, (org_id, since))
-    mix_by_area = { (r["area"] or "GENERAL"): r["c"] for r in mix_rows }
+    mix_by_area = {(r["area"] or "GENERAL"): r["c"] for r in mix_rows}
 
     # Tickets per day (last 30d, any estado)
     ts_rows = fetchall("""
@@ -427,35 +449,40 @@ def api_gerencia_summary():
     by_day = Counter()
     for r in ts_rows:
         k = date_key(r.get("created_at"))
-        if k: by_day[k] += 1
+        if k:
+            by_day[k] += 1
     ts = [{"date": d, "count": by_day[d]} for d in sorted(by_day.keys())]
 
     # Overall avg resolution (TTR) last 30d
     all_ttr_vals = []
     for r in resolved:
         t = _minutes_between(r.get("created_at"), r.get("finished_at"))
-        if t is not None: all_ttr_vals.append(t)
-    avg_ttr_30d = int(round(sum(all_ttr_vals)/len(all_ttr_vals))) if all_ttr_vals else 0
+        if t is not None:
+            all_ttr_vals.append(t)
+    avg_ttr_30d = int(round(sum(all_ttr_vals) / len(all_ttr_vals))) if all_ttr_vals else 0
 
     # ---- SLA targets (per area / per tipo) from optional table slarules
     # Fallback to env SLA_TARGET if no rule.
     def _get_sla_target(area=None, tipo=None):
         # Try (area,tipo) -> area -> tipo -> env default
         args = []
-        where = ["org_id=?"]; args.append(org_id)
         clauses = []
-        if area is not None: clauses.append("(scope='area' AND area=?)") or args.append(area)
-        if tipo is not None: clauses.append("(scope='tipo' AND tipo=?)") or args.append(tipo)
+        # We'll append org_id at the end to match the WHERE composition below.
         if area is not None and tipo is not None:
-            clauses.insert(0, "(scope='area_tipo' AND area=? AND tipo=?)")
-            args.insert(1, area); args.insert(2, tipo)
+            clauses.append("(scope='area_tipo' AND area=? AND tipo=?)")
+            args.extend([area, tipo])
+        if area is not None:
+            clauses.append("(scope='area' AND area=?)")
+            args.append(area)
+        if tipo is not None:
+            clauses.append("(scope='tipo' AND tipo=?)")
+            args.append(tipo)
 
-        # If the table doesn't exist, this will throw; catch and fall back.
         try:
             rows = fetchall(f"""
                 SELECT scope, area, tipo, target
                 FROM slarules
-                WHERE {" OR ".join(clauses)} AND org_id=?
+                WHERE ({' OR '.join(clauses)}) AND org_id=?
                 ORDER BY CASE scope
                     WHEN 'area_tipo' THEN 1
                     WHEN 'area' THEN 2
@@ -463,8 +490,9 @@ def api_gerencia_summary():
                     ELSE 9
                 END
                 LIMIT 1
-            """, tuple(args))
-            if rows: return float(rows[0]["target"]) * 100.0
+            """, tuple(args + [org_id]))
+            if rows:
+                return float(rows[0]["target"]) * 100.0
         except Exception:
             pass
         return float(os.getenv("SLA_TARGET", "0.90")) * 100.0
@@ -505,20 +533,21 @@ def api_gerencia_summary():
         "at": now.isoformat(),
         "snapshot": snapshot,
         "ttr_by_area": ttr_by_area,
-        "ttr_by_type": ttr_by_type,                 # NEW
+        "ttr_by_type": ttr_by_type,
         "sla_by_area": sla_rate_by_area,
-        "sla_by_type_tipo": sla_rate_by_tipo,       # NEW (named to match your JS)
+        "sla_by_type_tipo": sla_rate_by_tipo,
         "reincidents_total": reincidents_total,
-        "recurrentes": recurrentes,                  # NEW (table data)
+        "recurrentes": recurrentes,
         "mix_by_area": mix_by_area,
         "tickets_per_day": ts,
         "avg_ttr_30d": avg_ttr_30d,
-        "sla_vs_target_area": sla_vs_target_area,    # NEW (per area rule-aware)
-        "sla_vs_target_tipo": sla_vs_target_tipo,    # NEW (per tipo rule-aware)
+        "sla_vs_target_area": sla_vs_target_area,
+        "sla_vs_target_tipo": sla_vs_target_tipo,
         "open_items": open_items
     })
 
-@app.get('/api/gerencia/sin_asignar')
+
+@bp.get('/api/gerencia/sin_asignar')
 def api_gerencia_sin_asignar():
     if 'user' not in session:
         return jsonify({"error": "unauthorized"}), 401
@@ -557,7 +586,8 @@ def api_gerencia_sin_asignar():
         })
     return jsonify({"items": out, "count": len(out)})
 
-@app.get('/api/gerencia/performance')
+
+@bp.get('/api/gerencia/performance')
 def api_gerencia_performance():
     if 'user' not in session:
         return jsonify({"error": "unauthorized"}), 401
@@ -583,8 +613,8 @@ def api_gerencia_performance():
         WHERE t.org_id=? AND t.estado='RESUELTO' AND t.finished_at >= ?
     """, (org_id, since))
 
-    from collections import defaultdict, Counter
     # buckets
+    from collections import defaultdict, Counter
     agg = defaultdict(lambda: {
         "count": 0, "ttr_sum": 0, "ttr_n": 0, "sla_n": 0, "sla_hit": 0
     })
@@ -627,4 +657,3 @@ def api_gerencia_performance():
     # Sort: SLA desc, then TTR asc, then tickets desc
     rows.sort(key=lambda r: (-r["sla_pct"], r["ttr_avg_min"], -r["tickets"]))
     return jsonify({"group_by": group_by, "rows": rows, "since": since})
-
