@@ -1,68 +1,20 @@
+# hestia_app/filters.py
+from .core.status import nice_state
+from .core.timefmt import short_dt, ago  # you already have timefmt.py
 
-from datetime import datetime, timezone
-from hestia_app.core.status import ESTADO_NICE
-
-def _to_dt(x):
-    if not x:
-        return None
-    if isinstance(x, datetime):
-        return x
-    try:
-        # tolera strings sqlite/pg
-        return datetime.fromisoformat(str(x))
-    except Exception:
-        return None
-
-def nice_state(value: str) -> str:
-    if not value:
-        return ""
-    return ESTADO_NICE.get(value.upper(), value.replace("_", " ").title())
-
-def short_dt(value) -> str:
-    """
-    Devuelve HH:MM si es hoy; 'DD/MM HH:MM' si es este año; de lo contrario 'DD/MM/YYYY'.
-    """
-    dt = _to_dt(value)
-    if not dt:
-        return ""
-    now = datetime.now()
-    if dt.date() == now.date():
-        return dt.strftime("%H:%M")
-    if dt.year == now.year:
-        return dt.strftime("%d/%m %H:%M")
-    return dt.strftime("%d/%m/%Y")
-
-def ago(value) -> str:
-    """
-    'hace 5 min', 'hace 2 h', 'ayer', 'hace 3 d'
-    """
-    dt = _to_dt(value)
-    if not dt:
-        return ""
-    now = datetime.now(timezone.utc).astimezone() if dt.tzinfo else datetime.now()
-    delta = now - dt
-    s = int(delta.total_seconds())
-    if s < 60:
-        return "hace segundos"
-    m = s // 60
-    if m < 60:
-        return f"hace {m} min"
-    h = m // 60
-    if h < 24:
-        return f"hace {h} h"
-    d = h // 24
-    if d == 1:
-        return "ayer"
-    return f"hace {d} d"
-
+# Provide a tiny numeric helper (or import from a numbers module if you prefer)
 def round2(value):
     try:
-        return f"{float(value):.2f}"
+        return round(float(value), 2)
     except Exception:
         return value
 
-# Registrar filtros en Jinja
-app.jinja_env.filters["nice_state"] = nice_state
-app.jinja_env.filters["short_dt"]   = short_dt
-app.jinja_env.filters["ago"]        = ago
-app.jinja_env.filters["round2"]     = round2
+def register_jinja_filters(app):
+    """
+    Register all custom Jinja filters on the passed Flask app.
+    No global references to `app` at import time!
+    """
+    app.add_template_filter(nice_state, "nice_state")
+    app.add_template_filter(short_dt,  "short_dt")
+    app.add_template_filter(ago,       "ago")
+    app.add_template_filter(round2,    "round2")

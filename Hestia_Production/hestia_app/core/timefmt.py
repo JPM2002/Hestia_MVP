@@ -23,11 +23,6 @@ def _to_dt(x):
     except Exception:
         return None
 
-def nice_state(value: str) -> str:
-    if not value:
-        return ""
-    return ESTADO_NICE.get(value.upper(), value.replace("_", " ").title())
-
 def short_dt(value) -> str:
     dt = _to_dt(value)
     if not dt:
@@ -66,7 +61,6 @@ def round2(value):
         return value
 
 def register_jinja_filters(app):
-    app.jinja_env.filters["nice_state"] = nice_state
     app.jinja_env.filters["short_dt"]   = short_dt
     app.jinja_env.filters["ago"]        = ago
     app.jinja_env.filters["round2"]     = round2

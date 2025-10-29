@@ -1,6 +1,5 @@
 # hestia_app/core/status.py
 
-# Single source of truth for ticket states
 ESTADO_NICE = {
     "PENDIENTE": "Pendiente",
     "ASIGNADO": "Asignado",
@@ -11,3 +10,8 @@ ESTADO_NICE = {
     "RESUELTO": "Resuelto",
     "PENDIENTE_APROBACION": "Pendiente de aprobación",
 }
+
+def nice_state(code: str) -> str:
+    if not code:
+        return ""
+    return ESTADO_NICE.get(str(code).upper(), str(code).title())
