@@ -1,7 +1,14 @@
 from flask import Blueprint
 
-# Importante: template_folder apunta a la carpeta "templates" dentro del paquete admin
-bp = Blueprint("admin", __name__, template_folder="templates")
+# Keep your templates where they are:
+# hestia_app/blueprints/admin/templates/admin/*.html
+# Using template_folder="templates/admin" lets you keep render_template("admin_super.html") unchanged.
+bp = Blueprint(
+    "admin",
+    __name__,
+    url_prefix="/admin",
+    template_folder="templates/admin",
+)
 
-# Mantén esta importación al final para registrar las rutas al cargar el blueprint.
+# Register routes
 from . import routes  # noqa: E402,F401

@@ -1,6 +1,12 @@
 from flask import Blueprint
 
-bp = Blueprint("auth", __name__, template_folder="templates")
+# Keep template at:
+# hestia_app/blueprints/auth/templates/auth/login.html
+bp = Blueprint(
+    "auth",
+    __name__,
+    url_prefix="",
+    template_folder="templates/auth",
+)
 
-# Registra las rutas al cargar el blueprint
 from . import routes  # noqa: E402,F401

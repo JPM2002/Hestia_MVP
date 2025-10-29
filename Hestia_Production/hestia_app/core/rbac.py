@@ -1,7 +1,7 @@
 from functools import wraps
 from flask import session, redirect, url_for, flash, abort
 from ..services.db import fetchone, fetchall
-from .status import OPEN_STATES
+from .status import OPEN_STATES, ESTADO_NICE
 
 DEFAULT_PERMS = {
     "SUPERADMIN": {"*"},
@@ -15,7 +15,9 @@ DEFAULT_PERMS = {
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
         "ticket.transition.resume", "ticket.transition.finish",
     },
-    "RECEPCION": {"ticket.view.area", "ticket.create", "ticket.confirm", "ticket.update"},
+    "RECEPCION": {
+        "ticket.view.area", "ticket.create", "ticket.confirm", "ticket.update"
+    },
     "TECNICO": {
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
         "ticket.transition.resume", "ticket.transition.finish",
@@ -23,15 +25,26 @@ DEFAULT_PERMS = {
 }
 
 def current_org_role() -> str | None:
-    u = session.get("user"); org_id = session.get("org_id")
-    if not u: return None
-    if u.get("is_superadmin"): return "SUPERADMIN"
-    if not org_id: return None
-    r = fetchone("SELECT role FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, u["id"]))
-    return r["role"] if r else None
+    """Return the OrgUsers.role for this user in current org, or SUPERADMIN."""
+    u = session.get('user'); org_id = session.get('org_id')
+    if not u:
+        return None
+    if u.get('is_superadmin'):
+        return "SUPERADMIN"
+    if not org_id:
+        return None
+    r = fetchone("SELECT role FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, u['id']))
+    return r['role'] if r else None
 
 def role_effective_perms(role_code: str) -> set[str]:
-    if not role_code: return set()
+    """
+    Resolve role -> permissions. We always include DEFAULT_PERMS as a base,
+    and then union any DB-defined permissions (RolePermissions + Roles.inherits_code).
+    This prevents accidental loss of core perms when DB rows are incomplete.
+    """
+    if not role_code:
+        return set()
+
     base = set(DEFAULT_PERMS.get(role_code, set()))
     try:
         perms = set()
@@ -46,7 +59,12 @@ def role_effective_perms(role_code: str) -> set[str]:
             rc = parent["inherits_code"] if parent else None
         return base | perms
     except Exception:
+        # If RBAC tables are missing, stick to defaults
         return base
+
+
+    # Fallback defaults (keeps the app usable without RBAC rows)
+    return DEFAULT_PERMS.get(role_code, set())
 
 def has_perm(code: str) -> bool:
     role = current_org_role()
@@ -71,20 +89,39 @@ def is_superadmin() -> bool:
     return bool(session.get('user', {}).get('is_superadmin'))
 
 def user_area_codes(org_id: int, user_id: int) -> set[str]:
+    """
+    Areas asignadas al usuario en la org (multi-área).
+    Fallback a OrgUsers.default_area si OrgUserAreas no existe.
+    """
     try:
         rows = fetchall("SELECT area_code FROM OrgUserAreas WHERE org_id=? AND user_id=?", (org_id, user_id))
-        if rows: return {r['area_code'] for r in rows}
+        if rows:
+            return {r['area_code'] for r in rows}
     except Exception:
         pass
+    # fallback
     r = fetchone("SELECT default_area FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, user_id))
     return {r['default_area']} if r and r['default_area'] else set()
 
 def _require_area_manage(area: str):
+    """
+    Supervisors may only act within their own area. Raises 403 otherwise.
+    Safe if area is None/empty; will try to infer from session.
+    """
     u = session.get('user') or {}
     role = (u.get('role') or '').upper()
-    if role != 'SUPERVISOR': return
+
+    # Only constrain supervisors
+    if role != 'SUPERVISOR':
+        return
+
+    # Normalize allowed area from session (support several possible keys)
     allowed = (u.get('area') or u.get('team_area') or '').strip().upper()
     incoming = (area or '').strip().upper()
-    if not incoming and allowed: return
+
+    # If no area was passed, assume supervisor’s own area
+    if not incoming and allowed:
+        return  # allow: the caller will use their own area
+
     if not allowed or incoming != allowed:
         abort(403)

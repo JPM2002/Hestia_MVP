@@ -3,43 +3,52 @@ import sqlite3 as sql
 from contextlib import suppress
 from datetime import datetime
 import time
+import os
 
 from flask import current_app
-from .dsn import is_supabase_pooler, dsn_with_params
+from .dsn import is_supabase_pooler, dsn_with_params, IS_SUPABASE_POOLER
 
 # Optional psycopg2 import (only when DATABASE_URL is set)
-try:
-    import psycopg2 as pg
-    import psycopg2.pool as pg_pool
-    import psycopg2.extras as pg_extras
-    from psycopg2 import OperationalError as PG_OperationalError
-except Exception:  # local dev without psycopg2
-    pg = pg_pool = pg_extras = None
-    class PG_OperationalError(Exception):  # placeholder
-        pass
+# --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
+DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
+DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
+USE_PG = bool(DATABASE_URL)
 
-PG_POOL = None  # created lazily
+# Try to import psycopg2; don't crash if missing (local SQLite dev may not need it)
+pg = None
+pg_pool = None
+pg_extras = None
+if USE_PG:
+    try:
+        import psycopg2 as pg
+        import psycopg2.pool as pg_pool
+        import psycopg2.extras as pg_extras
+    except Exception as e:
+        print(f"[BOOT] psycopg2 import failed: {e}", flush=True)
 
+PG_POOL = None  # created lazily on first use
+
+# --- Postgres pool init & connection helpers ---
 def _init_pg_pool():
+    """Create the global pool once. Keep pool tiny when using Supabase pgbouncer (6543)."""
     global PG_POOL
+    if not USE_PG:
+        return None
     if PG_POOL is not None:
         return PG_POOL
-
-    cfg = current_app.config
-    dsn_raw = cfg.get("DATABASE_URL")
-    if not dsn_raw:
-        return None
-
     if pg is None or pg_pool is None:
-        raise RuntimeError("DATABASE_URL set but psycopg2 not installed. Add psycopg2-binary to requirements.")
-
-    pooler = is_supabase_pooler(dsn_raw)
-    dsn = dsn_with_params(dsn_raw, is_pooler=pooler, stmt_timeout_ms=cfg.get("PG_STMT_TIMEOUT_MS"))
-    maxconn_default = 2 if pooler else 5
-    maxconn = int(cfg.get("PG_POOL_MAX") or maxconn_default)
-    PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
-    current_app.logger.info(f"[DB] Postgres pool init (maxconn={maxconn}, pooler={pooler}).")
-    return PG_POOL
+        raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements).")
+    try:
+        dsn = _dsn_with_params(DATABASE_URL)
+        # very small pool if going through supabase pooler; larger otherwise
+        maxconn_default = '2' if IS_SUPABASE_POOLER else '5'
+        maxconn = int(os.getenv('PG_POOL_MAX', maxconn_default))
+        PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
+        print(f"[BOOT] Postgres pool initialized (maxconn={maxconn}, pooler={IS_SUPABASE_POOLER}).", flush=True)
+        return PG_POOL
+    except Exception as e:
+        print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
+        raise
 
 def _pg_conn_with_retry(tries: int = 2, backoff: float = 0.35):
     last = None
@@ -58,30 +67,55 @@ def _pg_conn_with_retry(tries: int = 2, backoff: float = 0.35):
             time.sleep(backoff * (2 ** i))
     raise last
 
+def _db_conn_with_retry(tries: int = 3, backoff: float = 0.35):
+    """Retry on transient pooler hiccups with exponential backoff."""
+    last = None
+    for i in range(tries):
+        try:
+            pool = _init_pg_pool()
+            conn = pool.getconn()
+            # quick ping to ensure it's alive (cheap and safe behind pgbouncer)
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return conn
+        except Exception as e:
+            last = e
+            # if we got a conn but ping failed, close it before retrying
+            with suppress(Exception):
+                if 'conn' in locals():
+                    PG_POOL.putconn(conn, close=True)
+            time.sleep(backoff * (2 ** i))
+    raise last
+
 def using_pg() -> bool:
     return bool(current_app.config.get("DATABASE_URL"))
 
 def db():
-    if using_pg():
-        return _pg_conn_with_retry(tries=2)
-    # SQLite
-    path = current_app.config.get("DATABASE_PATH") or "hestia_V2.db"
-    conn = sql.connect(path, check_same_thread=False)
+    """
+    Get a DB connection:
+      - Postgres (Supabase) when DATABASE_URL is set (with tiny retry)
+      - SQLite local file otherwise
+    """
+    if USE_PG:
+        return _db_conn_with_retry(tries=2)
+    conn = sql.connect(DATABASE, check_same_thread=False)
     conn.row_factory = sql.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 def _execute(conn, query, params=()):
-    if using_pg():
+    """Run a query on either backend. Converts '?' -> '%s' for Postgres."""
+    if USE_PG:
         cur = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
         cur.execute(query.replace('?', '%s'), params)
         return cur
-    return conn.execute(query, params)
+    else:
+        return conn.execute(query, params)
 
 def fetchone(query, params=()):
     conn = db()
     try:
-        if using_pg():
+        if USE_PG:
             cur = _execute(conn, query, params)
             row = cur.fetchone()
             cur.close()
@@ -92,17 +126,17 @@ def fetchone(query, params=()):
                 cur = _execute(conn, query, params)
                 return cur.fetchone()
     finally:
-        if using_pg():
+        if USE_PG:
             try: PG_POOL.putconn(conn)
             except Exception: pass
         else:
-            with suppress(Exception):
-                conn.close()
+            try: conn.close()
+            except Exception: pass
 
 def fetchall(query, params=()):
     conn = db()
     try:
-        if using_pg():
+        if USE_PG:
             cur = _execute(conn, query, params)
             rows = cur.fetchall()
             cur.close()
@@ -113,17 +147,17 @@ def fetchall(query, params=()):
                 cur = _execute(conn, query, params)
                 return cur.fetchall()
     finally:
-        if using_pg():
+        if USE_PG:
             try: PG_POOL.putconn(conn)
             except Exception: pass
         else:
-            with suppress(Exception):
-                conn.close()
+            try: conn.close()
+            except Exception: pass
 
 def execute(query, params=()):
     conn = db()
     try:
-        if using_pg():
+        if USE_PG:
             cur = _execute(conn, query, params)
             cur.close()
             conn.commit()
@@ -132,35 +166,41 @@ def execute(query, params=()):
                 _ = _execute(conn, query, params)
                 conn.commit()
     finally:
-        if using_pg():
+        if USE_PG:
             try: PG_POOL.putconn(conn)
             except Exception: pass
         else:
-            with suppress(Exception):
-                conn.close()
+            try: conn.close()
+            except Exception: pass
 
 def insert_and_get_id(query, params=()):
+    """
+    Run an INSERT and return the new primary key id on both backends.
+    For Postgres, appends 'RETURNING id' if not already present.
+    For SQLite, uses cursor.lastrowid.
+    """
     conn = db()
     try:
-        if using_pg():
-            sql_text = query if "RETURNING" in query.upper() else query.rstrip().rstrip(';') + " RETURNING id"
+        if USE_PG:
+            sql_text = query
+            if 'RETURNING' not in sql_text.upper():
+                sql_text = sql_text.rstrip().rstrip(';') + ' RETURNING id'
             cur = _execute(conn, sql_text, params)
             row = cur.fetchone()
-            cur.close(); conn.commit()
-            return row["id"] if isinstance(row, dict) else row[0]
+            cur.close()
+            conn.commit()
+            # RealDictCursor returns dict-like rows
+            return row['id'] if isinstance(row, dict) else row[0]
         else:
             with conn:
                 cur = _execute(conn, query, params)
                 conn.commit()
                 return cur.lastrowid
     finally:
-        if using_pg():
+        if USE_PG:
             try: PG_POOL.putconn(conn)
             except Exception: pass
         else:
-            with suppress(Exception):
-                conn.close()
+            try: conn.close()
+            except Exception: pass
 
-def hp(password: str) -> str:
-    import hashlib
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()

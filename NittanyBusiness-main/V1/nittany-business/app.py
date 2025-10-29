@@ -2,6 +2,8 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, get_flashed_messages, session, jsonify, abort,current_app
 )
+
+# Main Imports
 import sqlite3 as sql
 from datetime import datetime, timedelta
 import hashlib
@@ -9,6 +11,7 @@ from functools import wraps
 import os
 import requests  # <-- ADD
 
+# DNS help for dsn.py
 # --- add for DSN normalization ---
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
@@ -18,10 +21,15 @@ from flask import g
 from flask import abort 
 from jinja2 import TemplateNotFound
 
-# 👇 ADD THESE TWO LINES
+# Flask app setup
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-env')
 
+# Demo switcher on login (set ENABLE_TECH_DEMO=1 in env to show it)
+app.config['ENABLE_TECH_DEMO'] = os.getenv('ENABLE_TECH_DEMO', '0') == '1'
+
+
+# Status.py
 # --- UTIL: estado legible, fechas cortas y "hace X" -----------------
 from datetime import timezone
 
@@ -36,6 +44,8 @@ ESTADO_NICE = {
     "PENDIENTE_APROBACION": "Pendiente de aprobación",
 
 }
+
+# Shift helpers for shift.py
 
 # --- Shift helpers (session-only) ---
 from datetime import datetime, timezone
@@ -68,6 +78,8 @@ def _shift_state():
         "ended_at": ended_at,
     }
 
+
+# Request helpers: detect JSON vs browser
 
 def _wants_json():
     # Detecta fetch/XHR/HTMX o Accept JSON
@@ -116,6 +128,8 @@ def _err_or_redirect(msg, code=400):
         return jsonify({"ok": False, "message": msg}), code
     flash(msg, 'error')
     return _redirect_back()
+
+# --- Jinja filters: nice_state, short_dt, ago, round2 ---
 
 def _to_dt(x):
     if not x:
@@ -183,15 +197,7 @@ app.jinja_env.filters["ago"]        = ago
 app.jinja_env.filters["round2"]     = round2
 
 
-# --- UTIL: faltaba esta función en tu código y se usa en ticket_edit() ---
-def using_pg() -> bool:
-    return USE_PG
-
-
-# Demo switcher on login (set ENABLE_TECH_DEMO=1 in env to show it)
-app.config['ENABLE_TECH_DEMO'] = os.getenv('ENABLE_TECH_DEMO', '0') == '1'
-
-
+# --- Error handlers ---
 # Friendly error if DB drops
 try:
     from psycopg2 import OperationalError as PG_OperationalError
@@ -204,12 +210,13 @@ def _db_down(e):
     flash("Base de datos no disponible. Intenta de nuevo en unos segundos.", "error")
     return redirect(url_for("login"))
 
-
+# db.py - Call to our database
 # --- Supabase/Postgres setup (robust, lazy-init, with clear logs) ---
 DATABASE_URL = os.getenv('DATABASE_URL')  # e.g. postgresql://...:6543/postgres?sslmode=require
 DATABASE = os.getenv('DATABASE_PATH', 'hestia_V2.db')  # local fallback for dev
 USE_PG = bool(DATABASE_URL)
 
+# device.py - for device detection and view mode
 # ---------------------------- Device detection ----------------------------
 MOBILE_COOKIE = "view_mode"   # 'mobile' | 'desktop' | 'auto'
 
@@ -304,7 +311,7 @@ def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
 
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 
-
+# Todo: Find where should this be
 # --- Area helpers (Supervisor scope) -----------------------------------------
 def _user_primary_area(org_id: int, user_id: int):
     row = fetchone("""
@@ -338,19 +345,6 @@ def _user_primary_area(org_id: int, user_id: int):
         """, (org_id, user_id, cutoff))
 
     return row["area"] if row else None
-
-
-    # Fallback: most frequent area in last 90 days
-    row = fetchone("""
-        SELECT area
-        FROM Tickets
-        WHERE org_id=? AND assigned_to=? AND created_at >= (NOW() - INTERVAL '90 days')
-        GROUP BY area
-        ORDER BY COUNT(1) DESC
-        LIMIT 1
-    """, (org_id, user_id))
-    return row["area"] if row else None
-
 
 def _user_has_area(area: str) -> bool:
     """
@@ -428,6 +422,7 @@ def _notify_guest_final(to_phone: str, ticket_id: int, huesped_nombre: str | Non
 def hp(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
+# --- Postgres pool init & connection helpers ---
 def _init_pg_pool():
     """Create the global pool once. Keep pool tiny when using Supabase pgbouncer (6543)."""
     global PG_POOL
@@ -591,13 +586,14 @@ def insert_and_get_id(query, params=()):
             except Exception: pass
 
 
+# --- I just set it to my timefmt.py -----------------------------------------
+# sla.py - SLA helpers
 def date_key(v):
     if not v:
         return None
     if isinstance(v, datetime):
         return v.date().isoformat()     # YYYY-MM-DD
     return str(v)[:10]                  # por si viene como texto
-
 
 
 def is_critical(now: datetime, due_at) -> bool:
@@ -949,13 +945,14 @@ def demo_tecnico():
     return redirect(url_for('dashboard', view=view if view else None))
 
 
-#CHeck status of the app
+# Check status of the app
 @app.get('/healthz')
 def healthz():
     return 'ok', 200
 
 
 # ---------------------------- role data helpers ----------------------------
+# I have it double, incongruence then
 OPEN_STATES = ('PENDIENTE_APROBACION','PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
 
 
@@ -1293,6 +1290,8 @@ def dashboard():
     tickets = get_assigned_tickets(user['id'])
     return render_template('dashboard_tecnico.html', user=user, tickets=tickets)
 
+# move to routes for tecnicians.
+
     # ---------------------------- Technician mobile routes ----------------------------
 from werkzeug.exceptions import NotFound
 
@@ -1506,6 +1505,10 @@ def tickets():
         filters={"q": q, "area": area, "prioridad": prioridad, "estado": estado, "period": period},
         device=g.device, view=view
     )
+
+# --- UTIL: faltaba esta función en tu código y se usa en ticket_edit() ---
+def using_pg() -> bool:
+    return USE_PG
 
 # ---------- Editar ticket (Recepción/Supervisor/Gerente) ----------
 @app.post('/tickets/<int:ticket_id>/edit')
@@ -2705,6 +2708,7 @@ def admin_org_members_add(org_id):
         # Use real booleans for Postgres; SQLite will coerce them to 1/0.
         execute("""INSERT INTO Users(username,email,password_hash,role,area,telefono,activo,is_superadmin)
                 VALUES (?,?,?,?,?,?,?,?)""",
+                #Mention and use of hp so we might have to redifine
                 (username, email, hp(password), base_role, default_area, None, True, False))
 
         u = fetchone("SELECT id FROM Users WHERE email=?", (email,))

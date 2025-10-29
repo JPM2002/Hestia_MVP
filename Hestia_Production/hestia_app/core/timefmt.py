@@ -39,3 +39,10 @@ def ago(value) -> str:
 def round2(value):
     try: return f"{float(value):.2f}"
     except Exception: return value
+
+def date_key(v):
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v.date().isoformat()     # YYYY-MM-DD
+    return str(v)[:10]                  # por si viene como texto

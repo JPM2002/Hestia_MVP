@@ -18,286 +18,410 @@ try:
 except Exception:
     OPEN_STATES = ("PENDIENTE","ASIGNADO","ACEPTADO","EN_CURSO","PAUSADO","DERIVADO")
 
-# ----------------- Helpers -----------------
-AREAS        = ["MANTENCION","HOUSEKEEPING","ROOMSERVICE"]
-PRIORIDADES  = ["BAJA","MEDIA","ALTA","URGENTE"]
-CANALES      = ["recepcion","telefono","whatsapp","app","web"]
+# ---------- Editar ticket (Recepción/Supervisor/Gerente) ----------
+@app.post('/tickets/<int:ticket_id>/edit')
+@require_perm('ticket.update')  # or a custom check for roles RECEPCION/SUPERVISOR/GERENTE
+def ticket_edit(ticket_id):
+    user = session.get('user') or {}
+    org_id, _ = current_scope()
+    if not org_id:
+        return jsonify({"ok": False, "error": "Sin contexto de organización"}), 400
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    detalle   = (request.form.get('detalle') or '').strip()
+    prioridad = (request.form.get('prioridad') or '').strip().upper() or None
+    ubicacion = (request.form.get('ubicacion') or '').strip() or None
 
-def _prefer_json() -> bool:
-    return (
-        request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("Accept") or "")
-    )
-
-def _redirect_back(default_ep="tickets"):
-    nxt = request.args.get("next")
-    if nxt: return redirect(nxt)
-    try:
-        return redirect(request.referrer or url_for(default_ep))
-    except Exception:
-        return redirect(url_for(default_ep))
-
-def _is_mobile() -> bool:
-    # override manual: ?view=mobile / ?view=desktop
-    v = (request.args.get("view") or "").lower()
-    if v == "mobile": return True
-    if v == "desktop": return False
-    ua = request.headers.get("User-Agent","")
-    return "Mobi" in ua or "Android" in ua or "iPhone" in ua
-
-def _get_user() -> Dict[str, Any]:
-    u = session.get("user")
-    if not u:
-        u = {"id": 1, "name": "Demo", "role": "RECEPCION"}  # cambia por tu auth real
-        session["user"] = u
-    return u
-
-# ----------------- Stubs de datos (reemplaza por tu DB) -----------------
-def _compute_is_critical(t: Dict[str, Any]) -> bool:
-    prio = (t.get("prioridad") or "").upper()
-    if prio == "URGENTE": return True
-    due = t.get("due_at")
-    if due:
-        try:
-            d = datetime.fromisoformat(str(due).replace("Z","+00:00"))
-            return d < datetime.now(d.tzinfo or timezone.utc)
-        except Exception:
-            pass
-    return False
-
-def _decorate(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out = []
-    for r in rows:
-        t = {
-            "id": r.get("id", 0),
-            "area": r.get("area", "GENERAL"),
-            "prioridad": r.get("prioridad","MEDIA"),
-            "estado": r.get("estado","PENDIENTE"),
-            "detalle": r.get("detalle",""),
-            "ubicacion": r.get("ubicacion",""),
-            "canal": r.get("canal"),
-            "created_at": r.get("created_at", _now_iso()),
-            "due_at": r.get("due_at"),
-            "started_at": r.get("started_at"),
-            "finished_at": r.get("finished_at"),
-        }
-        t["is_critical"] = bool(r.get("is_critical", _compute_is_critical(t)))
-        out.append(t)
-    return out
-
-def get_tickets(filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    TODO: reemplazar con tu consulta real.
-    Respeta filtros: q, area, prioridad, estado, period.
-    """
-    rows: List[Dict[str, Any]] = []
-    # ejemplo de fixture si quieres ver algo en UI:
-    # rows = [{
-    #   "id": 101, "area":"MANTENCION", "prioridad":"ALTA", "estado":"PENDIENTE",
-    #   "detalle":"Fuga en baño", "ubicacion":"1203", "canal":"recepcion",
-    #   "created_at": _now_iso(), "due_at": (datetime.now(timezone.utc)+timedelta(hours=3)).isoformat()
-    # }]
-    return _decorate(rows)
-
-def create_ticket(data: Dict[str, Any]) -> int:
-    """
-    TODO: insert en DB. Retorna ID del ticket.
-    """
-    return int(datetime.now().timestamp())  # stub
-
-def update_ticket_state(ticket_id: int, new_state: str, **kw) -> bool:
-    """
-    TODO: update en DB (estado, timestamps, motivo, user_id, etc.)
-    """
-    return True
-
-# ----------------- Dashboard simple (redirige a tickets móvil/desktop) -----------------
-@app.route("/")
-def dashboard():
-    return redirect(url_for("tickets"))
-
-# ----------------- Tickets: listado (elige mobile/desktop automáticamente) -----------------
-@app.route("/tickets", methods=["GET"])
-def tickets():
-    filters = {
-        "q": (request.args.get("q") or "").strip(),
-        "area": request.args.get("area") or "",
-        "prioridad": request.args.get("prioridad") or "",
-        "estado": request.args.get("estado") or "",
-        "period": request.args.get("period") or "today",
-    }
-
-    rows = get_tickets(filters=filters)
-    tpl = "tickets_mobile.html" if _is_mobile() else "tickets.html"
-    return render_template(tpl, tickets=rows, filters=filters)
-
-# ----------------- Crear ticket (form) -----------------
-@app.route("/ticket/new", methods=["GET","POST"])
-def ticket_create():
-    if request.method == "GET":
-        return render_template(
-            "ticket_create.html",
-            areas=AREAS,
-            prioridades=PRIORIDADES,
-            canales=CANALES,
-        )
-
-    # POST
-    form = request.form
-    payload = {
-        "area": form.get("area"),
-        "prioridad": form.get("prioridad"),
-        "canal": form.get("canal_origen") or None,
-        "huesped_id": form.get("huesped_id") or None,
-        "ubicacion": form.get("ubicacion"),
-        "detalle": form.get("detalle"),
-        "qr_required": 1 if form.get("qr_required") else 0,
-        "estado": "PENDIENTE",
-        "created_at": _now_iso(),
-        "due_at": None,  # si tienes SLAs, calcúlalo aquí
-    }
-    # validaciones mínimas
-    if not payload["area"] or payload["area"] not in AREAS:
-        return render_template("ticket_create.html",
-                               areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
-                               error="Área inválida."), 400
-    if not payload["prioridad"] or payload["prioridad"] not in PRIORIDADES:
-        return render_template("ticket_create.html",
-                               areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
-                               error="Prioridad inválida."), 400
-    if not payload["ubicacion"] or not payload["detalle"]:
-        return render_template("ticket_create.html",
-                               areas=AREAS, prioridades=PRIORIDADES, canales=CANALES,
-                               error="Ubicación y detalle son obligatorios."), 400
-
-    tid = create_ticket(payload)
-    return redirect(url_for("tickets", created=str(tid)))
-
-# ----------------- Acciones de ticket (POST) -----------------
-def _json_or_back(ok: bool, ok_msg: str, bad_msg: str):
-    if _prefer_json():
-        return (jsonify({"ok": ok, "message": ok_msg if ok else bad_msg}),
-                200 if ok else 409)
-    return _redirect_back("tickets")
-
-@app.post("/ticket/<int:id>/confirm")
-def ticket_confirm(id: int):
-    ok = update_ticket_state(id, "ASIGNADO", user_id=_get_user()["id"])
-    return _json_or_back(ok, "✅ Ticket confirmado.", "No se pudo confirmar el ticket.")
-
-@app.post("/ticket/<int:id>/accept")
-def ticket_accept(id: int):
-    ok = update_ticket_state(id, "ACEPTADO", user_id=_get_user()["id"])
-    return _json_or_back(ok, "✅ Has tomado este ticket.", "No se pudo tomar el ticket.")
-
-@app.post("/ticket/<int:id>/start")
-def ticket_start(id: int):
-    ok = update_ticket_state(id, "EN_CURSO", user_id=_get_user()["id"])
-    return _json_or_back(ok, "▶️ Has iniciado el ticket.", "No se pudo iniciar el ticket.")
-
-@app.post("/ticket/<int:id>/pause")
-def ticket_pause(id: int):
-    motivo = request.form.get("motivo") or "Pausa"
-    ok = update_ticket_state(id, "PAUSADO", motivo=motivo, user_id=_get_user()["id"])
-    return _json_or_back(ok, "⏸️ Has pausado el ticket.", "No se pudo pausar el ticket.")
-
-@app.post("/ticket/<int:id>/resume")
-def ticket_resume(id: int):
-    ok = update_ticket_state(id, "EN_CURSO", user_id=_get_user()["id"])
-    return _json_or_back(ok, "⏯️ Has reanudado el ticket.", "No se pudo reanudar el ticket.")
-
-@app.post("/ticket/<int:id>/finish")
-def ticket_finish(id: int):
-    ok = update_ticket_state(id, "RESUELTO", user_id=_get_user()["id"])
-    return _json_or_back(ok, "🏁 Has finalizado el ticket.", "No se pudo finalizar el ticket.")
-
-# ----------------- Página y APIs de Ticket por Voz -----------------
-@app.get("/voice")
-def voice_page():
-    # Renderiza el prototipo de voz
-    return render_template("voice_ticket.html")
-
-@app.post("/api/stt")
-def api_stt():
-    """
-    Prototipo: finge transcripción. Reemplaza por integración STT real.
-    """
-    f = request.files.get("audio")
-    if not f:
-        return jsonify({"error":"audio requerido"}), 400
-    _ = secure_filename(f.filename or "audio.webm")  # podrías guardarlo si quieres
-    # Devuelve texto dummy
-    return jsonify({"text": "Habitación 1203, la ducha gotea, por favor enviar mantención. Prioridad alta."})
-
-@app.post("/api/extract")
-def api_extract():
-    """
-    Heurística simple para extraer campos desde texto transcrito.
-    Reemplaza con LLM cuando quieras.
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    text = (data.get("text") or "").lower()
-
-    area = "MANTENCION"
-    if "limpieza" in text or "sabanas" in text or "toallas" in text:
-        area = "HOUSEKEEPING"
-    elif "menu" in text or "comida" in text or "desayuno" in text:
-        area = "ROOMSERVICE"
-
-    prioridad = "MEDIA"
-    if "urgente" in text or "inundable" in text or "peligro" in text:
-        prioridad = "URGENTE"
-    elif "alta" in text:
-        prioridad = "ALTA"
-
-    ubic = None
-    m = re.search(r"(hab(itaci[oó]n)?\s*)?(\d{3,4})", text)
-    if m: ubic = m.group(3)
-
-    detalle = text.strip().capitalize()
-
-    return jsonify({
-        "fields": {
-            "area": area,
-            "prioridad": prioridad,
-            "ubicacion": ubic or "",
-            "detalle": detalle,
-            "canal_origen": "recepcion",
-        },
-        "confidence_score": 0.72
-    })
-
-@app.post("/api/submit")
-def api_submit():
-    """
-    Crea ticket desde payload JSON del prototipo de voz.
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    required = ["area","prioridad","ubicacion","detalle"]
-    for k in required:
-        if not data.get(k):
-            return jsonify({"ok": False, "error": f"Falta {k}"}), 400
-
-    if data["area"] not in AREAS:
-        return jsonify({"ok": False, "error": "Área inválida"}), 400
-    if data["prioridad"] not in PRIORIDADES:
+    # sanitize prioridad
+    valid_prios = {'URGENTE','ALTA','MEDIA','BAJA'}
+    if prioridad and prioridad not in valid_prios:
         return jsonify({"ok": False, "error": "Prioridad inválida"}), 400
 
-    payload = {
-        "area": data["area"],
-        "prioridad": data["prioridad"],
-        "ubicacion": data["ubicacion"],
-        "detalle": data["detalle"],
-        "canal": data.get("canal_origen"),
-        "qr_required": 1 if data.get("qr_required") else 0,
-        "huesped_id": data.get("huesped_id"),
-        "estado": "PENDIENTE",
-        "created_at": _now_iso(),
-        "due_at": None,
-        "confidence_score": float(data.get("confidence_score") or 0.0),
-    }
-    tid = create_ticket(payload)
-    return jsonify({"ok": True, "ticket_id": tid})
+    # update
+    execute(
+        ("UPDATE Tickets SET detalle=%s, prioridad=%s, ubicacion=%s WHERE id=%s AND org_id=%s")
+        if using_pg() else
+        ("UPDATE Tickets SET detalle=?,  prioridad=?,  ubicacion=?  WHERE id=? AND org_id=?"),
+        (detalle or None, prioridad, ubicacion, ticket_id, org_id)
+    )
+
+    # history
+    execute(
+        ("INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s,%s,%s,%s,%s)")
+        if using_pg() else
+        ("INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?,?,?,?,?)"),
+        (ticket_id, user.get('id'), "EDITADO", None, datetime.now().isoformat())
+    )
+
+    return jsonify({"ok": True})
+
+# ---------------------------- create & confirm ticket ----------------------------
+@app.route('/tickets/create', methods=['GET', 'POST'])
+@require_perm('ticket.create')
+def ticket_create():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        org_id, hotel_id = current_scope()
+        if not org_id or not hotel_id:
+            flash('Falta contexto de organización/hotel.', 'error')
+            # intenta volver al referer si existe
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            return redirect(nxt or url_for('tickets'))
+
+        area = request.form.get('area')
+        prioridad = request.form.get('prioridad')
+        detalle = request.form.get('detalle')
+        ubicacion = request.form.get('ubicacion')
+        canal = request.form.get('canal_origen') or 'recepcion'
+        huesped_id = request.form.get('huesped_id') or None
+        qr_required = int(request.form.get('qr_required', 0))
+
+        created_at = datetime.now()
+        due_dt = compute_due(created_at, area, prioridad)
+        due_at = due_dt.isoformat() if due_dt else None
+
+        try:
+            new_id = insert_and_get_id("""
+                INSERT INTO Tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen, ubicacion,
+                                    huesped_id, created_at, due_at, assigned_to, created_by,
+                                    confidence_score, qr_required)
+                VALUES (?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, NULL, ?, NULL, ?)
+            """, (org_id, hotel_id, area, prioridad, detalle, canal, ubicacion, huesped_id,
+                  created_at.isoformat(), due_at, session['user']['id'], qr_required))
+
+            execute("""
+                INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
+                VALUES (?, ?, 'CREADO', NULL, ?)
+            """, (new_id, session['user']['id'], created_at.isoformat()))
+
+            flash(f'Ticket #{new_id} creado.', 'success')
+
+            # 👇 redirige de vuelta a la pantalla que originó la creación
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            # seguridad mínima: solo permite rutas locales (evitar open redirect)
+            if nxt and str(nxt).startswith('/'):
+                return redirect(nxt)
+            return redirect(url_for('tickets'))
+
+        except Exception as e:
+            current_app.logger.exception("Error creando ticket")
+            flash(f'Error creando ticket: {e}', 'error')
+            nxt = request.args.get('next') or request.form.get('next') or request.referrer
+            return redirect(nxt or url_for('tickets'))
+
+    # GET (igual que ya tenías)
+    areas = ['MANTENCION','HOUSEKEEPING','ROOMSERVICE']
+    prioridades = ['BAJA','MEDIA','ALTA','URGENTE']
+    canales = ['recepcion','huesped_whatsapp','housekeeping_whatsapp','mantenimiento_app','roomservice_llamada']
+    return render_template('ticket_create.html', user=session['user'],
+                           areas=areas, prioridades=prioridades, canales=canales)
+
+@app.post('/tickets/<int:id>/confirm')
+@require_perm('ticket.confirm')
+def ticket_confirm(id):
+    """Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION), auto-asignan y notifican por WA."""
+    if 'user' not in session: 
+        return redirect(url_for('login'))
+
+    t = fetchone("""
+        SELECT id, org_id, area, prioridad, estado, detalle, ubicacion, assigned_to
+        FROM Tickets WHERE id=?
+    """, (id,))
+    if not t:
+        flash('Ticket no encontrado.', 'error')
+        return redirect(url_for('tickets'))
+
+    if t['estado'] not in ('PENDIENTE_APROBACION', 'PENDIENTE'):
+        flash('Solo puedes confirmar/aprobar tickets pendientes.', 'error')
+        return redirect(url_for('tickets'))
+
+    # SUPERVISOR: solo su área
+    if current_org_role() == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    # Asignación simple (menor backlog del área)
+    assignee = pick_assignee(t['org_id'], t['area'])
+    fields = {"estado": "ASIGNADO"}
+    if assignee:
+        fields["assigned_to"] = assignee
+
+    _update_ticket(id, fields, "CONFIRMADO")
+
+    # Notificar técnico por WhatsApp si hay teléfono
+    if assignee:
+        tech = fetchone("SELECT telefono FROM Users WHERE id=?", (assignee,))
+        to_phone = (tech.get('telefono') if tech else None) or ""
+        if to_phone.strip():
+            try:
+                _notify_tech_assignment(
+                    to_phone=to_phone,
+                    ticket_id=id,
+                    area=t['area'],
+                    prioridad=t['prioridad'],
+                    detalle=t['detalle'],
+                    ubicacion=t['ubicacion']
+                )
+            except Exception as e:
+                print(f"[WA] notify tech assignment failed: {e}", flush=True)
+
+    flash('Ticket confirmado y asignado.' if assignee else 'Ticket confirmado (sin asignar).', 'success')
+    return redirect(url_for('tickets'))
+
+def pick_assignee(org_id: int, area: str) -> int | None:
+    """
+    MVP assignment:
+    - Busca técnicos del área en la org (via OrgUsers.role='TECNICO' + OrgUserAreas)
+    - Elige el de menor backlog abierto
+    """
+    try:
+        techs = fetchall("""
+            SELECT u.id
+            FROM Users u
+            JOIN OrgUsers ou ON ou.user_id=u.id AND ou.org_id=?
+            LEFT JOIN OrgUserAreas oa ON oa.org_id=ou.org_id AND oa.user_id=ou.user_id
+            WHERE ou.role='TECNICO' AND (oa.area_code=? OR u.area=?)
+        """, (org_id, area, area))
+        if not techs:
+            return None
+        # pick least loaded
+        best = None
+        best_count = 1e9
+        for r in techs:
+            c = fetchone("""
+                SELECT COUNT(1) c FROM Tickets
+                 WHERE org_id=? AND assigned_to=? AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+            """, (org_id, r['id']))['c']
+            if c < best_count:
+                best = r['id']; best_count = c
+        return best
+    except Exception:
+        return None
+    
+# --- Logical state guards for transitions (backend truth) ---
+ALLOWED_TRANSITIONS = {
+    "accept": {"PENDIENTE", "ASIGNADO", "DERIVADO"},
+    "start":  {"ACEPTADO"},          # must have been explicitly started
+    "pause":  {"EN_CURSO"},
+    "resume": {"PAUSADO"},
+    "finish": {"EN_CURSO"},
+}
+
+def _guard_transition(t, allowed: set, verb_es: str):
+    """
+    If current ticket state is not allowed for this transition, return an error/redirect.
+    Use 409 (conflict) to signal invalid state flow to the UI.
+    """
+    estado = (t.get('estado') or '').upper()
+    if estado not in allowed:
+        return _err_or_redirect(
+            f"No puedes {verb_es} un ticket en estado {nice_state(estado)}.",
+            code=409
+        )
+    return None
+
+
+# ---------------------------- transitions ----------------------------
+def _update_ticket(id, fields: dict, action: str, motivo: str | None = None):
+    sets = ", ".join([f"{k}=?" for k in fields.keys()])
+    params = list(fields.values()) + [id]
+    execute(f"UPDATE Tickets SET {sets} WHERE id=?", params)
+    execute("""INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
+               VALUES (?,?,?,?,?)""",
+            (id, session['user']['id'], action, motivo, datetime.now().isoformat()))
+
+def _get_ticket_or_abort(id: int):
+    t = fetchone("SELECT * FROM Tickets WHERE id=?", (id,))
+    if not t:
+        flash('Ticket no encontrado.', 'error')
+        return None
+    # org scope
+    org_id, _ = current_scope()
+    if not org_id or t['org_id'] != org_id:
+        flash('Fuera de tu organización.', 'error')
+        return None
+    return t
+
+@app.post('/tickets/<int:id>/accept')
+@require_perm('ticket.transition.accept')
+def ticket_accept(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
+
+    # Enforce logical flow
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["accept"], "aceptar")
+    if bad: return bad
+
+    role = current_org_role()
+
+    # Técnico: solo si es el asignado (o se autoasigna si no hay asignado)
+    if role == 'TECNICO' and t['assigned_to'] and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes aceptar tus tickets.', 403)
+
+    # Supervisor: solo su área
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {
+            "estado": "ACEPTADO",
+            "accepted_at": datetime.now().isoformat(),
+            "assigned_to": t['assigned_to'] or session['user']['id']
+        },
+        "ACEPTADO"
+    )
+    return _ok_or_redirect('Ticket aceptado.', ticket_id=id, new_estado='ACEPTADO')
+
+
+
+@app.post('/tickets/<int:id>/start')
+@require_perm('ticket.transition.start')
+def ticket_start(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
+
+    # Must be ACEPTADO (do not allow from PAUSADO; use /resume)
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["start"], "iniciar")
+    if bad: return bad
+
+    role = current_org_role()
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes iniciar tus tickets.', 403)
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {"estado": "EN_CURSO", "started_at": datetime.now().isoformat()},
+        "INICIADO"
+    )
+    return _ok_or_redirect('Ticket iniciado.', ticket_id=id, new_estado='EN_CURSO')
+
+
+
+@app.post('/tickets/<int:id>/pause')
+@require_perm('ticket.transition.pause')
+def ticket_pause(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
+
+    # Only from EN_CURSO
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["pause"], "pausar")
+    if bad: return bad
+
+    role = current_org_role()
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes pausar tus tickets.', 403)
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    motivo = (request.form.get('motivo') or '').strip()
+    _update_ticket(id, {"estado": "PAUSADO"}, "PAUSADO", motivo)
+    return _ok_or_redirect('Ticket en pausa.', ticket_id=id, new_estado='PAUSADO')
+
+
+
+@app.post('/tickets/<int:id>/resume')
+@require_perm('ticket.transition.resume')
+def ticket_resume(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
+
+    # Only from PAUSADO
+    bad = _guard_transition(t, ALLOWED_TRANSITIONS["resume"], "reanudar")
+    if bad: return bad
+
+    role = current_org_role()
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes reanudar tus tickets.', 403)
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(id, {"estado": "EN_CURSO"}, "REANUDADO")
+    return _ok_or_redirect('Ticket reanudado.', ticket_id=id, new_estado='EN_CURSO')
+
+
+
+@app.post('/tickets/<int:id>/finish')
+@require_perm('ticket.transition.finish')
+def ticket_finish(id):
+    if 'user' not in session:
+        return _err_or_redirect('No autenticado.', 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect('Ticket no encontrado.', 404)
+    
+    bad_shift = _guard_active_shift(t.get('area'))
+    if bad_shift: 
+        return bad_shift
+
+    role = current_org_role()
+
+    if role == 'TECNICO' and t['assigned_to'] != session['user']['id']:
+        return _err_or_redirect('Solo puedes finalizar tus tickets.', 403)
+
+    if role == 'SUPERVISOR':
+        _require_area_manage(t['area'])
+
+    _update_ticket(
+        id,
+        {"estado": "RESUELTO", "finished_at": datetime.now().isoformat()},
+        "RESUELTO"
+    )
+
+    # Avisar al huésped por WhatsApp si tenemos su número
+    try:
+        t2 = fetchone("""
+            SELECT COALESCE(huesped_phone, huesped_id) AS to_phone,
+                   COALESCE(huesped_nombre, '') AS guest_name
+            FROM Tickets WHERE id=?
+        """, (id,))
+        to_phone = (t2.get('to_phone') if t2 else None) or ""
+        if to_phone.strip():
+            _notify_guest_final(
+                to_phone=to_phone,
+                ticket_id=id,
+                huesped_nombre=(t2.get('guest_name') or None)
+            )
+    except Exception as e:
+        print(f"[WA] notify guest final failed: {e}", flush=True)
+
+    return _ok_or_redirect('Ticket resuelto.', ticket_id=id, new_estado='RESUELTO')
+
+
+
+
