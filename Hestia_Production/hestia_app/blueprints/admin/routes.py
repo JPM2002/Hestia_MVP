@@ -1,7 +1,6 @@
-from flask import Blueprint, render_template
+from flask import render_template
+from . import bp
 
-bp = Blueprint('admin', __name__)
-
-@bp.route('/')
+@bp.get("/")
 def admin_home():
-    return render_template('admin/admin_super.html')
+    return render_template("admin/admin_super.html")
