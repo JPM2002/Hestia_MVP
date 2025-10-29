@@ -1,16 +1,24 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session
+from flask import render_template, request, redirect, url_for, session, flash
+from . import bp
 
-bp = Blueprint('auth', __name__)
-
-@bp.route('/login', methods=['GET', 'POST'])
+@bp.get("/login")
 def login():
-    if request.method == 'POST':
-        # TODO: replace with real auth
-        session['user'] = {'id': 1, 'name': 'Demo', 'role': 'GERENTE'}
-        return redirect(url_for('dashboards.dashboard_home'))
-    return render_template('auth/login.html')
+    return render_template("auth/login.html")
 
-@bp.route('/logout')
+@bp.post("/login")
+def login_post():
+    email = request.form.get("email")
+    role = request.form.get("role", "RECEPCION")
+    session["user"] = {
+        "name": (email.split("@")[0] if email else "Usuario"),
+        "role": role,
+        "is_superadmin": False,
+    }
+    flash("Bienvenido 👋", "success")
+    return redirect(url_for("dashboard.home"))
+
+@bp.get("/logout")
 def logout():
     session.clear()
-    return redirect(url_for('auth.login'))
+    flash("Sesión cerrada", "success")
+    return redirect(url_for("auth.login"))

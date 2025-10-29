@@ -1,10 +1,31 @@
-{% extends 'base.html' %}
-{% block title %}Login — Hestia{% endblock %}
+{% extends "base.html" %}
+{% block title %}Iniciar sesiÃ³n â€” Hestia{% endblock %}
+
 {% block content %}
-<h2>Iniciar sesión</h2>
-<form method='post'>
-  <label>Email o usuario<br><input name='email' required></label><br><br>
-  <label>Contraseña<br><input type='password' name='password' required></label><br><br>
-  <button type='submit'>Entrar</button>
-</form>
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-5">
+    <div class="card shadow-sm mt-4">
+      <div class="card-body">
+        <h1 class="h4 mb-3">Iniciar sesiÃ³n</h1>
+        <form method="post" action="{{ url_for('auth.login_post') }}">
+          <div class="mb-3">
+            <label class="form-label">Correo</label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Rol</label>
+            <select name="role" class="form-select">
+              <option>RECEPCION</option>
+              <option>GERENTE</option>
+              <option>SUPERVISOR</option>
+              <option>HOUSEKEEPING</option>
+              <option>TECNICO</option>
+            </select>
+          </div>
+          <button class="btn btn-primary w-100" type="submit">Entrar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
