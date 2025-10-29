@@ -13,7 +13,7 @@ from ...services.notify import _notify_tech_assignment, _notify_guest_final
 from ...core.errors import _err_or_redirect, _ok_or_redirect
 from ...core.status import nice_state
 from ...blueprints.tecnico.routes import _guard_active_shift
-from ...blueprints.tickets.routes import _period_bounds, _safe_is_critical
+#from ...blueprints.tickets.routes import _period_bounds, _safe_is_critical
 
 from flask import (
     request, session, jsonify, render_template,
@@ -22,6 +22,45 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from . import bp
+
+# If i change this in teh futuer will need to udpate here
+
+def _period_bounds(period: str):
+    """
+    Returns (start_iso, end_iso or None) for filter periods.
+    """
+    now = datetime.now()
+    sod = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "today":
+        return (sod.isoformat(), None)
+    if period == "yesterday":
+        y0 = (sod - timedelta(days=1)).isoformat()
+        return (y0, sod.isoformat())
+    if period == "7d":
+        return ((sod - timedelta(days=7)).isoformat(), None)
+    if period == "30d":
+        return ((sod - timedelta(days=30)).isoformat(), None)
+    return (None, None)
+
+def _safe_is_critical(now, due_at):
+    """
+    Uses services.sla.is_critical() if present; falls back to due_at <= now.
+    """
+    try:
+        # helpers.py is under hestia_app.blueprints.tickets.helpers
+        # three dots = go up to hestia_app, then .services.sla
+        from ...services.sla import is_critical  # type: ignore
+        return is_critical(now, due_at)
+    except Exception:
+        pass
+
+    if not due_at:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(due_at))
+    except Exception:
+        return False
+    return dt <= now
 
 
 # ----------------- Reutiliza tus estados -----------------
