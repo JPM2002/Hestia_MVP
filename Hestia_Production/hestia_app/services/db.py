@@ -5,6 +5,8 @@ from contextlib import suppress
 from datetime import datetime
 import time
 import os
+from urllib.parse import urlsplit
+
 
 # ✅ FIX: use a relative import; do NOT import top-level "dsn"
 from .dsn import dsn_with_params, is_supabase_pooler, IS_SUPABASE_POOLER, BASE_DATABASE_URL
@@ -31,6 +33,9 @@ if USE_PG:
 
 PG_POOL = None  # created lazily on first use
 
+FALLBACK_DATABASE_URL = os.getenv('DATABASE_URL_DIRECT', '').strip()
+
+
 def _init_pg_pool():
     """Create the global pool once. Keep pool tiny when using Supabase pgbouncer (6543)."""
     global PG_POOL
@@ -41,15 +46,30 @@ def _init_pg_pool():
     if pg is None or pg_pool is None:
         raise RuntimeError("DATABASE_URL is set but psycopg2 isn't available (check requirements).")
     try:
-        dsn = dsn_with_params(DATABASE_URL)  # ✅ normalize DSN here
+        dsn = dsn_with_params(DATABASE_URL)
+        p = urlsplit(dsn)
+        masked = f"{p.scheme}://{p.hostname}:{p.port}{p.path}?{p.query}"
+        print(f"[BOOT] DB target host={p.hostname} port={p.port} pooler={IS_SUPABASE_POOLER} DSN={masked}", flush=True)
+
         maxconn_default = '2' if IS_SUPABASE_POOLER else '5'
         maxconn = int(os.getenv('PG_POOL_MAX', maxconn_default))
         PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=maxconn, dsn=dsn)
         print(f"[BOOT] Postgres pool initialized (maxconn={maxconn}, pooler={IS_SUPABASE_POOLER}).", flush=True)
         return PG_POOL
     except Exception as e:
-        print(f"[BOOT] Postgres pool init failed: {e}", flush=True)
+        print(f"[BOOT] Primary DSN failed: {e}", flush=True)
+        if FALLBACK_DATABASE_URL:
+            try:
+                dsn_fb = dsn_with_params(FALLBACK_DATABASE_URL)
+                pf = urlsplit(dsn_fb)
+                print(f"[BOOT] Trying fallback host={pf.hostname} port={pf.port}", flush=True)
+                PG_POOL = pg_pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=dsn_fb)
+                print("[BOOT] Fallback Postgres pool initialized.", flush=True)
+                return PG_POOL
+            except Exception as e2:
+                print(f"[BOOT] Fallback DSN failed: {e2}", flush=True)
         raise
+
 
 
 def _pg_conn_with_retry(tries: int = 2, backoff: float = 0.35):

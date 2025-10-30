@@ -2,15 +2,16 @@
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 import os
 
+
 # Single source of truth for the base DSN: read from environment
 # (Render → Environment → DATABASE_URL)
-BASE_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+BASE_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres.ucrnvqkmnanblfgefidq:Prodenvironemtn2002@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require").strip()
 
 def is_supabase_pooler(dsn: str) -> bool:
-    """Detect Supabase pooled endpoint (pgbouncer on 6543)."""
     if not dsn:
         return False
-    return "pooler.supabase.com" in dsn or ":6543" in dsn
+    host = urlsplit(dsn).hostname or ""
+    return host.endswith("pooler.supabase.com")
 
 # Public constant for quick checks elsewhere
 IS_SUPABASE_POOLER = is_supabase_pooler(BASE_DATABASE_URL)
