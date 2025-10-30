@@ -5,7 +5,7 @@ import os
 
 # Single source of truth for the base DSN: read from environment
 # (Render → Environment → DATABASE_URL)
-BASE_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres.ucrnvqkmnanblfgefidq:Prodenvironemtn2002@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require").strip()
+BASE_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 def is_supabase_pooler(dsn: str) -> bool:
     if not dsn:
