@@ -44,6 +44,17 @@
 <!-- Charts -->
 <div class="row g-3 mt-1">
   <div class="col-xl-4">
+        <!-- RIGHT: Último ticket -->
+    <div class="col-xl-8">
+      <div class="card h-100">
+        <div class="card-header bg-white fw-semibold">Último ticket</div>
+        <div class="card-body">
+          <div id="last-ticket-box">
+            <div class="text-center text-muted py-5">Cargando…</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="card mb-3">
       <div class="card-header bg-white fw-semibold">% por área</div>
       <div class="card-body" style="height:180px">
@@ -345,6 +356,61 @@
   const r = await fetch("{{ url_for('gerencia.api_gerencia_summary') }}");
   if(!r.ok) return;
   const j = await r.json();
+    // ---- Último ticket (most recent open)
+  (function renderLastTicket() {
+    const box = document.getElementById('last-ticket-box');
+    if (!box) return;
+
+    const t = (j.open_items || [])[0];
+    if (!t) {
+      box.innerHTML = `<div class="text-center text-muted py-5">Sin tickets abiertos</div>`;
+      return;
+    }
+
+    const badge = (p) => {
+      const cls =
+        p === 'URGENTE' ? 'bg-danger' :
+        p === 'ALTA'    ? 'bg-warning text-dark' :
+        p === 'MEDIA'   ? 'bg-info' :
+                          'bg-secondary';
+      return `<span class="badge ${cls}">${p || '—'}</span>`;
+    };
+
+    const safe = (s) => (s || '').toString();
+
+    box.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <div class="h4 mb-0">#${safe(t.id)}</div>
+        <div>${badge(t.prioridad)}</div>
+      </div>
+
+      <div class="mb-2">
+        <div class="text-muted small">Área · Ubicación</div>
+        <div class="fw-semibold">${safe(t.area) || '—'} · ${safe(t.ubicacion) || '—'}</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted small">Detalle</div>
+        <div class="text-break">${safe(t.detalle).slice(0, 260)}</div>
+      </div>
+
+      <div class="row g-2 small">
+        <div class="col-sm-4">
+          <div class="text-muted">Asignado</div>
+          <div>${safe(t.assigned_name) || '(sin asignar)'}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="text-muted">Transcurrido</div>
+          <div>${fmtHours(t.elapsed_min)}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="text-muted">Vence</div>
+          <div><small>${safe(t.due_at) || '—'}</small></div>
+        </div>
+      </div>
+    `;
+  })();
+
 
     // --- TTR por tipo (min)
   if (j.ttr_by_type) {
