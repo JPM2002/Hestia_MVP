@@ -25,8 +25,13 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 # Recepción: a quién notificar cuando queda PENDIENTE_APROBACION
 # Ej: "+56911111111,+56922222222"
 RECEPTION_PHONES = os.getenv("RECEPTION_PHONES", "+56s996107169")
+
+# --- Demo: Housekeeping notification (no DB writes) ---
+DEMO_MODE_HK = os.getenv("DEMO_MODE_HK", "off").lower()  # "off" | "on"
+DEMO_HK_DELAY_SECS = int(os.getenv("DEMO_HK_DELAY_SECS", "10"))
+DEMO_HK_TARGET_PHONE = os.getenv("DEMO_HK_TARGET_PHONE", "+18149253459").strip()  # optional override; else uses ASSIGNEE_HOUSEKEEPING_PHONE
 # --- Demo Overrides (deterministic WhatsApp flow for video; no DB writes) ---
-DEMO_MODE = os.getenv("DEMO_MODE", "hk_312").lower()   # "off" | "hk_312" | "mt_508"
+DEMO_MODE = os.getenv("DEMO_MODE", "off").lower()   # "off" | "hk_312" | "mt_508"
 DEMO_TICKET_ID = os.getenv("DEMO_TICKET_ID", "HK-1042")  # shown only in message, not persisted
 
 
@@ -144,6 +149,106 @@ DEMO_SCENARIOS = {
     }
 }
 
+DEMO_SCENARIOS = {
+    "hk_312": {
+        "room": "312",
+        "area": "HOUSEKEEPING",
+        "prioridad": "MEDIA",  # 👈 add this
+        "item": "toallas",
+        "default_first_name": "Luis",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    },
+    "mt_508": {
+        "room": "508",
+        "area": "MANTENCION",
+        "prioridad": "ALTA",  # 👈 optional for completeness
+        "item": "revisión del foco del baño",
+        "default_first_name": "Valeria",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    }
+}
+
+import threading  # at top of file if not present
+
+def _compose_demo_hk_body(sc: dict, full_name: str | None, room: str) -> str:
+    # Build a richer, instructive HK notice (no real ticket is created).
+    prioridad = sc.get("prioridad", "MEDIA")
+    item = sc.get("item", "toallas")
+    area = sc.get("area", "HOUSEKEEPING")
+    guest = (full_name or sc.get("default_first_name") or "").strip() or "Huésped"
+    now_local = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    return (
+        "🧹 *Housekeeping — Aviso de trabajo (DEMO)*\n"
+        f"{now_local}\n"
+        f"Ticket: {DEMO_TICKET_ID} (simulado)\n"
+        f"Área: {area} | Prioridad: {prioridad}\n"
+        f"Habitación: {room}\n"
+        f"Solicitud: {item} adicionales (hab. {room})\n"
+        "Instrucciones: Llevar *4 toallas* (2 extra por si acaso), revisar amenities y reponer si faltan. "
+        "Al recibir, marcar *En curso* y confirmar al huésped.\n"
+        "ETA/SLA: 10–15 min\n"
+        f"Huésped: {guest}\n"
+        "Origen: WhatsApp — DEMO (no hay ticket real creado)\n"
+    )
+
+def _schedule_demo_hk_notification(from_phone: str, first_text: str):
+    """
+    If DEMO_MODE_HK is on and user typed 'halo' (case-insensitive),
+    schedule a 10s delayed HK WhatsApp using latest known demo data.
+    """
+    if DEMO_MODE_HK == "off":
+        return
+
+    sc = DEMO_SCENARIOS.get(DEMO_MODE) or DEMO_SCENARIOS.get("hk_312")
+    if not sc:
+        return
+
+    # Capture early hints; we’ll refresh from session right before sending
+    initial_room = guess_room(first_text or "") or sc.get("room", "—")
+
+    def _run():
+        try:
+            time.sleep(DEMO_HK_DELAY_SECS)
+            # Pull latest known values from session (may include full name after confirm)
+            s = session_get(from_phone)  # safe even if using DB
+            demo = s.get("demo", {}) if isinstance(s, dict) else {}
+            room = demo.get("room") or initial_room or sc.get("room", "—")
+            full_name = demo.get("full_name") or demo.get("first_name") or sc.get("default_first_name")
+
+            # Target phone: explicit override > ASSIGNEE_HOUSEKEEPING_PHONE
+            to = (DEMO_HK_TARGET_PHONE or ASSIGNEE_HOUSEKEEPING_PHONE or "").strip()
+            if not to:
+                print("[DEMO] HK notify skipped: no target phone configured.", flush=True)
+                return
+
+            body = _compose_demo_hk_body(sc, full_name, room)
+            send_whatsapp(to, body)
+        except Exception as e:
+            print(f"[WARN] demo HK notify failed: {e}", flush=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+
 def _extract_possible_first_name(text: str) -> Optional[str]:
     """
     Try to extract a first name from phrases like:
@@ -197,6 +302,10 @@ def _demo_conversation(from_phone: str, text: str, audio_url: Optional[str]) -> 
         # detect first name from message or scenario default
         first_name = _extract_possible_first_name(text or "") or sc["default_first_name"]
 
+        # 🔔 NEW: if user wrote "halo", schedule the HK notification in 10s
+        if "halo" in (text or "").lower():
+            _schedule_demo_hk_notification(from_phone, text or "")
+
         # store and prompt
         s["demo_stage"] = "await_fullname"
         s["demo"] = {
@@ -229,6 +338,11 @@ def _demo_conversation(from_phone: str, text: str, audio_url: Optional[str]) -> 
         room=room
     )
     send_whatsapp(from_phone, final_msg)
+
+    # Keep session briefly if HK demo is ON; otherwise clear now
+    if DEMO_MODE_HK == "off":
+        session_clear(from_phone)
+
     session_clear(from_phone)
     return {"ok": True, "demo": True}
 
