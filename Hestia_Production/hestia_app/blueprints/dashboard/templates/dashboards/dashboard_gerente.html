@@ -373,9 +373,9 @@
   document.getElementById('g-sla-real').textContent = (avgSla || 0).toFixed(1) + '%';
 
   // SLA vs target (grouped bar)
-  const areas = (j.sla_vs_target || []).map(x => x.area);
-  const real  = (j.sla_vs_target || []).map(x => x.real);
-  const goal  = (j.sla_vs_target || []).map(x => x.objetivo);
+  const areas = (j.sla_vs_target_area || []).map(x => x.area);
+  const real  = (j.sla_vs_target_area || []).map(x => x.real);
+  const goal  = (j.sla_vs_target_area || []).map(x => x.objetivo);
   new Chart(document.getElementById('g-sla-vs'), {
     type: 'bar',
     data: { labels: areas, datasets: [
