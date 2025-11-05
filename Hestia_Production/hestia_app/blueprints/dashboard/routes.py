@@ -1,7 +1,6 @@
 from __future__ import annotations
 from flask import render_template, session, redirect, url_for, g
 from jinja2 import TemplateNotFound
-from ...blueprints.gerencia import get_assigned_tickets_for_area, get_assigned_tickets
 
 from . import bp
 
@@ -25,6 +24,10 @@ try:
         get_assigned_tickets, get_assigned_tickets_for_area, default_area_for_user
     )
 except Exception:
+    def get_assigned_tickets(user_id):  # fallback
+        return []
+    def get_assigned_tickets_for_area(user_id, area):  # fallback
+        return []
     def default_area_for_user():  # fallback
         u = session.get("user") or {}
         return (u.get("area") or "MANTENCION").upper()
