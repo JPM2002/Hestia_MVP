@@ -116,7 +116,7 @@ DEMO_SCENARIOS = {
         "item": "toallas",
         "default_first_name": "Luis",
         "confirm_template": (
-            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "¡Gracias por escribir a Hotel Santiago! Para ayudarte rápido, confirma por favor:\n"
             "• Nombre completo: {first_name} [Apellido]\n"
             "• Número de habitación: {room} (detectado del mensaje)"
         ),
@@ -132,7 +132,7 @@ DEMO_SCENARIOS = {
         "item": "revisión del foco del baño",
         "default_first_name": "Valeria",
         "confirm_template": (
-            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "¡Gracias por escribir a Hotel Santiago! Para ayudarte rápido, confirma por favor:\n"
             "• Nombre completo: {first_name} [Apellido]\n"
             "• Número de habitación: {room} (detectado del mensaje)"
         ),
