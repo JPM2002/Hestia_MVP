@@ -193,21 +193,21 @@ def _compose_demo_hk_body(sc: dict, full_name: str | None, room: str) -> str:
     prioridad = sc.get("prioridad", "MEDIA")
     item = sc.get("item", "toallas")
     area = sc.get("area", "HOUSEKEEPING")
-    guest = (full_name or sc.get("default_first_name") or "").strip() or "Huésped"
+    guest = "Luis Miguel"
     now_local = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     return (
-        "🧹 *Housekeeping — Aviso de trabajo (DEMO)*\n"
+        "🧹 *Housekeeping — Ticket Entrante \n"
         f"{now_local}\n"
-        f"Ticket: {DEMO_TICKET_ID} (simulado)\n"
+        f"Ticket: {DEMO_TICKET_ID} \n"
         f"Área: {area} | Prioridad: {prioridad}\n"
         f"Habitación: {room}\n"
         f"Solicitud: {item} adicionales (hab. {room})\n"
         "Instrucciones: Llevar *4 toallas* (2 extra por si acaso), revisar amenities y reponer si faltan. "
-        "Al recibir, marcar *En curso* y confirmar al huésped.\n"
+        "Al recibir, marcar *En curso* dentro de la aplicación y confirmar al huésped.\n"
         "ETA/SLA: 10–15 min\n"
         f"Huésped: {guest}\n"
-        "Origen: WhatsApp — DEMO (no hay ticket real creado)\n"
+
     )
 
 def _schedule_demo_hk_notification(from_phone: str, first_text: str):
