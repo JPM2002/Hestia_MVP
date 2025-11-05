@@ -27,7 +27,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 RECEPTION_PHONES = os.getenv("RECEPTION_PHONES", "+56s996107169")
 
 # --- Demo: Housekeeping notification (no DB writes) ---
-DEMO_MODE_HK = os.getenv("DEMO_MODE_HK", "off").lower()  # "off" | "on"
+DEMO_MODE_HK = os.getenv("DEMO_MODE_HK", "on").lower()  # "off" | "on"
 DEMO_HK_DELAY_SECS = int(os.getenv("DEMO_HK_DELAY_SECS", "10"))
 DEMO_HK_TARGET_PHONE = os.getenv("DEMO_HK_TARGET_PHONE", "+18149253459").strip()  # optional override; else uses ASSIGNEE_HOUSEKEEPING_PHONE
 # --- Demo Overrides (deterministic WhatsApp flow for video; no DB writes) ---
