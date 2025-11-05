@@ -127,19 +127,24 @@ def get_global_kpis():
             C[dk] += 1
     resolved_last7 = [{"date": d, "count": C[d]} for d in sorted(C.keys())]
 
-    # Críticos por prioridad (open & overdue)
+    # Críticos por prioridad (open & critical: due within 10m or overdue)
+    boundary = now + timedelta(minutes=10)
     crit_rows = fetchall(
         f"""
         SELECT prioridad, COUNT(1) AS c
         FROM Tickets
-        WHERE org_id=? AND estado IN ({','.join(['?']*len(OPEN_STATES))})
+        WHERE org_id=?
+          AND estado IN ({','.join(['?']*len(OPEN_STATES))})
           AND due_at IS NOT NULL
+          AND due_at <= ?
+        GROUP BY prioridad
         ORDER BY prioridad
         """,
-        (org_id, *OPEN_STATES)
+        (org_id, *OPEN_STATES, boundary.isoformat())
     )
     crit_labels = [r["prioridad"] for r in crit_rows]
     crit_values = [r["c"] for r in crit_rows]
+
 
     kpis = {
         "critical": int(critical),
