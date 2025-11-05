@@ -339,7 +339,7 @@
 
   // --- No asignados table
   try {
-    const r2 = await fetch("{{ url_for('api_gerencia_sin_asignar') }}");
+    const r2 = await fetch("{{ url_for('gerencia.api_gerencia_sin_asignar') }}");
     if (r2.ok) {
       const u = await r2.json();
       const Tu = document.getElementById('g-unassigned-tbody');
