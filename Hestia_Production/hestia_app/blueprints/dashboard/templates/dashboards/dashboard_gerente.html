@@ -301,7 +301,7 @@
   const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
   const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
 
-  const r = await fetch("{{ url_for('api_gerencia_summary') }}");
+  const r = await fetch("{{ url_for('gerencia.api_gerencia_summary') }}");
   if(!r.ok) return;
   const j = await r.json();
 
