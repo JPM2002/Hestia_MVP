@@ -11,6 +11,7 @@ DEFAULT_PERMS = {
         "ticket.transition.resume", "ticket.transition.finish",
     },
     "SUPERVISOR": {
+        "ticket.view.all",
         "ticket.view.area", "ticket.assign", "ticket.confirm", "ticket.create",
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
         "ticket.transition.resume", "ticket.transition.finish",
