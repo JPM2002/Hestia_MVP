@@ -16,7 +16,7 @@
     <div class="card stat-card">
       <div class="card-body">
         <div class="text-muted">Críticos</div>
-        <div class="display-5 fw-bold">{{ kpis.critical or 0 }}</div>
+        <div class="display-5 fw-bold">{{ 30 }}</div>  <!-- {{ kpis.critical or 0 }} -->
         <div class="small text-muted">Tickets en ventana crítica (SLA)</div>
       </div>
     </div>
@@ -260,6 +260,7 @@
   const tsValues = ts7.map(x => x.count);
 
   // Line: resolved last 7 days
+  if (!window.__HARD_TS_CHART__) {
   new Chart(document.getElementById('tsChart'), {
     type: 'line',
     data: {
@@ -275,7 +276,7 @@
       }]
     },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
-  });
+  });}
 
   // Pie: by area
   new Chart(document.getElementById('areaChart'), {
@@ -466,6 +467,56 @@
     </tr>`).join('');
   T.innerHTML = rows || `<tr><td colspan="7" class="text-center text-muted py-3">Sin abiertos</td></tr>`;
 })();
+</script>
+
+<!-- Demo-only, hardcoded chart for the video -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Ensure Chart.js is loaded
+  if (!window.Chart) return;
+
+  const el = document.getElementById('tsChart');
+  if (!el) return;
+
+  // Read palette from CSS variables with sensible fallback
+  const css = getComputedStyle(document.documentElement);
+  const ACCENT = css.getPropertyValue('--accent').trim() || '#41D4A8';
+
+  // Smooth gradient under the line
+  const ctx = el.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, el.height || 360);
+  grad.addColorStop(0, ACCENT + '55');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  // 🔒 Hardcoded labels & values (tweak as you like)
+  const labels = ["30 Oct", "31 Oct", "01 Nov", "02 Nov", "03 Nov", "04 Nov", "05 Nov"];
+  const values = [12, 17, 9, 22, 18, 26, 31];
+
+  // Flag so the bottom script doesn’t re-render this chart
+  window.__HARD_TS_CHART__ = true;
+
+  new Chart(el, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Resueltos',
+        data: values,
+        tension: 0.35,
+        borderColor: ACCENT,
+        backgroundColor: grad,
+        pointRadius: 3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { display: false } }
+    }
+  });
+});
 </script>
 
 {% endblock %}
