@@ -31,7 +31,7 @@ DEMO_MODE_HK = os.getenv("DEMO_MODE_HK", "on").lower()  # "off" | "on"
 DEMO_HK_DELAY_SECS = int(os.getenv("DEMO_HK_DELAY_SECS", "10"))
 DEMO_HK_TARGET_PHONE = os.getenv("DEMO_HK_TARGET_PHONE", "+18149253459").strip()  # optional override; else uses ASSIGNEE_HOUSEKEEPING_PHONE
 # --- Demo Overrides (deterministic WhatsApp flow for video; no DB writes) ---
-DEMO_MODE = os.getenv("DEMO_MODE", "off").lower()   # "off" | "hk_312" | "mt_508"
+DEMO_MODE = os.getenv("DEMO_MODE", "hk_312").lower()   # "off" | "hk_312" | "mt_508"
 DEMO_TICKET_ID = os.getenv("DEMO_TICKET_ID", "HK-1042")  # shown only in message, not persisted
 
 
