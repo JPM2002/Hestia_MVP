@@ -25,6 +25,10 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 # Recepción: a quién notificar cuando queda PENDIENTE_APROBACION
 # Ej: "+56911111111,+56922222222"
 RECEPTION_PHONES = os.getenv("RECEPTION_PHONES", "+56s996107169")
+# --- Demo Overrides (deterministic WhatsApp flow for video; no DB writes) ---
+DEMO_MODE = os.getenv("DEMO_MODE", "hk_312").lower()   # "off" | "hk_312" | "mt_508"
+DEMO_TICKET_ID = os.getenv("DEMO_TICKET_ID", "HK-1042")  # shown only in message, not persisted
+
 
 # ----------------------------- Copy (5-star tone) -----------------------------
 COPY = {
@@ -69,6 +73,165 @@ COPY = {
         "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\n"
         "Detalle: {detalle}\n{link}\n\nAcción en sistema: Aprobar / Editar."
 }
+
+DEMO_SCENARIOS = {
+    "hk_312": {
+        "room": "312",
+        "area": "HOUSEKEEPING",
+        "item": "toallas",
+        "default_first_name": "Luis",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    },
+    "mt_508": {
+        "room": "508",
+        "area": "MANTENCION",
+        "item": "revisión del foco del baño",
+        "default_first_name": "Valeria",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    }
+}
+
+DEMO_SCENARIOS = {
+    "hk_312": {
+        "room": "312",
+        "area": "HOUSEKEEPING",
+        "item": "toallas",
+        "default_first_name": "Luis",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    },
+    "mt_508": {
+        "room": "508",
+        "area": "MANTENCION",
+        "item": "revisión del foco del baño",
+        "default_first_name": "Valeria",
+        "confirm_template": (
+            "¡Gracias por escribir a Hestia! Para ayudarte rápido, confirma por favor:\n"
+            "• Nombre completo: {first_name} [Apellido]\n"
+            "• Número de habitación: {room} (detectado del mensaje)"
+        ),
+        "final_template": (
+            "Perfecto, {full_name}. Creamos el ticket {ticket_id} para {item} en la {room}.\n"
+            "Se contactará a los trabajadores necesarios\n"
+            "Tiempo estimado: 10–15 minutos. Te mandaremos un mensaje al finalizar ✅"
+        )
+    }
+}
+
+def _extract_possible_first_name(text: str) -> Optional[str]:
+    """
+    Try to extract a first name from phrases like:
+    'Soy Luis', 'me llamo Luis', 'mi nombre es Luis'.
+    Falls back to None.
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    pats = [
+        r"\bsoy\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\b",
+        r"\bme\s+llamo\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\b",
+        r"\bmi\s+nombre\s+es\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\b",
+    ]
+    for pat in pats:
+        m = re.search(pat, t, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).title()
+    # fallback: if the message is short and looks like a name
+    nm = extract_name(t)
+    return nm.split()[0] if nm else None
+
+def _looks_like_full_name(s: str) -> bool:
+    """
+    Accept 2–4 alphabetic words as a 'full name'.
+    """
+    if not s:
+        return False
+    parts = [p for p in s.strip().split() if p]
+    if not (2 <= len(parts) <= 4):
+        return False
+    return all(re.match(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$", p) for p in parts)
+
+def _demo_conversation(from_phone: str, text: str, audio_url: Optional[str]) -> Dict[str, Any]:
+    """
+    Deterministic demo flow for recording:
+    1) First inbound: reply asking for full name (pre-filled first name) and show room.
+    2) Next inbound: if it looks like a full name, send final (hardcoded ticket id). No DB ops.
+    """
+    sc = DEMO_SCENARIOS.get(DEMO_MODE)
+    if not sc:
+        return {"ok": True, "demo": False}
+
+    s = session_get(from_phone)
+    stage = s.get("demo_stage")
+
+    # Stage 1 — ask for full name with prefill + detected room
+    if stage != "await_fullname":
+        # detect room from message or use scenario default
+        room = guess_room(text or "") or sc["room"]
+        # detect first name from message or scenario default
+        first_name = _extract_possible_first_name(text or "") or sc["default_first_name"]
+
+        # store and prompt
+        s["demo_stage"] = "await_fullname"
+        s["demo"] = {
+            "room": room,
+            "first_name": first_name,
+            "item": sc["item"]
+        }
+        session_set(from_phone, s)
+
+        prompt = sc["confirm_template"].format(first_name=first_name, room=room)
+        send_whatsapp(from_phone, prompt)
+        return {"ok": True, "pending": True, "demo": True}
+
+    # Stage 2 — wait for full name
+    full_name = (text or "").strip()
+    if not _looks_like_full_name(full_name):
+        # re-prompt with the same template
+        room = s.get("demo", {}).get("room") or sc["room"]
+        first_name = s.get("demo", {}).get("first_name") or sc["default_first_name"]
+        prompt = sc["confirm_template"].format(first_name=first_name, room=room)
+        send_whatsapp(from_phone, prompt)
+        return {"ok": True, "pending": True, "demo": True}
+
+    # Send final confirmation (NO ticket creation)
+    room = s.get("demo", {}).get("room") or sc["room"]
+    final_msg = sc["final_template"].format(
+        full_name=full_name,
+        ticket_id=DEMO_TICKET_ID,
+        item=sc["item"],
+        room=room
+    )
+    send_whatsapp(from_phone, final_msg)
+    session_clear(from_phone)
+    return {"ok": True, "demo": True}
+
 
 def txt(key: str, **kwargs) -> str:
     s = COPY.get(key, "")
@@ -966,6 +1129,9 @@ def _render_summary(area: str, prio: str, room: Optional[str], detail: str) -> s
 
 # ----------------------------- Core processing -----------------------------
 def process_message(from_phone: str, text: str, audio_url: Optional[str]) -> Dict[str, Any]:
+    if DEMO_MODE != "off":
+        return _demo_conversation(from_phone, text, audio_url)
+    
     s = session_get(from_phone)
     cmd_raw = (text or "").strip()
     cmd     = cmd_raw.upper()
