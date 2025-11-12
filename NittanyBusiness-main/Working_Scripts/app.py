@@ -51,12 +51,22 @@ def _parse_phones_env(s: str) -> List[str]:
     if not s: return []
     return [re.sub(r"\D","",p) for p in re.split(r"[,; ]+", s) if p.strip()]
 
-HK_STAFF_SET = set(_parse_phones_env(os.getenv("HK_STAFF_PHONES","")))
+HK_STAFF_SET = set(_parse_phones_env(os.getenv("HK_STAFF_PHONES", "")))
+
+HARDCODED_HK = {
+    "56956326272",   # Andrés (CL)
+    "56975620537",   # Borisbo (CL)
+    "4915221317651", # Javier (DE: 015221317651 -> 49 15221317651)
+}
+
 if not HK_STAFF_SET:
-    # Hardcoded fallback examples; replace with your real phones
-    HK_STAFF_SET = {
-        re.sub(r"\D","",ASSIGNEE_HOUSEKEEPING_PHONE or ""),
-    } - {""}
+    fallback = re.sub(r"\D", "", ASSIGNEE_HOUSEKEEPING_PHONE or "")
+    HK_STAFF_SET = ({fallback} - {""}) | HARDCODED_HK
+else:
+    HK_STAFF_SET |= HARDCODED_HK
+
+HK_STAFF_SET.discard("")  # safety
+
 
 # Demo Housekeeping confirm flow (kept, but can be turned off)
 DEMO_MODE_HK        = os.getenv("DEMO_MODE_HK", "off").lower()   # "on" | "off"
