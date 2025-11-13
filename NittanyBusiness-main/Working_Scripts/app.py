@@ -220,7 +220,9 @@ def is_smalltalk(text: str) -> bool:
     t = (text or "").strip().lower()
     if not t:
         return False
-    return any(t == w or t.startswith(w) for w in GREETING_WORDS)
+    # Only treat as smalltalk if the ENTIRE message is just a greeting
+    return any(t == w for w in GREETING_WORDS)
+
 
 
 def looks_like_command(s: str) -> bool:
@@ -230,22 +232,62 @@ def looks_like_command(s: str) -> bool:
 
 def extract_name(text: str) -> Optional[str]:
     """
-    Accept as a name only if:
-      - not a greeting/smalltalk
-      - 1..4 words, each alphabetic (allows accents), no digits
+    Extract a likely name.
+    Accepts:
+      - plain: "Javier", "Luis Miguel"
+      - with intro: "soy Javier", "me llamo Javier", "mi nombre es Javier"
+      - with greeting: "hola soy Javier", "buenas, me llamo Javier"
+    Rejects:
+      - commands
+      - messages that are only greetings
+      - strings with digits or too many tokens
     """
-    t = (text or "").strip()
-    if not t or looks_like_command(t) or is_smalltalk(t):
+    t_original = (text or "").strip()
+    if not t_original or looks_like_command(t_original):
         return None
-    if any(ch.isdigit() for ch in t):
+
+    t = t_original.lower()
+
+    # If it's only a greeting, don't treat as name
+    if is_smalltalk(t_original):
         return None
-    parts = t.split()
+
+    # Strip common intros
+    intro_patterns = [
+        "soy ",
+        "me llamo ",
+        "mi nombre es ",
+    ]
+
+    candidate = t_original
+    for p in intro_patterns:
+        if p in t:
+            idx = t.index(p) + len(p)
+            candidate = t_original[idx:].strip()
+            break
+
+    # Strip leading greeting if present: "hola Javier", "buenas Javier"
+    for gw in GREETING_WORDS:
+        gw_l = gw.lower()
+        if candidate.lower().startswith(gw_l + " "):
+            candidate = candidate[len(gw_l):].strip()
+            break
+
+    # Now validate candidate as "1–4 alphabetic words, no digits"
+    if any(ch.isdigit() for ch in candidate):
+        return None
+
+    parts = candidate.split()
     if not (1 <= len(parts) <= 4):
         return None
+
     for p in parts:
         if not re.match(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$", p):
             return None
-    return t.title()
+
+    # Normalize capitalization
+    return " ".join(w.capitalize() for w in parts)
+
 
 
 def _render_summary(area: str, prio: str, room: Optional[str], detail: str) -> str:
