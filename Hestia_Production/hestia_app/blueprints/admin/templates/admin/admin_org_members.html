@@ -7,12 +7,17 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary" href="{{ url_for('admin.admin_super') }}">Superadmin</a>
     <a class="btn btn-outline-secondary" href="{{ url_for('admin.admin_hotels') }}">Hoteles</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('dashboard.index') }}">Volver al dashboard</a>
   </div>
 </div>
 
 <div class="card shadow-sm mb-3">
   <div class="card-header bg-white fw-semibold">Agregar miembro</div>
   <div class="card-body">
+    <p class="text-muted small">
+      Si el email no existe en la plataforma, se creará un usuario nuevo con el rol base indicado.
+      Si ya existe, solo se actualizará su rol dentro de esta organización.
+    </p>
     <form method="post" action="{{ url_for('admin.admin_org_members_add', org_id=org.id) }}" class="row g-2">
       <div class="col-md-3">
         <input class="form-control" name="email" type="email" placeholder="email@hotel.com" required>
@@ -26,6 +31,7 @@
           <option value="SUPERVISOR">SUPERVISOR</option>
           <option value="TECNICO">TECNICO</option>
         </select>
+        <small class="text-muted small">Rol base (Users.role)</small>
       </div>
       <div class="col-md-2">
         <select class="form-select" name="org_role">
@@ -34,6 +40,7 @@
           <option value="RECEPCION">RECEPCION</option>
           <option value="TECNICO">TECNICO</option>
         </select>
+        <small class="text-muted small">Rol en esta organización</small>
       </div>
       <div class="col-md-2">
         <select class="form-select" name="default_hotel_id">
@@ -67,7 +74,13 @@
     <table class="table mb-0">
       <thead class="table-light">
         <tr>
-          <th>Usuario</th><th>Email</th><th>Rol base</th><th>Rol en org</th><th>Área</th><th>Hotel por defecto</th><th></th>
+          <th>Usuario</th>
+          <th>Email</th>
+          <th>Rol base</th>
+          <th>Rol en org</th>
+          <th>Área</th>
+          <th>Hotel por defecto</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -88,7 +101,9 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="text-center text-muted py-4">Sin miembros</td></tr>
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">Sin miembros</td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

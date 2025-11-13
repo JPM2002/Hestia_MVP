@@ -2,33 +2,113 @@
 {% block title %}Cambiar contexto (SUDO){% endblock %}
 
 {% block content %}
-<h2 class="mb-4">Cambiar contexto (SUDO)</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Cambiar contexto (SUDO)</h2>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.admin_super') }}">Superadmin</a>
+</div>
 
-<form method="post" action="{{ url_for('admin.sudo_form') }}" class="row g-3">
-  <div class="col-md-6">
-    <label class="form-label">Organización</label>
-    <select name="org_id" class="form-select">
-      <option value="">-- seleccionar --</option>
-      {% for org in orgs %}
-        <option value="{{ org.id }}" {% if org.id == current.org_id %}selected{% endif %}>
-          {{ org.name }}
-        </option>
-      {% endfor %}
-    </select>
+<div class="row g-3">
+  <!-- Contexto actual -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Contexto actual</div>
+      <div class="card-body">
+        {# Buscar org actual por id #}
+        {% set current_org = None %}
+        {% for org in orgs %}
+          {% if org.id == current.org_id %}
+            {% set current_org = org %}
+          {% endif %}
+        {% endfor %}
+
+        {# Buscar hotel actual por id (en la lista de hoteles del org actual) #}
+        {% set current_hotel = None %}
+        {% for h in hotels %}
+          {% if h.id == current.hotel_id %}
+            {% set current_hotel = h %}
+          {% endif %}
+        {% endfor %}
+
+        <p class="mb-2">
+          <span class="text-muted small d-block">Organización</span>
+          {% if current_org %}
+            <strong>{{ current_org.name }}</strong>
+            <span class="text-muted">(#{{ current_org.id }})</span>
+          {% elif current.org_id %}
+            ID {{ current.org_id }}
+          {% else %}
+            <span class="text-muted">No seleccionada</span>
+          {% endif %}
+        </p>
+
+        <p class="mb-3">
+          <span class="text-muted small d-block">Hotel</span>
+          {% if current_hotel %}
+            <strong>{{ current_hotel.name }}</strong>
+            <span class="text-muted">(#{{ current_hotel.id }})</span>
+          {% elif current.hotel_id %}
+            ID {{ current.hotel_id }}
+          {% else %}
+            <span class="text-muted">No seleccionado</span>
+          {% endif %}
+        </p>
+
+        <div class="d-flex flex-wrap gap-2">
+          {% if current.org_id %}
+            <a class="btn btn-sm btn-outline-primary"
+               href="{{ url_for('admin.admin_org_members', org_id=current.org_id) }}">
+              Ver miembros de la org
+            </a>
+          {% endif %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.admin_hotels') }}">
+            Ver todos los hoteles
+          </a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.admin_orgs') }}">
+            Ver todas las orgs
+          </a>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="col-md-6">
-    <label class="form-label">Hotel</label>
-    <select name="hotel_id" class="form-select">
-      <option value="">-- auto --</option>
-      {% for h in hotels %}
-        <option value="{{ h.id }}" {% if h.id == current.hotel_id %}selected{% endif %}>
-          {{ h.name }}
-        </option>
-      {% endfor %}
-    </select>
+
+  <!-- Formulario para cambiar contexto -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Seleccionar nuevo contexto</div>
+      <div class="card-body">
+        <p class="text-muted small">
+          El contexto se usa para filtrar tickets, dashboards y vistas de hotel.
+          Si no eliges un hotel, se seleccionará automáticamente el primero de la organización.
+        </p>
+        <form method="post" action="{{ url_for('admin.sudo_set') }}" class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Organización</label>
+            <select name="org_id" class="form-select">
+              <option value="">-- seleccionar --</option>
+              {% for org in orgs %}
+                <option value="{{ org.id }}" {% if org.id == current.org_id %}selected{% endif %}>
+                  {{ org.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Hotel</label>
+            <select name="hotel_id" class="form-select">
+              <option value="">-- auto --</option>
+              {% for h in hotels %}
+                <option value="{{ h.id }}" {% if h.id == current.hotel_id %}selected{% endif %}>
+                  {{ h.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-brand">Actualizar contexto</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
-  <div class="col-12">
-    <button class="btn btn-brand">Actualizar contexto</button>
-  </div>
-</form>
+</div>
 {% endblock %}

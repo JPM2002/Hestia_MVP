@@ -11,22 +11,98 @@
   </div>
 </div>
 
-<div class="row g-3">
+<div class="row g-3 mb-3">
+  <!-- Inicialización global -->
   <div class="col-lg-5">
     <div class="card shadow-sm">
-      <div class="card-header bg-white fw-semibold">Crear organización</div>
+      <div class="card-header bg-white fw-semibold">
+        Inicialización de plataforma
+      </div>
       <div class="card-body">
-        <form method="post" class="row g-2">
+        <p class="text-muted small mb-3">
+          Inicializa / actualiza catálogos globales (roles, permisos, tipos de ubicación, tags y tipos de ticket).
+          Es seguro ejecutar este botón más de una vez.
+        </p>
+        <form method="post" action="{{ url_for('admin.admin_bootstrap_global') }}">
+          <button class="btn btn-brand">
+            Inicializar catálogos base
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wizard Org + Hotel + Gerente -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        Crear organización + primer hotel + gerente
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('admin.admin_bootstrap_org') }}" class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Nombre de la organización</label>
+            <input type="text" class="form-control" name="org_name" placeholder="Ej: Cadena Demo" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Nombre del hotel</label>
+            <input type="text" class="form-control" name="hotel_name" placeholder="Ej: Hotel Demo Centro" required>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Email del gerente</label>
+            <input type="email" class="form-control" name="gerente_email" placeholder="gerente@hotel.com" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Usuario del gerente</label>
+            <input type="text" class="form-control" name="gerente_username" placeholder="gerente_demo" required>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Password (opcional)</label>
+            <input type="text" class="form-control" name="gerente_password" placeholder="Por defecto: demo123">
+          </div>
+
+          <div class="col-md-6 d-flex align-items-end">
+            <button class="btn btn-brand w-100">
+              Crear Org + Hotel + Gerente
+            </button>
+          </div>
+
+          <div class="col-12">
+            <p class="text-muted small mb-0">
+              Esto creará la organización, su primer hotel, el usuario GERENTE (si no existe),
+              la membresía en la org, reglas SLA base y ubicaciones mínimas (hotel raíz, piso 1, habitación 101).
+            </p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <!-- Crear organización (simple / legacy) -->
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Crear organización (simple)</div>
+      <div class="card-body">
+        <p class="text-muted small">
+          Crea solo la organización (sin hotel ni gerente asociado). Úsalo para pruebas rápidas o para
+          casos donde el hotel se configurará después manualmente.
+        </p>
+        <form method="post" action="{{ url_for('admin.admin_super') }}" class="row g-2">
           <div class="col-8">
             <input type="text" class="form-control" name="org_name" placeholder="Nombre de la organización" required>
           </div>
           <div class="col-4">
-            <button class="btn btn-brand w-100">Crear</button>
+            <button class="btn btn-outline-primary w-100">Crear</button>
           </div>
         </form>
       </div>
     </div>
 
+    <!-- Hoteles recientes -->
     <div class="card shadow-sm mt-3">
       <div class="card-header bg-white fw-semibold">Hoteles recientes</div>
       <ul class="list-group list-group-flush">
@@ -41,7 +117,7 @@
           </a>
         </li>
         {% else %}
-          <li class="list-group-item text-muted">Sin hoteles</li>
+        <li class="list-group-item text-muted">Sin hoteles</li>
         {% endfor %}
       </ul>
     </div>
@@ -54,7 +130,12 @@
         <table class="table mb-0">
           <thead class="table-light">
             <tr>
-              <th>ID</th><th>Nombre</th><th>Hoteles</th><th>Miembros</th><th>Tickets</th><th>Acciones</th>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Hoteles</th>
+              <th>Miembros</th>
+              <th>Tickets</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -71,7 +152,9 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="text-center text-muted py-4">Sin organizaciones</td></tr>
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">Sin organizaciones</td>
+            </tr>
           {% endfor %}
           </tbody>
         </table>
