@@ -767,7 +767,12 @@ def send_whatsapp(to: str, body: str):
     If META creds are missing, just print to console.
     Cloud API expects 'to' in E.164 digits, no leading '+'.
     """
-    to_clean = to.replace("whatsapp:", "").lstrip("+")
+    to_clean = (to or "").replace("whatsapp:", "").lstrip("+")
+    if not to_clean:
+        # Avoid calling Meta with empty 'to' (causes 400). Log and skip.
+        print(f"[WARN] send_whatsapp called with empty recipient; skipping. body={body[:120]!r}", flush=True)
+        return
+
     msg = f"[OUT → {to_clean}] {body}"
     print(msg, flush=True)
 
