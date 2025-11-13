@@ -100,20 +100,20 @@
 
         </td>
         <td class="text-nowrap">
-          <form class="d-inline" method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+          <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
             <button class="btn btn-sm btn-outline-primary" {% if t.estado!='PENDIENTE' and t.estado!='ASIGNADO' %}disabled{% endif %}>Aceptar</button>
           </form>
           <form class="d-inline" method="post" action="{{ url_for('ticket_start', id=t.id) }}">
             <button class="btn btn-sm btn-outline-success" {% if t.estado not in ['ACEPTADO','PAUSADO'] %}disabled{% endif %}>Iniciar</button>
           </form>
-          <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+          <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
             <input type="hidden" name="motivo" value="Pausa operativa">
             <button class="btn btn-sm btn-outline-warning" {% if t.estado!='EN_CURSO' %}disabled{% endif %}>Pausar</button>
           </form>
           <form class="d-inline" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
             <button class="btn btn-sm btn-outline-secondary" {% if t.estado!='PAUSADO' %}disabled{% endif %}>Reanudar</button>
           </form>
-          <form class="d-inline" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+          <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_finish', id=t.id) }}">
             <button class="btn btn-sm btn-outline-dark" {% if t.estado not in ['EN_CURSO','ACEPTADO'] %}disabled{% endif %}>Resolver</button>
           </form>
         </td>
