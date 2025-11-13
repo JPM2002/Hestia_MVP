@@ -1539,7 +1539,7 @@ def _hk_show_today_summary(from_phone: str, s: Dict[str, Any]):
 
     send_whatsapp(from_phone, "\n".join(lines))
 
-    @app.route("/webhook/whatsapp", methods=["GET", "POST"])
+@app.route("/webhook/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     # 1) Verification (Meta calls GET once when you set up webhook)
     if request.method == "GET":
@@ -1764,3 +1764,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     session_clear(from_phone)
     send_whatsapp(from_phone, txt("greet"))
 
+if __name__ == "__main__":
+    ensure_runtime_tables()  # safe to call again
+    print(f"[BOOT] WhatsApp webhook starting on port {PORT} (DB={'PG' if using_pg() else 'SQLite'})", flush=True)
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
