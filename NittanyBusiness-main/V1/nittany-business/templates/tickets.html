@@ -7,7 +7,7 @@
   <a class="btn btn-accent" href="{{ url_for('tickets.ticket_create') }}">Nuevo ticket</a>
 </div>
 
-<form class="row g-2 mb-3" method="get" action="{{ url_for('tickets') }}">
+<form class="row g-2 mb-3" method="get" action="{{ url_for('tickets.tickets') }}">
   <div class="col-sm-4">
     <input class="form-control" type="search" name="q" placeholder="Buscar detalle / ubicación / huésped"
            value="{{ filters.q or '' }}">

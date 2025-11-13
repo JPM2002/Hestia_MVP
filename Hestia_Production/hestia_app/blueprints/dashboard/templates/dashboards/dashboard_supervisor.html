@@ -5,8 +5,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="page-title mb-0">Área: {{ kpis.area or 'Supervisor' }}</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
-    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-outline-dark">Ver tickets</a>
+    <a href="{{ url_for('tickets.ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets.tickets', area=kpis.area) }}" class="btn btn-outline-dark">Ver tickets</a>
   </div>
 </div>
 
@@ -89,7 +89,7 @@
 <div class="card mt-3" id="open-card">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <span>Tickets abiertos ({{ kpis.area or 'área' }})</span>
-    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
+    <a href="{{ url_for('tickets.tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
   </div>
 
   <div class="table-responsive">
@@ -113,7 +113,7 @@
           </td>
           <td class="text-end">
             {% if techs %}
-              <form class="d-inline" method="post" action="{{ url_for('ticket_reassign', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_reassign', id=t.id) }}">
                 <select name="assigned_to" class="form-select form-select-sm d-inline w-auto align-text-top me-1">
                   {% for tech in techs %}
                     <option value="{{ tech.id }}" {% if (t.assigned_to|string) == (tech.id|string) %}selected{% endif %}>
@@ -126,7 +126,7 @@
             {% else %}
               <button class="btn btn-sm btn-outline-secondary me-1" disabled>Reasignar</button>
             {% endif %}
-            <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
               <input type="hidden" name="motivo" value="Pausa operativa">
               <button class="btn btn-sm btn-outline-warning">Pausar</button>
             </form>
