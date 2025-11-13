@@ -72,13 +72,13 @@
             <li class="nav-item"><a class="nav-link" href="{{ url_for('tickets.ticket_create') }}">Nuevo ticket</a></li>
           {% endif %}
           {% if session.get('user', {}).get('is_superadmin') %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.admin_home') }}">Sudo</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.admin_super') }}">Sudo</a></li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown">Admin</a>
               <ul class="dropdown-menu">
                 <!-- Hasta que implementes vistas específicas, apunta al home de admin -->
-                <li><a class="dropdown-item" href="{{ url_for('admin.admin_home') }}">Organizaciones</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin.admin_home') }}">Hoteles</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin.admin_super') }}">Organizaciones</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin.admin_super') }}">Hoteles</a></li>
               </ul>
             </li>
           {% endif %}
