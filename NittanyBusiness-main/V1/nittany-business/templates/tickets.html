@@ -110,7 +110,7 @@
             <input type="hidden" name="motivo" value="Pausa operativa">
             <button class="btn btn-sm btn-outline-warning" {% if t.estado!='EN_CURSO' %}disabled{% endif %}>Pausar</button>
           </form>
-          <form class="d-inline" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+          <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
             <button class="btn btn-sm btn-outline-secondary" {% if t.estado!='PAUSADO' %}disabled{% endif %}>Reanudar</button>
           </form>
           <form class="d-inline" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">

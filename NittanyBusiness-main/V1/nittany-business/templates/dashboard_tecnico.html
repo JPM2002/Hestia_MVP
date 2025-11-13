@@ -74,12 +74,12 @@
           <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at|short_dt if t.due_at else '-' }}</small></td>
           <td class="text-nowrap">
             {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
-              <form class="d-inline" method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
                 <button class="btn btn-sm btn-outline-primary">Aceptar</button>
               </form>
             {% endif %}
             {% if t.estado in ['ACEPTADO','PAUSADO'] %}
-              <form class="d-inline" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
                 <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
               </form>
             {% endif %}

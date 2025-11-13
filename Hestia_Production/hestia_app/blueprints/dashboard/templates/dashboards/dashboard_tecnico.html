@@ -79,7 +79,7 @@
               </form>
             {% endif %}
             {% if t.estado in ['ACEPTADO','PAUSADO'] %}
-              <form class="d-inline" method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
                 <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
               </form>
             {% endif %}
