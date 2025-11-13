@@ -51,6 +51,7 @@ DEMO_HK_CONFIRM_KEYWORD = os.getenv("DEMO_HK_CONFIRM_KEYWORD", "confirmar ticket
 HARDCODED_HK_PHONES: List[str] = [
     "+56983001018",  # Pedro (example)
     "+56956326272",  # Andrés (example)
+    "+4915221317651" # Javier (example)
 ]
 
 
