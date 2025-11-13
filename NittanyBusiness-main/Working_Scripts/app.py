@@ -1538,3 +1538,229 @@ def _hk_show_today_summary(from_phone: str, s: Dict[str, Any]):
         lines.append("Hoy no se registran tickets resueltos ni activos a tu nombre.")
 
     send_whatsapp(from_phone, "\n".join(lines))
+
+    @app.route("/webhook/whatsapp", methods=["GET", "POST"])
+def whatsapp_webhook():
+    # 1) Verification (Meta calls GET once when you set up webhook)
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+
+        if mode == "subscribe" and token == WHATSAPP_VERIFY_TOKEN:
+            # Return the challenge so Meta accepts the webhook
+            return challenge, 200
+        return "Verification failed", 403
+
+    # 2) Incoming messages (Meta calls POST for each message)
+    from_phone, text, audio_url = _normalize_inbound(request)
+
+    # Optional: dedupe by WhatsApp message id (wamid) if present
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        data = {}
+
+    wamid = None
+    try:
+        entry = (data.get("entry") or [])[0]
+        change = (entry.get("changes") or [])[0]
+        msg = (change["value"].get("messages") or [])[0]
+        wamid = msg.get("id")
+    except Exception:
+        pass
+
+    if wamid:
+        if wamid_seen_before(wamid):
+            # Already processed this message, acknowledge again
+            return jsonify({"status": "duplicate"}), 200
+        mark_wamid_seen(wamid)
+
+    # If demo HK flow wants to consume this message, handle it
+    demo_result = _demo_hk_try_handle_or_schedule(from_phone, text)
+    if demo_result is not None:
+        # Already handled by demo flow
+        return jsonify({"status": "ok", "demo": demo_result}), 200
+
+    # Decide if this is HK worker or guest
+    if is_hk_phone(from_phone):
+        _handle_hk_message(from_phone, text)
+    else:
+        _handle_guest_message(from_phone, text, audio_url)
+
+    return jsonify({"status": "ok"}), 200
+
+def _handle_hk_message(from_phone: str, text: str):
+    s = session_get(from_phone)
+    t = (text or "").strip().upper()
+
+    # Basic menu navigation
+    if t in {"M", "MENU"}:
+        _hk_send_main_menu(from_phone)
+        s["hk_state"] = "MENU"
+        session_set(from_phone, s)
+        return
+
+    state = s.get("hk_state") or "MENU"
+
+    if state == "MENU":
+        if t == "1":
+            _hk_show_my_open_tasks(from_phone, s)
+        elif t == "2":
+            _hk_show_available_tasks(from_phone, s)
+        elif t == "3":
+            _hk_send_room_area_menu(from_phone)
+            s["hk_state"] = "ROOM_AREA_MENU"
+            session_set(from_phone, s)
+        elif t == "4":
+            _hk_show_today_summary(from_phone, s)
+        elif t == "5":
+            send_whatsapp(
+                from_phone,
+                "Si necesitas apoyo del supervisor, por favor comunícate por el canal interno habitual."
+            )
+        else:
+            _hk_send_main_menu(from_phone)
+        return
+
+    if state == "ROOM_AREA_MENU":
+        if t == "1":
+            send_whatsapp(from_phone, "Envía el número de habitación (por ejemplo 312).")
+            s["hk_state"] = "ASK_ROOM"
+            session_set(from_phone, s)
+            return
+        elif t == "2":
+            _hk_list_areas(from_phone)
+            s["hk_state"] = "ASK_AREA"
+            session_set(from_phone, s)
+            return
+        else:
+            _hk_send_main_menu(from_phone)
+            s["hk_state"] = "MENU"
+            session_set(from_phone, s)
+            return
+
+    if state == "ASK_ROOM":
+        room = re.sub(r"\D", "", text or "")
+        if not room:
+            send_whatsapp(from_phone, "No entendí la habitación. Envía solo el número, por ejemplo 312.")
+            return
+        _hk_list_tasks_by_room(from_phone, s, room)
+        # Stay in ASK_ROOM so they can query again
+        return
+
+    if state == "ASK_AREA":
+        area = (text or "").strip().upper()
+        if area in {"HOUSEKEEPING", "MANTENCION", "ROOMSERVICE"}:
+            _hk_list_tasks_by_area(from_phone, s, area)
+            # Stay in ASK_AREA so they can query again
+            return
+        send_whatsapp(
+            from_phone,
+            "Área no válida. Usa HOUSEKEEPING, MANTENCION o ROOMSERVICE, o escribe *M* para volver al menú."
+        )
+        return
+
+    # Fallback: if state unknown, show menu
+    _hk_send_main_menu(from_phone)
+    s["hk_state"] = "MENU"
+    session_set(from_phone, s)
+
+
+def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
+    s = session_get(from_phone)
+
+    # If audio, optionally transcribe and treat as text
+    if audio_url and not text:
+        transcript = transcribe_audio(audio_url)
+        text = transcript or ""
+
+    t = (text or "").strip()
+
+    # Very simple guest flow example:
+    # You can replace this with your full DFA (need_name → need_room → need_detail → confirm, etc.)
+    stage = s.get("stage") or "need_name"
+
+    if stage == "need_name":
+        name = extract_name(t)
+        if not name:
+            if _should_prompt(s, "ask_name"):
+                send_whatsapp(from_phone, txt("ask_name"))
+            session_set(from_phone, s)
+            return
+        s["guest_name"] = name
+        s["stage"] = "need_room"
+        session_set(from_phone, s)
+        send_whatsapp(from_phone, txt("ask_room", name=name))
+        return
+
+    if stage == "need_room":
+        room = guess_room(t)
+        if not room:
+            if _should_prompt(s, "ask_room"):
+                send_whatsapp(from_phone, txt("ask_room", name=s.get("guest_name", "")))
+            session_set(from_phone, s)
+            return
+        s["room"] = room
+        s["stage"] = "need_detail"
+        session_set(from_phone, s)
+        if _should_prompt(s, "ask_detail"):
+            send_whatsapp(from_phone, txt("ask_detail"))
+        return
+
+    if stage == "need_detail":
+        detalle = t
+        if not detalle:
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, txt("ask_detail"))
+            session_set(from_phone, s)
+            return
+
+        s["detalle"] = detalle
+        s["area"] = guess_area(detalle)
+        s["prioridad"] = guess_priority(detalle)
+
+        summary = ensure_summary_in_session(s)
+        s["stage"] = "confirm"
+        session_set(from_phone, s)
+
+        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        return
+
+    if stage == "confirm":
+        if is_yes(t):
+            payload = {
+                "org_id": ORG_ID_DEFAULT,
+                "hotel_id": HOTEL_ID_DEFAULT,
+                "area": s.get("area", "MANTENCION"),
+                "prioridad": s.get("prioridad", "MEDIA"),
+                "detalle": s.get("detalle", ""),
+                "canal_origen": "huesped_whatsapp",
+                "ubicacion": s.get("room"),
+                "huesped_id": from_phone,
+                "huesped_phone": from_phone,
+                "huesped_nombre": s.get("guest_name", ""),
+            }
+            ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+            send_whatsapp(
+                from_phone,
+                txt("ticket_created", guest=s.get("guest_name", "Huésped"), ticket_id=ticket_id)
+            )
+            _notify_reception_pending(
+                ticket_id,
+                payload["area"],
+                payload["prioridad"],
+                payload["detalle"],
+                payload.get("ubicacion"),
+            )
+            session_clear(from_phone)
+            return
+        else:
+            send_whatsapp(from_phone, txt("edit_help"))
+            # You could add parsing of AREA/PRIORIDAD/HAB/DETALLE commands here
+            return
+
+    # Fallback if stage unknown
+    session_clear(from_phone)
+    send_whatsapp(from_phone, txt("greet"))
+
