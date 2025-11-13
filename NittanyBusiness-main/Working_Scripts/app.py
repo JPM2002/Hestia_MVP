@@ -767,12 +767,13 @@ def send_whatsapp(to: str, body: str):
     If META creds are missing, just print to console.
     Cloud API expects 'to' in E.164 digits, no leading '+'.
     """
-    to_clean = (to or "").replace("whatsapp:", "").lstrip("+")
-    if not to_clean:
-        # Avoid calling Meta with empty 'to' (causes 400). Log and skip.
-        print(f"[WARN] send_whatsapp called with empty recipient; skipping. body={body[:120]!r}", flush=True)
+    # NEW: guard against empty recipient
+    to = (to or "").strip()
+    if not to:
+        print(f"[WARN] send_whatsapp called with empty 'to'. Skipping. body={body!r}", flush=True)
         return
 
+    to_clean = to.replace("whatsapp:", "").lstrip("+")
     msg = f"[OUT → {to_clean}] {body}"
     print(msg, flush=True)
 
@@ -1560,6 +1561,11 @@ def whatsapp_webhook():
     # 2) Incoming messages (Meta calls POST for each message)
     from_phone, text, audio_url = _normalize_inbound(request)
 
+    # NEW: ignore status / malformed webhooks that don't have a real user message
+    if not from_phone and not text and not audio_url:
+        print("[INFO] Webhook without user message (status or malformed). Ignoring.", flush=True)
+        return jsonify({"status": "ignored", "reason": "no_message"}), 200
+
     # Optional: dedupe by WhatsApp message id (wamid) if present
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -1594,6 +1600,7 @@ def whatsapp_webhook():
         _handle_guest_message(from_phone, text, audio_url)
 
     return jsonify({"status": "ok"}), 200
+
 
 def _handle_hk_message(from_phone: str, text: str):
     s = session_get(from_phone)
