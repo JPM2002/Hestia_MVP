@@ -1,3 +1,4 @@
+# hestia_app/blueprints/admin/__init__.py
 from flask import Blueprint
 
 # Keep your templates where they are:

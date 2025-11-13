@@ -1,3 +1,4 @@
+# hestia_app/blueprints/admin/routes.py
 from datetime import datetime
 from flask import render_template, request, redirect, url_for, flash, session
 
@@ -6,6 +7,8 @@ from . import bp
 # ---- Adjust these imports to your actual helpers/modules ----
 from hestia_app.core.rbac import is_superadmin
 from hestia_app.services.db import fetchall, fetchone, execute
+from hestia_app.services.bootstrap import bootstrap_global_catalogs, create_org_with_defaults
+
 try:
     # if you have a real password hasher
     from hestia_app.blueprints.auth.routes import hp  # noqa: F401
@@ -22,16 +25,22 @@ def admin_super():
         # Adjust endpoint if your dashboard uses a different name, e.g. "dashboard.index"
         return redirect(url_for("dashboard.index"))
 
-    # quick-create org from this page
-    if request.method == "POST":
+    # quick-create org (modo legacy desde esta página)
+    if request.method == "POST" and request.form.get("org_name") and not (
+        request.form.get("hotel_name") or request.form.get("gerente_email")
+    ):
         name = (request.form.get("org_name") or "").strip()
         if name:
-            execute("INSERT INTO Orgs(name, created_at) VALUES(?, ?)", (name, datetime.now().isoformat()))
+            execute(
+                "INSERT INTO Orgs(name, created_at) VALUES(?, ?)",
+                (name, datetime.now().isoformat()),
+            )
             flash("Organización creada.", "success")
             return redirect(url_for("admin.admin_super"))
 
     # orgs with counts
-    orgs = fetchall("""
+    orgs = fetchall(
+        """
         SELECT
           o.id, o.name, o.created_at,
           (SELECT COUNT(1) FROM Hotels h WHERE h.org_id=o.id) AS hotels,
@@ -39,14 +48,17 @@ def admin_super():
           (SELECT COUNT(1) FROM Tickets t WHERE t.org_id=o.id) AS tickets
         FROM Orgs o
         ORDER BY o.id DESC
-    """)
+    """
+    )
 
     # recent hotels list
-    hotels = fetchall("""
+    hotels = fetchall(
+        """
         SELECT h.id, h.name, h.org_id, o.name AS org_name
         FROM Hotels h JOIN Orgs o ON o.id=h.org_id
         ORDER BY h.id DESC LIMIT 12
-    """)
+    """
+    )
 
     return render_template(
         "admin_super.html",
@@ -67,7 +79,8 @@ def admin_org_members(org_id):
         flash("Org no encontrada.", "error")
         return redirect(url_for("admin.admin_super"))
 
-    members = fetchall("""
+    members = fetchall(
+        """
         SELECT ou.id as org_user_id, u.id as user_id, u.username, u.email, u.role, u.area,
                ou.role AS org_role, ou.default_area, ou.default_hotel_id,
                (SELECT name FROM Hotels WHERE id = ou.default_hotel_id) AS default_hotel
@@ -75,9 +88,14 @@ def admin_org_members(org_id):
         JOIN Users u ON u.id = ou.user_id
         WHERE ou.org_id=?
         ORDER BY u.role, u.username
-    """, (org_id,))
+    """,
+        (org_id,),
+    )
 
-    hotels = fetchall("SELECT id, name FROM Hotels WHERE org_id=? ORDER BY id", (org_id,))
+    hotels = fetchall(
+        "SELECT id, name FROM Hotels WHERE org_id=? ORDER BY id",
+        (org_id,),
+    )
     return render_template(
         "admin_org_members.html",
         user=session["user"],
@@ -95,8 +113,8 @@ def admin_org_members_add(org_id):
     email = (request.form.get("email") or "").strip().lower()
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or "demo123"
-    base_role = request.form.get("base_role") or "GERENTE"      # Users.role
-    org_role = request.form.get("org_role") or base_role        # OrgUsers.role
+    base_role = request.form.get("base_role") or "GERENTE"  # Users.role
+    org_role = request.form.get("org_role") or base_role  # OrgUsers.role
     default_area = request.form.get("default_area") or None
     default_hotel_id = request.form.get("default_hotel_id", type=int)
 
@@ -108,26 +126,38 @@ def admin_org_members_add(org_id):
     u = fetchone("SELECT id FROM Users WHERE email=?", (email,))
     if not u:
         # Use real booleans for Postgres; SQLite will coerce them to 1/0.
-        execute("""
+        execute(
+            """
             INSERT INTO Users(username,email,password_hash,role,area,telefono,activo,is_superadmin)
             VALUES (?,?,?,?,?,?,?,?)
-        """, (username, email, hp(password), base_role, default_area, None, True, False))
+        """,
+            (username, email, hp(password), base_role, default_area, None, True, False),
+        )
 
         u = fetchone("SELECT id FROM Users WHERE email=?", (email,))
 
     # upsert membership
-    existing = fetchone("SELECT id FROM OrgUsers WHERE org_id=? AND user_id=?", (org_id, u["id"]))
+    existing = fetchone(
+        "SELECT id FROM OrgUsers WHERE org_id=? AND user_id=?",
+        (org_id, u["id"]),
+    )
     if existing:
-        execute("""
+        execute(
+            """
             UPDATE OrgUsers SET role=?, default_area=?, default_hotel_id=?
             WHERE id=?
-        """, (org_role, default_area, default_hotel_id, existing["id"]))
+        """,
+            (org_role, default_area, default_hotel_id, existing["id"]),
+        )
         flash("Membresía actualizada.", "success")
     else:
-        execute("""
+        execute(
+            """
             INSERT INTO OrgUsers(org_id,user_id,role,default_area,default_hotel_id)
             VALUES (?,?,?,?,?)
-        """, (org_id, u["id"], org_role, default_area, default_hotel_id))
+        """,
+            (org_id, u["id"], org_role, default_area, default_hotel_id),
+        )
         flash("Miembro agregado.", "success")
 
     return redirect(url_for("admin.admin_org_members", org_id=org_id))
@@ -151,7 +181,10 @@ def sudo_form():
     orgs = fetchall("SELECT id, name FROM Orgs ORDER BY id DESC")
     hotels = []
     if session.get("org_id"):
-        hotels = fetchall("SELECT id, name FROM Hotels WHERE org_id=? ORDER BY id DESC", (session["org_id"],))
+        hotels = fetchall(
+            "SELECT id, name FROM Hotels WHERE org_id=? ORDER BY id DESC",
+            (session["org_id"],),
+        )
     return render_template(
         "sudo.html",
         user=session["user"],
@@ -170,7 +203,10 @@ def sudo_set():
     if org_id:
         session["org_id"] = org_id
         if not hotel_id:
-            h = fetchone("SELECT id FROM Hotels WHERE org_id=? ORDER BY id LIMIT 1", (org_id,))
+            h = fetchone(
+                "SELECT id FROM Hotels WHERE org_id=? ORDER BY id LIMIT 1",
+                (org_id,),
+            )
             hotel_id = h["id"] if h else None
     if hotel_id:
         session["hotel_id"] = hotel_id
@@ -178,6 +214,7 @@ def sudo_set():
     return redirect(url_for("admin.admin_super"))
 
 
+# ---------------------------- Admin: orgs/hotels simples ----------------------------
 @bp.route("/orgs", methods=["GET", "POST"])
 def admin_orgs():
     if not is_superadmin():
@@ -185,7 +222,10 @@ def admin_orgs():
     if request.method == "POST":
         name = request.form.get("name")
         if name:
-            execute("INSERT INTO Orgs(name, created_at) VALUES(?, ?)", (name, datetime.now().isoformat()))
+            execute(
+                "INSERT INTO Orgs(name, created_at) VALUES(?, ?)",
+                (name, datetime.now().isoformat()),
+            )
             flash("Org creada.", "success")
             return redirect(url_for("admin.admin_orgs"))
     orgs = fetchall("SELECT id,name,created_at FROM Orgs ORDER BY id DESC")
@@ -207,9 +247,64 @@ def admin_hotels():
             flash("Hotel creado.", "success")
             return redirect(url_for("admin.admin_hotels"))
     orgs = fetchall("SELECT id,name FROM Orgs ORDER BY name")
-    hotels = fetchall("""
+    hotels = fetchall(
+        """
         SELECT h.id, h.name, o.name AS org
         FROM Hotels h JOIN Orgs o ON o.id=h.org_id
         ORDER BY h.id DESC
-    """)
+    """
+    )
     return render_template("admin_hotels.html", orgs=orgs, hotels=hotels)
+
+
+# ---------------------------- Bootstrap endpoints (global + Org+Hotel) ----------------------------
+@bp.post("/bootstrap/global")
+def admin_bootstrap_global():
+    """
+    Inicializa catálogos globales (roles, permisos, tipos de ubicación, tags/tipos de ticket).
+    """
+    if not is_superadmin():
+        return redirect(url_for("dashboard.index"))
+
+    try:
+        bootstrap_global_catalogs()
+        flash("Catálogos base inicializados o actualizados.", "success")
+    except Exception as exc:
+        flash(f"Error al inicializar catálogos base: {exc}", "error")
+
+    return redirect(url_for("admin.admin_super"))
+
+
+@bp.post("/bootstrap/org")
+def admin_bootstrap_org():
+    """
+    Crea una organización + primer hotel + usuario GERENTE
+    e inicializa SLA y ubicaciones mínimas.
+    """
+    if not is_superadmin():
+        return redirect(url_for("dashboard.index"))
+
+    org_name = (request.form.get("org_name") or "").strip()
+    hotel_name = (request.form.get("hotel_name") or "").strip()
+    gerente_email = (request.form.get("gerente_email") or "").strip()
+    gerente_username = (request.form.get("gerente_username") or "").strip()
+    gerente_password = request.form.get("gerente_password") or None
+
+    if not org_name or not hotel_name or not gerente_email or not gerente_username:
+        flash("Faltan datos para crear organización y hotel.", "error")
+        return redirect(url_for("admin.admin_super"))
+
+    try:
+        result = create_org_with_defaults(
+            org_name=org_name,
+            hotel_name=hotel_name,
+            gerente_email=gerente_email,
+            gerente_username=gerente_username,
+            gerente_password=gerente_password,
+        )
+    except Exception as exc:
+        flash(f"Error al crear organización/hotel: {exc}", "error")
+        return redirect(url_for("admin.admin_super"))
+
+    flash("Organización y hotel creados con configuración base.", "success")
+    return redirect(url_for("admin.admin_org_members", org_id=result["org_id"]))
