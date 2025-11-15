@@ -85,11 +85,20 @@ def index():
         return redirect(url_for("recepcion.recepcion_dashboard"))
 
     if role == "TECNICO":
-        # Canonical Técnico landing handled by tecnico blueprint
-        try:
-            area = default_area_for_user() or "MANTENCION"
-        except Exception:
+        # 1) Try to use the area stored on the user (MANTENCION / HOUSEKEEPING / ROOMSERVICE)
+        area = (user.get("area") or "").upper().strip()
+
+        # 2) Fallback to helper, if defined
+        if not area:
+            try:
+                area = (default_area_for_user() or "").upper().strip()
+            except Exception:
+                area = ""
+
+        # 3) Final fallback to MANTENCION if still empty or unexpected
+        if area not in {"MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"}:
             area = "MANTENCION"
+
         slug = area_slug(area)  # "mantencion" | "housekeeping" | "roomservice"
         return redirect(url_for("tecnico.tech_my", slug=slug))
 
