@@ -41,6 +41,8 @@
           >
             {% for c in countries %}
               <option value="{{ c.code }}"
+                      data-min="{{ c.min_len }}"
+                      data-max="{{ c.max_len }}"
                       {% if c.code == selected_country_code %}selected{% endif %}>
                 {{ c.flag }} {{ c.name }} ({{ c.dial }})
               </option>
@@ -54,7 +56,7 @@
             name="phone_local"
             value="{{ phone_local_value or '' }}"
             placeholder="Número local (solo dígitos)"
-            pattern="\\d+"
+            pattern="[0-9]+"
             inputmode="numeric"
             required
           >
@@ -68,6 +70,39 @@
         Enviar código de verificación
       </button>
     </form>
+
+    {# JS to update min/max and pattern based on selected country #}
+    <script>
+      (function () {
+        const countrySelect = document.getElementById("country_code");
+        const phoneInput = document.getElementById("phone_local");
+        if (!countrySelect || !phoneInput) return;
+
+        function updatePhoneConstraints() {
+          const opt = countrySelect.options[countrySelect.selectedIndex];
+          if (!opt) return;
+
+          const min = opt.getAttribute("data-min");
+          const max = opt.getAttribute("data-max");
+
+          if (min && max) {
+            phoneInput.setAttribute("minlength", min);
+            phoneInput.setAttribute("maxlength", max);
+            // Accept only digits, with length between min and max
+            phoneInput.setAttribute("pattern", "[0-9]{" + min + "," + max + "}");
+            phoneInput.placeholder = "Número local (" + min + "–" + max + " dígitos)";
+          } else {
+            phoneInput.removeAttribute("minlength");
+            phoneInput.removeAttribute("maxlength");
+            phoneInput.setAttribute("pattern", "[0-9]+");
+            phoneInput.placeholder = "Número local (solo dígitos)";
+          }
+        }
+
+        document.addEventListener("DOMContentLoaded", updatePhoneConstraints);
+        countrySelect.addEventListener("change", updatePhoneConstraints);
+      })();
+    </script>
 
   {% elif mode == 'verify' %}
     <p>
@@ -89,7 +124,7 @@
           name="code"
           placeholder="000000"
           maxlength="6"
-          pattern="\\d{6}"
+          pattern="[0-9]{6}"
           inputmode="numeric"
           required
         >
