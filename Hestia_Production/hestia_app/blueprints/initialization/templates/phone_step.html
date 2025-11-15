@@ -18,6 +18,21 @@
   {% endwith %}
 
   {% if mode == 'phone' %}
+
+    {# NEW: instructions to start the WhatsApp session #}
+    <div class="alert alert-info mb-3">
+      <strong>Paso previo (obligatorio):</strong>
+      Antes de solicitar el código, abre WhatsApp y envía un mensaje con la palabra
+      <code>Hola</code> al número
+      <a href="https://wa.me/56977823261?text=Hola"
+         target="_blank"
+         rel="noopener noreferrer">
+        +56 9 7782 3261
+      </a>.
+      Esto abre la conversación con el asistente y nos permite enviarte mensajes
+      durante las próximas 24&nbsp;horas.
+    </div>
+
     <p>
       Hola, <strong>{{ user.username }}</strong>.
       Antes de continuar usaremos tu número de WhatsApp para conectarte con el sistema.
@@ -63,6 +78,14 @@
         </div>
         <div class="form-text">
           Escribe solo los dígitos del número local. El prefijo internacional se toma del país seleccionado.
+          <br>
+          Si no has enviado <code>Hola</code> al número
+          <a href="https://wa.me/56977823261?text=Hola"
+             target="_blank"
+             rel="noopener noreferrer">
+            +56 9 7782 3261
+          </a>
+          en las últimas 24&nbsp;horas, es posible que el código no llegue.
         </div>
       </div>
 
