@@ -1850,68 +1850,511 @@ def _handle_gerente_message(from_phone: str, text: str):
 
 
 
+# ================================
+# GH (Huésped) DFA helpers
+# ================================
+
+def is_no(text: str) -> bool:
+    t = (text or "").strip().lower()
+    t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
+    return t in {"no", "n", "nop", "nope", "no gracias", "no, gracias"}
+
+
+def _gh_get_state(s: Dict[str, Any]) -> str:
+    """
+    Devuelve el estado DFA del huésped, migrando si venimos del flujo legado.
+    Estados principales:
+      GH_S0        → primer mensaje
+      GH_S0i       → pedir identificación (nombre + habitación)
+      GH_S0c       → confirmar identificación
+      GH_S1        → clasificación (intent)
+      GH_S2        → slot filling (detalle / área / prioridad)
+      GH_S2_CONFIRM→ confirmar borrador de ticket
+      GH_S4        → cierre / '¿algo más?'
+      GH_S5        → FIN ciclo
+      GH_S6        → escalamiento humano
+    """
+    state = s.get("gh_state")
+    if not state:
+        # Migración desde los stages antiguos (por si hay sesiones viejas)
+        legacy = s.get("stage")
+        mapping = {
+            "need_name": "GH_S0i",
+            "need_room": "GH_S0i",
+            "need_detail": "GH_S2",
+            "confirm": "GH_S2_CONFIRM",
+        }
+        state = mapping.get(legacy, "GH_S0")
+        s["gh_state"] = state
+    return state
+
+
+def _gh_set_state(s: Dict[str, Any], state: str):
+    s["gh_state"] = state
+    s["ts"] = time.time()
+
+
+def _gh_has_identification(s: Dict[str, Any]) -> bool:
+    """
+    Tenemos identificación suficiente del huésped (nombre + habitación).
+    """
+    return bool((s.get("guest_name") or "").strip()) and bool((s.get("room") or "").strip())
+
+
+def _gh_is_cancel(text: str) -> bool:
+    """
+    El huésped quiere cancelar la solicitud actual.
+    """
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    patterns = [
+        "cancelar",
+        "olvida",
+        "olvídalo",
+        "olvidalo",
+        "ya no",
+        "no importa",
+        "da igual",
+    ]
+    return any(p in t for p in patterns)
+
+
+def _gh_is_help(text: str) -> bool:
+    """
+    El huésped pide ayuda / repetir durante slot filling.
+    """
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    patterns = [
+        "ayuda",
+        "no entiendo",
+        "repiteme",
+        "repite",
+        "puedes repetir",
+        "qué puedo hacer",
+        "que puedo hacer",
+    ]
+    return any(p in t for p in patterns)
+
+
+def _gh_send_ask_identification(from_phone: str):
+    send_whatsapp(
+        from_phone,
+        "🌟 Para ayudarte, necesito saber quién eres.\n"
+        "Por favor dime *tu nombre* y tu *número de habitación* "
+        "(por ejemplo: `Soy Ana de la 312`)."
+    )
+
+
+def _gh_send_ask_name_only(from_phone: str):
+    send_whatsapp(
+        from_phone,
+        "Perfecto. Para continuar dime, ¿*cuál es tu nombre*?"
+    )
+
+
+def _gh_send_ask_room_only(from_phone: str, guest_name: Optional[str] = None):
+    if guest_name:
+        msg = f"Gracias, *{guest_name}*. ¿Cuál es tu *número de habitación*? 🏨"
+    else:
+        msg = "¿Cuál es tu *número de habitación*? 🏨"
+    send_whatsapp(from_phone, msg)
+
+
+def _gh_build_id_confirmation_message(s: Dict[str, Any]) -> str:
+    """
+    Mensaje de confirmación de identificación (GH_S0c).
+    """
+    name = s.get("guest_name") or ""
+    room = s.get("room") or ""
+    if name and room:
+        return (
+            "Perfecto. Solo para confirmar:\n\n"
+            f"👤 Huésped: *{name}*\n"
+            f"🏨 Habitación: *{room}*\n\n"
+            "¿Es correcto? Responde *SI* para continuar o *NO* para corregir."
+        )
+    return (
+        "Solo necesito que me confirmes tus datos.\n"
+        "Responde *SI* si son correctos o *NO* si quieres cambiarlos."
+    )
+
+
+def _gh_escalate_to_reception(from_phone: str, s: Dict[str, Any], last_text: str):
+    """
+    GH_S6: Escalamiento humano → mensaje al huésped + notificación a recepción.
+    """
+    # Avisar al huésped
+    send_whatsapp(
+        from_phone,
+        "Te derivo con *recepción* para que un miembro del equipo pueda ayudarte "
+        "directamente. Pueden contactarte por este mismo chat o por teléfono. 🛎️"
+    )
+
+    # Avisar a recepción (si hay teléfonos configurados)
+    recips = _phones_from_env(RECEPTION_PHONES)
+    if not recips:
+        return
+
+    guest_name = s.get("guest_name") or "Huésped"
+    room = s.get("room") or "sin habitación registrada"
+    summary = (
+        "📲 *Escalamiento desde WhatsApp*\n\n"
+        f"Huésped: {guest_name} ({from_phone})\n"
+        f"Habitación: {room}\n"
+        f"Mensaje: {last_text or '(sin texto)'}"
+    )
+    for ph in recips:
+        send_whatsapp(ph, summary)
+
+
+def _gh_reset_request_slots(s: Dict[str, Any], keep_id: bool = True):
+    """
+    Limpia solo los datos de la solicitud (área, prioridad, detalle),
+    opcionalmente manteniendo la identificación del huésped.
+    """
+    for key in ("area", "prioridad", "detalle", "gh_pending_issue_text", "gh_last_intent"):
+        s.pop(key, None)
+    if not keep_id:
+        s.pop("guest_name", None)
+        s.pop("room", None)
+
+
+def _gh_update_slots_from_text(s: Dict[str, Any], text: str):
+    """
+    Usa el texto para rellenar/actualizar los slots de la solicitud:
+      - detalle (concatenando si ya existía algo)
+      - área (heurística)
+      - prioridad (heurística)
+    """
+    t = (text or "").strip()
+    if not t:
+        return
+
+    detalle = (s.get("detalle") or "").strip()
+    if not detalle:
+        s["detalle"] = t
+    else:
+        s["detalle"] = detalle + "\n" + t
+
+    if not (s.get("area") or "").strip():
+        s["area"] = guess_area(t)
+    if not (s.get("prioridad") or "").strip():
+        s["prioridad"] = guess_priority(t)
+
+
+def _gh_slots_complete(s: Dict[str, Any]) -> bool:
+    """
+    Por ahora consideramos suficiente tener un 'detalle' no vacío.
+    Área y prioridad se infieren automáticamente.
+    """
+    return bool((s.get("detalle") or "").strip())
+
+
+def _gh_classify_intent(text: str) -> str:
+    """
+    Clasificación muy simple de intent:
+      - 'handoff_request' → quiere hablar con alguien
+      - 'cancel'          → cancelar solicitud
+      - 'general_chat'    → gracias / smalltalk / cierre
+      - 'ticket_request'  → algo que suena a problema/petición
+      - 'unknown'         → vacío o no se puede clasificar
+    """
+    t = (text or "").strip().lower()
+    if not t:
+        return "unknown"
+
+    if _gh_wants_handoff(t):
+        return "handoff_request"
+
+    if _gh_is_cancel(t):
+        return "cancel"
+
+    if t in {"gracias", "muchas gracias", "no, gracias", "no gracias", "todo bien", "estoy bien"}:
+        return "general_chat"
+
+    if is_smalltalk(t):
+        return "general_chat"
+
+    return "ticket_request"
+
+
+def _gh_render_closing_question(s: Dict[str, Any]) -> str:
+    """
+    Texto para GH_S4 → '¿algo más?' con nombre si lo tenemos.
+    """
+    name = s.get("guest_name") or None
+    if name:
+        return f"¿Hay *algo más* en lo que pueda ayudarte, {name}? 🙂"
+    return "¿Hay *algo más* en lo que pueda ayudarte? 🙂"
+
+
+# ================================
+# GH (Huésped) DFA – handler principal
+# ================================
+
 def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     s = session_get(from_phone)
 
-    # If audio, optionally transcribe and treat as text
+    # 1) Audio → texto si no vino texto
     if audio_url and not text:
         transcript = transcribe_audio(audio_url)
         text = transcript or ""
 
     t = (text or "").strip()
 
-    # Very simple guest flow example:
-    # You can replace this with your full DFA (need_name → need_room → need_detail → confirm, etc.)
-    stage = s.get("stage") or "need_name"
-
-    if stage == "need_name":
-        name = extract_name(t)
-        if not name:
-            if _should_prompt(s, "ask_name"):
-                send_whatsapp(from_phone, txt("ask_name"))
-            session_set(from_phone, s)
-            return
-        s["guest_name"] = name
-        s["stage"] = "need_room"
+    # 2) Cancelación global de la solicitud actual (manteniendo identificación)
+    if _gh_is_cancel(t):
+        _gh_reset_request_slots(s, keep_id=True)
+        _gh_set_state(s, "GH_S5")
         session_set(from_phone, s)
-        send_whatsapp(from_phone, txt("ask_room", name=name))
+        send_whatsapp(
+            from_phone,
+            "He cancelado la solicitud actual. Si necesitas algo más para tu habitación, "
+            "solo dime por aquí. 🙂"
+        )
         return
 
-    if stage == "need_room":
-        room = guess_room(t)
-        if not room:
-            if _should_prompt(s, "ask_room"):
-                send_whatsapp(from_phone, txt("ask_room", name=s.get("guest_name", "")))
+    # 3) Estado actual (con migración desde flujo legado si aplica)
+    state = _gh_get_state(s)
+
+    # Desde FIN (GH_S5) un nuevo mensaje inicia un nuevo ciclo:
+    if state == "GH_S5":
+        if _gh_has_identification(s):
+            state = "GH_S1"
+        else:
+            state = "GH_S0"
+        _gh_set_state(s, state)
+
+    # --------------------------------------------------
+    # GH_S0: primer mensaje huésped (no hay identificación completa)
+    # --------------------------------------------------
+    if state == "GH_S0" and not _gh_has_identification(s):
+        # Pedido explícito de humano → GH_S6
+        if _gh_wants_handoff(t):
+            _gh_set_state(s, "GH_S6")
             session_set(from_phone, s)
+            _gh_escalate_to_reception(from_phone, s, t)
             return
-        s["room"] = room
-        s["stage"] = "need_detail"
+
+        # Mensaje vacío → pedir identificación
+        if not t:
+            _gh_set_state(s, "GH_S0i")
+            session_set(from_phone, s)
+            _gh_send_ask_identification(from_phone)
+            return
+
+        # Saludo / smalltalk → pedir identificación (no_intent_detected)
+        if is_smalltalk(t):
+            _gh_set_state(s, "GH_S0i")
+            session_set(from_phone, s)
+            _gh_send_ask_identification(from_phone)
+            return
+
+        # Intent detectado desde el primer mensaje
+        intent = _gh_classify_intent(t)
+        if intent == "handoff_request":
+            _gh_set_state(s, "GH_S6")
+            session_set(from_phone, s)
+            _gh_escalate_to_reception(from_phone, s, t)
+            return
+
+        # Intent con posible identificación incluida
+        name_candidate = extract_name(t)
+        room_candidate = guess_room(t)
+
+        if name_candidate:
+            s["guest_name"] = name_candidate
+        if room_candidate:
+            s["room"] = room_candidate
+
+        if _gh_has_identification(s):
+            # Intent detectado + ID presente → guardar en buffer y confirmar ID
+            s["gh_pending_issue_text"] = t
+            _gh_set_state(s, "GH_S0c")
+            session_set(from_phone, s)
+            send_whatsapp(from_phone, _gh_build_id_confirmation_message(s))
+            return
+
+        # Intent detectado pero falta ID → GH_S0i (guardar requerimiento en buffer)
+        s["gh_pending_issue_text"] = t
+        _gh_set_state(s, "GH_S0i")
         session_set(from_phone, s)
-        if _should_prompt(s, "ask_detail"):
-            send_whatsapp(from_phone, txt("ask_detail"))
+        _gh_send_ask_identification(from_phone)
         return
 
-    if stage == "need_detail":
-        detalle = t
-        if not detalle:
+    # --------------------------------------------------
+    # GH_S0i: pedir identificación (nombre + habitación)
+    # --------------------------------------------------
+    if state == "GH_S0i":
+        # Intentar capturar nombre si falta
+        if not (s.get("guest_name") or "").strip():
+            name = extract_name(t)
+            if name:
+                s["guest_name"] = name
+
+        # Intentar capturar habitación si falta
+        if not (s.get("room") or "").strip():
+            room = guess_room(t)
+            if room:
+                s["room"] = room
+
+        # Si aún faltan datos, pedir específicamente lo que falta
+        if not _gh_has_identification(s):
+            if not (s.get("guest_name") or "").strip() and not (s.get("room") or "").strip():
+                _gh_send_ask_identification(from_phone)
+            elif not (s.get("guest_name") or "").strip():
+                _gh_send_ask_name_only(from_phone)
+            else:
+                _gh_send_ask_room_only(from_phone, s.get("guest_name"))
+            session_set(from_phone, s)
+            return
+
+        # Ya tenemos nombre + habitación → GH_S0c (confirmar identificación)
+        _gh_set_state(s, "GH_S0c")
+        session_set(from_phone, s)
+        send_whatsapp(from_phone, _gh_build_id_confirmation_message(s))
+        return
+
+    # --------------------------------------------------
+    # GH_S0c: confirmar identificación (confirm_yes / confirm_no)
+    # --------------------------------------------------
+    if state == "GH_S0c":
+        if is_yes(t):
+            # confirm_yes → GH_S1
+            _gh_set_state(s, "GH_S1")
+            session_set(from_phone, s)
+
+            pending = (s.get("gh_pending_issue_text") or "").strip()
+            if not pending:
+                # No había requerimiento pendiente → preguntar en qué ayudar
+                guest_name = s.get("guest_name") or ""
+                room = s.get("room") or ""
+                if guest_name and room:
+                    msg = f"Gracias, *{guest_name}*. ¿En qué puedo ayudarte con tu habitación {room}?"
+                else:
+                    msg = "Gracias. ¿En qué puedo ayudarte con tu habitación?"
+                send_whatsapp(from_phone, msg)
+                return
+
+            # Había requerimiento pendiente desde GH_S0 → usarlo como entrada a GH_S1
+            t = pending
+            s["gh_pending_issue_text"] = ""
+            # Continuar más abajo como GH_S1 con ese texto
+
+        elif is_no(t):
+            # confirm_no → limpiar ID y volver a GH_S0i
+            s.pop("guest_name", None)
+            s.pop("room", None)
+            _gh_set_state(s, "GH_S0i")
+            session_set(from_phone, s)
+            _gh_send_ask_identification(from_phone)
+            return
+        else:
+            # Pedir explícitamente SI / NO
+            send_whatsapp(
+                from_phone,
+                "Solo necesito que me confirmes si tus datos son correctos. "
+                "Responde *SI* para continuar o *NO* si quieres cambiarlos."
+            )
+            return
+
+    # Refrescar estado por si venimos de GH_S0c con confirm_yes
+    state = _gh_get_state(s)
+
+    # --------------------------------------------------
+    # GH_S6: Escalamiento humano (el bot termina el ciclo)
+    # --------------------------------------------------
+    if state == "GH_S6":
+        _gh_set_state(s, "GH_S5")
+        session_set(from_phone, s)
+        return
+
+    # --------------------------------------------------
+    # GH_S1: Clasificación (NLU → Σ)
+    # --------------------------------------------------
+    if state == "GH_S1":
+        intent = _gh_classify_intent(t)
+
+        if intent == "handoff_request":
+            _gh_set_state(s, "GH_S6")
+            session_set(from_phone, s)
+            _gh_escalate_to_reception(from_phone, s, t)
+            return
+
+        if intent == "general_chat":
+            # Pequeña charla / agradecimientos → GH_S4 (cierre suave)
+            send_whatsapp(from_phone, "Gracias por tu mensaje. 😊")
+            _gh_set_state(s, "GH_S4")
+            session_set(from_phone, s)
+            send_whatsapp(from_phone, _gh_render_closing_question(s))
+            return
+
+        if intent == "cancel":
+            # Cancelación de solicitud (manteniendo identificación) → GH_S5
+            _gh_reset_request_slots(s, keep_id=True)
+            _gh_set_state(s, "GH_S5")
+            session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                "Perfecto, no registraré ninguna solicitud. Si necesitas algo más, "
+                "solo escríbeme por aquí."
+            )
+            return
+
+        # Intent válido / not_understood → GH_S2 (init_form)
+        _gh_reset_request_slots(s, keep_id=True)
+        _gh_set_state(s, "GH_S2")
+        _gh_update_slots_from_text(s, t)
+        session_set(from_phone, s)
+
+        if not _gh_slots_complete(s):
             if _should_prompt(s, "ask_detail"):
                 send_whatsapp(from_phone, txt("ask_detail"))
-            session_set(from_phone, s)
             return
 
-        s["detalle"] = detalle
-        s["area"] = guess_area(detalle)
-        s["prioridad"] = guess_priority(detalle)
-
+        # Slots completos desde el primer mensaje → GH_S3 (cumplimiento) modelado como GH_S2_CONFIRM
         summary = ensure_summary_in_session(s)
-        s["stage"] = "confirm"
+        _gh_set_state(s, "GH_S2_CONFIRM")
         session_set(from_phone, s)
-
         send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
         return
 
-    if stage == "confirm":
+    # --------------------------------------------------
+    # GH_S2: Recolección de datos (slot filling)
+    # --------------------------------------------------
+    if state == "GH_S2":
+        # help / repeat / not_understood → escalamiento humano (GH_S6)
+        if _gh_wants_handoff(t) or _gh_is_help(t):
+            _gh_set_state(s, "GH_S6")
+            session_set(from_phone, s)
+            _gh_escalate_to_reception(from_phone, s, t)
+            return
+
+        # provide_slot → seguimos en GH_S2 hasta completar
+        _gh_update_slots_from_text(s, t)
+        session_set(from_phone, s)
+
+        if not _gh_slots_complete(s):
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, txt("ask_detail"))
+            return
+
+        # slots_complete → GH_S3 modelado como confirmación de borrador
+        summary = ensure_summary_in_session(s)
+        _gh_set_state(s, "GH_S2_CONFIRM")
+        session_set(from_phone, s)
+        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        return
+
+    # --------------------------------------------------
+    # GH_S2_CONFIRM: Confirmar borrador de ticket (GH_S3 implícito)
+    # --------------------------------------------------
+    if state == "GH_S2_CONFIRM":
         if is_yes(t):
+            # GH_S3: cumplimiento → creación de ticket
             payload = {
                 "org_id": ORG_ID_DEFAULT,
                 "hotel_id": HOTEL_ID_DEFAULT,
@@ -1925,6 +2368,11 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 "huesped_nombre": s.get("guest_name", ""),
             }
             ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+            s["gh_last_ticket_id"] = ticket_id
+            _gh_set_state(s, "GH_S4")
+            session_set(from_phone, s)
+
+            # GH_S3 → GH_S4: avisar al huésped + notificar recepción
             send_whatsapp(
                 from_phone,
                 txt("ticket_created", guest=s.get("guest_name", "Huésped"), ticket_id=ticket_id)
@@ -1936,16 +2384,74 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 payload["detalle"],
                 payload.get("ubicacion"),
             )
-            session_clear(from_phone)
-            return
-        else:
-            send_whatsapp(from_phone, txt("edit_help"))
-            # You could add parsing of AREA/PRIORIDAD/HAB/DETALLE commands here
+            send_whatsapp(from_phone, _gh_render_closing_question(s))
             return
 
-    # Fallback if stage unknown
-    session_clear(from_phone)
-    send_whatsapp(from_phone, txt("greet"))
+        if is_no(t):
+            # El huésped quiere editar → volver a GH_S2 (slot filling)
+            _gh_set_state(s, "GH_S2")
+            session_set(from_phone, s)
+            send_whatsapp(from_phone, txt("edit_help"))
+            return
+
+        # Respuesta ambigua → recordar opciones
+        send_whatsapp(
+            from_phone,
+            "Por favor responde *SI* si el resumen es correcto o *NO* si quieres cambiar "
+            "el área, prioridad, habitación o detalle."
+        )
+        return
+
+    # --------------------------------------------------
+    # GH_S4: Confirmación / cierre ('¿algo más?')
+    # --------------------------------------------------
+    if state == "GH_S4":
+        # yes | new_request → GH_S1 (nuevo ciclo con misma identificación)
+        if is_yes(t):
+            _gh_reset_request_slots(s, keep_id=True)
+            _gh_set_state(s, "GH_S1")
+            session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                "Perfecto, cuéntame qué más necesitas y crearé una nueva solicitud. 📝"
+            )
+            return
+
+        # no | thanks | general_chat → GH_S5 (FIN)
+        if is_no(t) or _gh_classify_intent(t) == "general_chat":
+            _gh_set_state(s, "GH_S5")
+            session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                "Gracias por contactarnos. Que tengas una excelente estadía. 🌟"
+            )
+            return
+
+        # Cualquier otra cosa se interpreta como nueva solicitud directa
+        _gh_reset_request_slots(s, keep_id=True)
+        _gh_set_state(s, "GH_S2")
+        _gh_update_slots_from_text(s, t)
+        session_set(from_phone, s)
+
+        if not _gh_slots_complete(s):
+            if _should_prompt(s, "ask_detail"):
+                send_whatsapp(from_phone, txt("ask_detail"))
+            return
+
+        summary = ensure_summary_in_session(s)
+        _gh_set_state(s, "GH_S2_CONFIRM")
+        session_set(from_phone, s)
+        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        return
+
+    # --------------------------------------------------
+    # Fallback para estados desconocidos
+    # --------------------------------------------------
+    _gh_reset_request_slots(s, keep_id=False)
+    _gh_set_state(s, "GH_S0")
+    session_set(from_phone, s)
+    _gh_send_ask_identification(from_phone)
+
 
 if __name__ == "__main__":
     ensure_runtime_tables()  # safe to call again
