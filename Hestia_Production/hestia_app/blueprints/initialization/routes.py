@@ -129,8 +129,13 @@ def _send_whatsapp_text(to_phone: str, body: str) -> None:
     to_clean = to_phone.replace("whatsapp:", "").lstrip("+")
     print(f"[INIT OUT → {to_clean}] {body}", flush=True)
 
-    if not (META_TOKEN and META_PHONE_ID):
-        return
+    if not META_TOKEN or not META_PHONE_ID:
+        print("[INIT WARN] WhatsApp env vars missing: "
+            f"WHATSAPP_CLOUD_TOKEN={'set' if META_TOKEN else 'MISSING'}, "
+            f"WHATSAPP_CLOUD_PHONE_ID={'set' if META_PHONE_ID else 'MISSING'}",
+            flush=True)
+    return
+
 
     try:
         url = f"https://graph.facebook.com/v19.0/{META_PHONE_ID}/messages"
