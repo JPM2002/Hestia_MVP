@@ -10,10 +10,9 @@ from flask import render_template, request, redirect, url_for, flash, session
 
 from . import bp
 from hestia_app.services.db import fetchone, execute
+from hestia_app.services.whatsapp import send_whatsapp
 
-# Reuse WhatsApp Cloud credentials
-META_TOKEN = os.getenv("WHATSAPP_CLOUD_TOKEN", "")
-META_PHONE_ID = os.getenv("WHATSAPP_CLOUD_PHONE_ID", "")
+
 
 # Verification code TTL (seconds)
 PHONE_CODE_TTL = 10 * 60  # 10 minutes
@@ -120,40 +119,6 @@ def _require_login_redirect():
         return redirect(url_for("auth.login"))
     return None
 
-
-def _send_whatsapp_text(to_phone: str, body: str) -> None:
-    """
-    Minimal WhatsApp sender for verification codes.
-    If creds are missing, just print to console.
-    """
-    to_clean = to_phone.replace("whatsapp:", "").lstrip("+")
-    print(f"[INIT OUT → {to_clean}] {body}", flush=True)
-
-    if not META_TOKEN or not META_PHONE_ID:
-        print("[INIT WARN] WhatsApp env vars missing: "
-            f"WHATSAPP_CLOUD_TOKEN={'set' if META_TOKEN else 'MISSING'}, "
-            f"WHATSAPP_CLOUD_PHONE_ID={'set' if META_PHONE_ID else 'MISSING'}",
-            flush=True)
-    return
-
-
-    try:
-        url = f"https://graph.facebook.com/v19.0/{META_PHONE_ID}/messages"
-        headers = {
-            "Authorization": f"Bearer {META_TOKEN}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to_clean,
-            "type": "text",
-            "text": {"body": body},
-        }
-        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
-        if r.status_code >= 300:
-            print(f"[WARN] WhatsApp send (init) failed {r.status_code}: {r.text}", flush=True)
-    except Exception as e:
-        print(f"[WARN] WhatsApp send (init) exception: {e}", flush=True)
 
 
 def _store_phone_verification(user_id: int, phone: str, code: str) -> None:
@@ -317,7 +282,9 @@ def phone():
         f"Tu código de verificación es: *{code}*\n\n"
         "Por favor ingrésalo en la página de verificación para completar tu registro."
     )
-    _send_whatsapp_text(normalized_phone, body)
+    # tag='INIT' so you can distinguish these sends in the logs
+    send_whatsapp(normalized_phone, body, tag="INIT")
+
 
     flash("Te hemos enviado un código por WhatsApp. Ingrésalo para verificar tu número.", "success")
     return redirect(url_for("initialization.verify"))
