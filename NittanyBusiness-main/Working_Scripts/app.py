@@ -51,25 +51,25 @@ DEMO_HK_CONFIRM_KEYWORD = os.getenv("DEMO_HK_CONFIRM_KEYWORD", "confirmar ticket
 # NOTE: this is just a bootstrap mapping while we wire proper DB-based routing.
 # Phones are in E.164 form with '+' for readability, but we always compare on digits-only.
 
-HARDCODED_ROLE_PHONES: Dict[str, List[str]] = {
-    # Front desk / reception
-    "RECEPCION": [
-        "+4915221317651",  # Javier
-    ],
-    # Supervisors
-    "SUPERVISOR": [
-        "+56996107169",    # Sebas
-    ],
-    # Management
-    "GERENTE": [
-        "+56983001018",    # Pedro
-    ],
-    # Housekeeping workers (mucamas)
-    "HOUSEKEEPING": [
-        "+56956326272",    # Andrés (mucama)
-        "+56975620537",    # Borisbo (mucama)
-    ],
-}
+# HARDCODED_ROLE_PHONES: Dict[str, List[str]] = {
+#     # Front desk / reception
+#     "RECEPCION": [
+#         "+4915221317651",  # Javier
+#     ],
+#     # Supervisors
+#     "SUPERVISOR": [
+#         "+56996107169",    # Sebas
+#     ],
+#     # Management
+#     "GERENTE": [
+#         "+56983001018",    # Pedro
+#     ],
+#     # Housekeeping workers (mucamas)
+#     "HOUSEKEEPING": [
+#         "+56956326272",    # Andrés (mucama)
+#         "+56975620537",    # Borisbo (mucama)
+#     ],
+# }
 
 # Backward-compatibility for the existing HK flow:
 HARDCODED_HK_PHONES: List[str] = HARDCODED_ROLE_PHONES.get("HOUSEKEEPING", [])
@@ -149,23 +149,26 @@ def _only_digits(s: str) -> str:
 
 def resolve_role_by_phone(phone: str) -> Optional[str]:
     """
-    Returns a hardcoded role name for this phone (RECEPCION, SUPERVISOR, GERENTE, HOUSEKEEPING),
-    or None if it's not a known internal worker.
+    Resolve role from the users table instead of hardcoded phones.
+    Returns one of: RECEPCION, SUPERVISOR, GERENTE, HOUSEKEEPING, or None.
     """
-    digits = _only_digits(phone)
-    for role, phones in HARDCODED_ROLE_PHONES.items():
-        for p in phones:
-            if _only_digits(p) == digits:
-                return role
+    row = _get_user_by_phone(phone)
+    if not row:
+        return None
+    role = (row.get("role") or "").strip().upper()
+    # Optional: restrict to known internal roles
+    if role in {"RECEPCION", "SUPERVISOR", "GERENTE", "HOUSEKEEPING"}:
+        return role
     return None
 
 
+
 def is_hk_phone(phone: str) -> bool:
-    """
-    Kept for compatibility with the demo HK flow.
-    A phone is 'HK' if its hardcoded role is HOUSEKEEPING.
-    """
-    return resolve_role_by_phone(phone) == "HOUSEKEEPING"
+    row = _get_user_by_phone(phone)
+    if not row:
+        return False
+    return (row.get("role") or "").strip().upper() == "HOUSEKEEPING"
+
 
 
 
