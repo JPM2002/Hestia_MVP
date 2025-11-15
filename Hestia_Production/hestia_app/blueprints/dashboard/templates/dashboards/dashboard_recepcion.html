@@ -454,44 +454,62 @@ async function loadKPIs(){
     fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=500')
   ]);
 
-  if(k.ok){
+  if (k.ok){
     const j = await k.json();
-    el.kpiPending.textContent   = j.pending ?? '0';
-    el.kpiInProg.textContent    = j.in_progress ?? '0';
-    el.kpiResolved.textContent  = j.resolved_today ?? '0';
+    // Pendientes se calcula en loadLists() como PENDIENTE + ASIGNADO
+    el.kpiInProg.textContent   = j.in_progress    ?? '0';
+    el.kpiResolved.textContent = j.resolved_today ?? '0';
   }
 
   // “Por aprobar” = items con estado PENDIENTE_APROBACION
-  if(pend.ok){
+  if (pend.ok){
     const jp = await pend.json();
-    const toApproveCount = (jp.items || []).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION').length;
+    const toApproveCount = (jp.items || []).filter(
+      x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION'
+    ).length;
     el.kpiToApprove.textContent = String(toApproveCount);
   }
 }
 
+
 async function loadLists(){
-  const [p, e, r] = await Promise.all([
+  const [p, a, e, r] = await Promise.all([
     fetch('/api/recepcion/list?estado=PENDIENTE&period=today&limit=300'),
+    fetch('/api/recepcion/list?estado=ASIGNADO&period=today&limit=300'),
     fetch('/api/recepcion/list?estado=EN_CURSO&period=7d&limit=300'),
     fetch('/api/recepcion/list?estado=RESUELTO&period=today&limit=300'),
   ]);
-  const jp = p.ok ? await p.json() : {items:[]};
-  const je = e.ok ? await e.json() : {items:[]};
-  const jr = r.ok ? await r.json() : {items:[]};
 
-  // Divide PENDIENTES entre por aprobar (PENDIENTE_APROBACION) y pendientes ya aprobados (PENDIENTE)
-  const toapprove = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION');
-  const pend      = (jp.items||[]).filter(x => (x.estado || '').toUpperCase() === 'PENDIENTE');
+  const jp = p.ok ? await p.json() : { items: [] };
+  const ja = a.ok ? await a.json() : { items: [] };
+  const je = e.ok ? await e.json() : { items: [] };
+  const jr = r.ok ? await r.json() : { items: [] };
+
+  const allPendRaw = jp.items || [];
+
+  // PENDIENTE_APROBACION vs PENDIENTE normales
+  const toapprove = allPendRaw.filter(
+    x => (x.estado || '').toUpperCase() === 'PENDIENTE_APROBACION'
+  );
+  const pend = allPendRaw.filter(
+    x => (x.estado || '').toUpperCase() === 'PENDIENTE'
+  );
+
+  // ASIGNADO (viene de su propio endpoint)
+  const assigned = (ja.items || []).filter(
+    x => (x.estado || '').toUpperCase() === 'ASIGNADO'
+  );
 
   cache = {
     toapprove,
-    pending: pend,
-    progress: (je.items||[]),
-    resolved: (jr.items||[])
+    // “Pendientes” para recepción = PENDIENTE + ASIGNADO
+    pending: [...pend, ...assigned],
+    progress: je.items || [],
+    resolved: jr.items || []
   };
 
-  // Construye lista unificada (orden: por aprobar → pendientes → en curso → resueltos hoy)
-  const tag = (t, cls='') => ({...t, __cls: cls});
+  // Lista unificada (por aprobar → pendientes → en curso → resueltos hoy)
+  const tag = (t, cls = '') => ({ ...t, __cls: cls });
   cache.all = [
     ...toapprove.map(t => tag(t, 'pending-approval')),
     ...cache.pending,
@@ -499,34 +517,56 @@ async function loadLists(){
     ...cache.resolved
   ];
 
-  // Ding si crecen los pendientes (los por aprobar no disparan el ding)
-  const ids = new Set(pend.map(x=>x.id));
+  // KPI Pendientes = tamaño de la lista combinada
+  if (el.kpiPending){
+    el.kpiPending.textContent = String(cache.pending.length || 0);
+  }
+
+  // Ding si crecen los pendientes (PENDIENTE + ASIGNADO)
+  const ids   = new Set(cache.pending.map(x => x.id));
   const newId = [...ids].find(id => !prev.pendingIds.has(id));
-  if ((ids.size > prev.pendingIds.size || newId) && el.ding) {
-    try { el.ding.currentTime = 0; el.ding.play().catch(()=>{}); } catch(e){}
+  if ((ids.size > prev.pendingIds.size || newId) && el.ding){
+    try {
+      el.ding.currentTime = 0;
+      el.ding.play().catch(()=>{});
+    } catch(e){}
   }
   prev.pendingIds = ids;
 
   renderFromCache();
 }
 
-function applyFilters(list, forceEstado=''){
-  const q = (document.getElementById('flt-q').value || '').toLowerCase();
-  const estado = forceEstado || (document.getElementById('flt-estado').value || '');
-  const prio   = (document.getElementById('flt-prio').value || '');
-  const area   = (document.getElementById('flt-area').value || '');
 
-  return (list||[]).filter(t => {
-    if (estado && !((t.estado||'').includes(estado))) return false;
-    if (prio && (t.prioridad||'') !== prio) return false;
-    if (area && (t.area||'') !== area) return false;
-    if (q) {
-      const hay = `${t.detalle||''} ${t.guest_name||''} ${t.guest_id||''} ${t.ubicacion||''}`.toLowerCase();
+function applyFilters(list, forceEstado = ''){
+  const q            = (document.getElementById('flt-q').value || '').toLowerCase();
+  const estadoFilter = forceEstado || (document.getElementById('flt-estado').value || '');
+  const prio         = (document.getElementById('flt-prio').value || '');
+  const area         = (document.getElementById('flt-area').value || '');
+
+  return (list || []).filter(t => {
+    if (estadoFilter){
+      const e = (t.estado || '').toUpperCase();
+
+      if (estadoFilter === 'PENDIENTE'){
+        // “Pendiente” en el filtro = PENDIENTE o ASIGNADO
+        if (!(e === 'PENDIENTE' || e === 'ASIGNADO')) return false;
+      } else {
+        if (e !== estadoFilter) return false;
+      }
+    }
+
+    if (prio && (t.prioridad || '') !== prio) return false;
+    if (area && (t.area || '') !== area)      return false;
+
+    if (q){
+      const hay = `${t.detalle || ''} ${t.guest_name || ''} ${t.guest_id || ''} ${t.ubicacion || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
+
     return true;
   });
 }
+
 
 function renderFromCache(){
   // Críticos: solo pendientes aprobados + en curso
