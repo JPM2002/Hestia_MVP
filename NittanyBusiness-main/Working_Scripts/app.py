@@ -47,12 +47,32 @@ DEMO_HK_TIEMPO_ESPERADO = os.getenv("DEMO_HK_TIEMPO_ESPERADO", "10–15 minutos"
 # Keyword that the HK chat must send to confirm
 DEMO_HK_CONFIRM_KEYWORD = os.getenv("DEMO_HK_CONFIRM_KEYWORD", "confirmar ticket").lower()
 
-# Hardcoded HK worker phones (Housekeeping staff)
-HARDCODED_HK_PHONES: List[str] = [
-    "+56983001018",  # Pedro (example)
-    "+56956326272",  # Andrés (example)
-    "+4915221317651" # Javier (example)
-]
+# ----------------------------- Hardcoded roles by phone (temporary) -----------------------------
+# NOTE: this is just a bootstrap mapping while we wire proper DB-based routing.
+# Phones are in E.164 form with '+' for readability, but we always compare on digits-only.
+
+HARDCODED_ROLE_PHONES: Dict[str, List[str]] = {
+    # Front desk / reception
+    "RECEPCION": [
+        "+4915221317651",  # Javier
+    ],
+    # Supervisors
+    "SUPERVISOR": [
+        "+56996107169",    # Sebas
+    ],
+    # Management
+    "GERENTE": [
+        "+56983001018",    # Pedro
+    ],
+    # Housekeeping workers (mucamas)
+    "HOUSEKEEPING": [
+        "+56956326272",    # Andrés (mucama)
+        "+56975620537",    # Borisbo (mucama)
+    ],
+}
+
+# Backward-compatibility for the existing HK flow:
+HARDCODED_HK_PHONES: List[str] = HARDCODED_ROLE_PHONES.get("HOUSEKEEPING", [])
 
 
 # ----------------------------- Copy (5-star tone) -----------------------------
@@ -96,7 +116,12 @@ COPY = {
     "reception_new_pending":
         "📥 Ticket para *revisión/edición* #{ticket_id}\n"
         "Área: {area}\nPrioridad: {prioridad}\nHabitación: {habitacion}\n"
-        "Detalle: {detalle}\n{link}\n\nAcción en sistema: Aprobar / Editar."
+        "Detalle: {detalle}\n{link}\n\nAcción en sistema: Aprobar / Editar.",
+        "onboarding_block":
+        "Hola 👋. Para poder usar todas las funciones del sistema por WhatsApp, "
+        "primero debes completar tu proceso de verificación en Hestia.\n\n"
+        "Por favor continúa con el proceso de verificación de tu cuenta "
+        "para poder utilizar todas las funciones del sistema.",
 }
 
 
@@ -122,12 +147,26 @@ def _only_digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
 
 
-def is_hk_phone(phone: str) -> bool:
+def resolve_role_by_phone(phone: str) -> Optional[str]:
+    """
+    Returns a hardcoded role name for this phone (RECEPCION, SUPERVISOR, GERENTE, HOUSEKEEPING),
+    or None if it's not a known internal worker.
+    """
     digits = _only_digits(phone)
-    for p in HARDCODED_HK_PHONES:
-        if _only_digits(p) == digits:
-            return True
-    return False
+    for role, phones in HARDCODED_ROLE_PHONES.items():
+        for p in phones:
+            if _only_digits(p) == digits:
+                return role
+    return None
+
+
+def is_hk_phone(phone: str) -> bool:
+    """
+    Kept for compatibility with the demo HK flow.
+    A phone is 'HK' if its hardcoded role is HOUSEKEEPING.
+    """
+    return resolve_role_by_phone(phone) == "HOUSEKEEPING"
+
 
 
 def _compose_demo_hk_text(ticket_id: str, room: str, item: str, prioridad: str, guest: str) -> str:
@@ -506,6 +545,34 @@ def _find_user_id_by_phone(phone: str) -> Optional[int]:
                 return int(r["id"])
     except Exception as e:
         print(f"[WARN] _find_user_id_by_phone failed: {e}", flush=True)
+    return None
+
+def _get_user_by_phone(phone: str) -> Optional[Dict[str, Any]]:
+    """
+    Returns the users.* row (including initialized) for this phone,
+    matching by digits-only phone and only active users.
+    """
+    try:
+        rows = fetchall(
+            "SELECT id, username, role, area, telefono, activo, is_superadmin, "
+            "       initialized, phone_verified, onboarding_step "
+            "FROM users "
+            "WHERE activo = TRUE"
+            if using_pg()
+            else
+            "SELECT id, username, role, area, telefono, activo, is_superadmin, "
+            "       initialized, phone_verified, onboarding_step "
+            "FROM users "
+            "WHERE activo = 1",
+            ()
+        )
+        target = _only_digits(phone)
+        for r in rows or []:
+            tel = r.get("telefono") or ""
+            if _only_digits(tel) == target:
+                return r
+    except Exception as e:
+        print(f"[WARN] _get_user_by_phone failed: {e}", flush=True)
     return None
 
 
@@ -1636,13 +1703,34 @@ def whatsapp_webhook():
         # Already handled by demo flow
         return jsonify({"status": "ok", "demo": demo_result}), 200
 
-    # Decide if this is HK worker or guest
-    if is_hk_phone(from_phone):
+    # Decide if this is an internal worker (by hardcoded role) or a guest
+    role = resolve_role_by_phone(from_phone)
+
+    # If it's an internal worker, check initialized flag in users table
+    user_row = _get_user_by_phone(from_phone) if role else None
+    if role and user_row:
+        initialized_ok = bool(user_row.get("initialized"))
+        if not initialized_ok:
+            # User exists but has not finished onboarding → block and send generic message
+            send_whatsapp(from_phone, txt("onboarding_block"))
+            return jsonify({"status": "ok", "onboarding": "required"}), 200
+
+    # If user is initialized (or we couldn't find DB row), route by role normally
+    if role == "HOUSEKEEPING":
         _handle_hk_message(from_phone, text)
+    elif role == "RECEPCION":
+        _handle_recepcion_message(from_phone, text)
+    elif role == "SUPERVISOR":
+        _handle_supervisor_message(from_phone, text)
+    elif role == "GERENTE":
+        _handle_gerente_message(from_phone, text)
     else:
+        # Not a known internal worker → treat as guest
         _handle_guest_message(from_phone, text, audio_url)
 
     return jsonify({"status": "ok"}), 200
+
+
 
 
 def _handle_hk_message(from_phone: str, text: str):
@@ -1720,6 +1808,43 @@ def _handle_hk_message(from_phone: str, text: str):
     _hk_send_main_menu(from_phone)
     s["hk_state"] = "MENU"
     session_set(from_phone, s)
+
+def _handle_recepcion_message(from_phone: str, text: str):
+    """
+    Stub handler for reception staff.
+    For now we just acknowledge that the channel exists.
+    """
+    send_whatsapp(
+        from_phone,
+        "🛎️ Canal de *Recepción* por WhatsApp está en construcción.\n"
+        "Pronto podrás revisar y aprobar tickets desde aquí.\n"
+        "Por ahora, usa la app web o el canal interno habitual."
+    )
+
+
+def _handle_supervisor_message(from_phone: str, text: str):
+    """
+    Stub handler for supervisors.
+    """
+    send_whatsapp(
+        from_phone,
+        "👷‍♂️ Canal de *Supervisor* por WhatsApp está en construcción.\n"
+        "En la siguiente versión podrás ver KPIs y estado de tickets.\n"
+        "Mientras tanto, usa la app web o el canal habitual."
+    )
+
+
+def _handle_gerente_message(from_phone: str, text: str):
+    """
+    Stub handler for managers/gerentes.
+    """
+    send_whatsapp(
+        from_phone,
+        "📊 Canal de *Gerencia* por WhatsApp está en construcción.\n"
+        "Estamos trabajando para que puedas ver el estado del hotel desde aquí.\n"
+        "Por ahora, revisa la plataforma web para más detalles."
+    )
+
 
 
 def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
