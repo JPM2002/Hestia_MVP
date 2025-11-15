@@ -6,6 +6,7 @@
 #   set DATABASE_URL=postgresql://postgres:...@aws-1-...pooler.supabase.com:6543/postgres?sslmode=require
 #   python seed_supabase_production.py --reset
 #   python seed_supabase_production.py --tickets 200 --days 14 --orgs 2 --hotels-per-org 2
+#   onboarding_step:"PHONE", "AREA", "DONE"
 
 import argparse
 import os
@@ -118,8 +119,12 @@ CREATE TABLE IF NOT EXISTS users (
   area TEXT,
   telefono TEXT,
   activo BOOLEAN NOT NULL DEFAULT TRUE,
-  is_superadmin BOOLEAN NOT NULL DEFAULT FALSE
+  is_superadmin BOOLEAN NOT NULL DEFAULT FALSE,
+  initialized BOOLEAN NOT NULL DEFAULT FALSE,
+  phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  onboarding_step VARCHAR(32)
 );
+
 
 CREATE TABLE IF NOT EXISTS orgusers (
   id BIGSERIAL PRIMARY KEY,

@@ -48,7 +48,19 @@ def login():
 
         row = fetchone(
             """
-            SELECT id, username, email, password_hash, role, area, telefono, activo, is_superadmin
+            SELECT
+              id,
+              username,
+              email,
+              password_hash,
+              role,
+              area,
+              telefono,
+              activo,
+              is_superadmin,
+              initialized,
+              phone_verified,
+              onboarding_step
             FROM Users
             WHERE (email = ? OR username = ?)
             """,
@@ -96,9 +108,18 @@ def login():
                     )
                     session["hotel_id"] = h["id"] if h else None
 
+            # ---- Onboarding gate: check initialization flags ----
+            initialized = bool(row.get("initialized", True))
+            phone_verified = bool(row.get("phone_verified", True))
+            onboarding_step = (row.get("onboarding_step") or "done").lower()
+
+            if (not initialized) or (not phone_verified) or (onboarding_step != "done"):
+                return redirect(url_for("initialization.start"))
+
             if session["user"]["is_superadmin"]:
                 return redirect(url_for("admin.admin_super"))
             return redirect(url_for("dashboard.index"))
+
         else:
             message = "Credenciales inválidas o usuario inactivo."
 

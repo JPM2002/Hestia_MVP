@@ -1,0 +1,84 @@
+{# hestia_app/blueprints/initialization/templates/phone_step.html #}
+{% extends "base.html" %}
+
+{% block title %}Inicialización de cuenta{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 480px;">
+  <h2 class="mb-3">Configurar tu número de WhatsApp</h2>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} mb-2">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if mode == 'phone' %}
+    <p>
+      Hola, <strong>{{ user.username }}</strong>.
+      Antes de continuar usaremos tu número de WhatsApp para conectarte con el sistema.
+    </p>
+    <p>
+      Ingresa tu número en formato internacional
+      (por ejemplo <code>+56912345678</code>).
+    </p>
+
+    <form method="post">
+      <div class="mb-3">
+        <label for="phone" class="form-label">Número de WhatsApp</label>
+        <input
+          type="text"
+          class="form-control"
+          id="phone"
+          name="phone"
+          value="{{ phone_value or '' }}"
+          placeholder="+56912345678"
+          required
+        >
+      </div>
+      <button type="submit" class="btn btn-primary w-100">
+        Enviar código de verificación
+      </button>
+    </form>
+
+  {% elif mode == 'verify' %}
+    <p>
+      Enviamos un código de verificación al número
+      <strong>{{ phone_value }}</strong>.
+    </p>
+    <p>
+      Ingresa el código de 6 dígitos que recibiste por WhatsApp.
+    </p>
+
+    <form method="post">
+      <div class="mb-3">
+        <label for="code" class="form-label">Código de verificación</label>
+        <input
+          type="text"
+          class="form-control"
+          id="code"
+          name="code"
+          placeholder="000000"
+          maxlength="6"
+          required
+        >
+      </div>
+
+      <button type="submit" class="btn btn-success w-100 mb-2">
+        Verificar código
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('initialization.phone') }}">
+      <input type="hidden" name="phone" value="{{ phone_value }}">
+      <button type="submit" class="btn btn-link w-100">
+        Volver a enviar código
+      </button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

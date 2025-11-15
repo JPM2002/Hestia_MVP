@@ -56,6 +56,8 @@ def create_app():
     from .blueprints.supervisor import bp as supervisor_bp
     from .blueprints.tecnico import bp as tecnico_bp
     from .blueprints.tickets import bp as tickets_bp
+    from .blueprints.initialization import bp as initialization_bp
+
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(dashboard_bp)
@@ -65,6 +67,8 @@ def create_app():
     app.register_blueprint(supervisor_bp)
     app.register_blueprint(tecnico_bp)
     app.register_blueprint(tickets_bp)
+    app.register_blueprint(initialization_bp)
+
 
     # --- Require login globally (except public endpoints) ---
     @app.before_request
