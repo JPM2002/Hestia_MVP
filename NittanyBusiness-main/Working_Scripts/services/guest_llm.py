@@ -65,79 +65,62 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
         return None
 
 
-def analyze_guest_message(text: str, session: Dict[str, Any], state: str) -> Dict[str, Any]:
-    """
-    Main NLU entrypoint.
-    text   : incoming user message (already stripped).
-    session: current session dict for this phone (may be empty).
-    state  : DFA state ("GH_S0", "GH_S1", etc.) for context.
-    """
-    t = (text or "").strip()
-    if not t:
+def analyze_guest_message(text: str, session: dict, state: str) -> dict:
+    if not text or not text.strip():
         return {}
 
-    ctx = {
-        "state": state,
-        "guest_name": session.get("guest_name"),
-        "room": session.get("room"),
-        "has_identification": bool(session.get("guest_name") and session.get("room")),
-        "last_ticket_id": session.get("gh_last_ticket_id"),
-    }
-
-    user_prompt = (
-        "Mensaje del huésped:\n"
-        f"{t}\n\n"
-        "Contexto de conversación (JSON):\n"
-        f"{json.dumps(ctx, ensure_ascii=False)}\n\n"
-        "Devuelve únicamente el JSON con la estructura especificada."
-    )
-
-    data = _call_json_llm(_BASE_SYSTEM_PROMPT, user_prompt)
-    if not isinstance(data, dict):
+    try:
+        resp = client.chat.completions.create(
+            model=LLM_MODEL,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un NLU para mensajes de huéspedes de hotel por WhatsApp. "
+                        "Devuelves SIEMPRE un JSON con esta forma:\n\n"
+                        "{\n"
+                        '  "intent": "ticket_request | handoff_request | general_chat | cancel | unknown",\n'
+                        '  "area": "MANTENCION | HOUSEKEEPING | ROOMSERVICE | null",\n'
+                        '  "priority": "URGENTE | ALTA | MEDIA | BAJA | null",\n'
+                        '  "room": "string o null",\n'
+                        '  "detail": "string o null",\n'
+                        '  "is_cancel": bool,\n'
+                        '  "is_help": bool,\n'
+                        '  "is_smalltalk": bool,\n'
+                        '  "wants_handoff": bool\n'
+                        "}\n\n"
+                        "No incluyas texto fuera del JSON."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Estado DFA actual: {state}\n\n"
+                        f"Mensaje del huésped:\n{text}"
+                    ),
+                },
+            ],
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {}
+        # Normaliza claves esperadas
+        return {
+            "intent": data.get("intent"),
+            "area": data.get("area"),
+            "priority": data.get("priority"),
+            "room": data.get("room"),
+            "detail": data.get("detail"),
+            "is_cancel": bool(data.get("is_cancel")),
+            "is_help": bool(data.get("is_help")),
+            "is_smalltalk": bool(data.get("is_smalltalk")),
+            "wants_handoff": bool(data.get("wants_handoff")),
+        }
+    except Exception as e:
+        print(f"[WARN] guest_llm json call failed: {e}", flush=True)
         return {}
-
-    intent = (data.get("intent") or "").strip().lower()
-    valid_intents = {
-        "ticket_request",
-        "general_chat",
-        "handoff_request",
-        "cancel",
-        "help",
-        "not_understood",
-    }
-    if intent not in valid_intents:
-        intent = "not_understood"
-
-    area = (data.get("area") or "").strip().upper() or None
-    if area not in {"MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"}:
-        area = None
-
-    priority = (data.get("priority") or "").strip().upper() or None
-    if priority not in {"URGENTE", "ALTA", "MEDIA", "BAJA"}:
-        priority = None
-
-    room = data.get("room")
-    if room is not None:
-        room = "".join(ch for ch in str(room) if ch.isdigit()) or None
-
-    detail = data.get("detail")
-    if detail is not None:
-        detail = str(detail).strip() or None
-
-    def _b(key: str) -> bool:
-        return bool(data.get(key))
-
-    return {
-        "intent": intent,
-        "area": area,
-        "priority": priority,
-        "room": room,
-        "detail": detail,
-        "is_smalltalk": _b("is_smalltalk"),
-        "wants_handoff": _b("wants_handoff"),
-        "is_cancel": _b("is_cancel"),
-        "is_help": _b("is_help"),
-    }
 
 
 _CONFIRM_SYSTEM_PROMPT = """
@@ -147,47 +130,13 @@ You will receive the context and must return a single string (no JSON).
 """
 
 
-def render_confirm_draft(summary: str, session: Dict[str, Any]) -> str:
-    """
-    Given a structured summary, ask the guest to confirm in a smooth way.
-    If the LLM fails, fall back to a static template.
-    """
-    guest_name = session.get("guest_name") or ""
-    room = session.get("room") or ""
-
-    base = (
-        "📝 Te resumo lo que entendí:\n\n"
+def render_confirm_draft(summary: str, session: dict) -> str:
+    name = (session.get("guest_name") or "Huésped").strip()
+    return (
+        f"📝 {name}, este es el resumen de tu solicitud:\n\n"
         f"{summary}\n\n"
-        "¿Lo dejo registrado así o quieres cambiar algo? "
-        "Responde *SI* para confirmar o *NO* para corregir."
+        "Si todo está correcto responde *SI* para crear el ticket.\n"
+        "Si quieres cambiar algo responde *NO* y podrás editar área, prioridad, "
+        "habitación o detalle."
     )
 
-    user_ctx = {
-        "guest_name": guest_name,
-        "room": room,
-        "summary": summary,
-    }
-
-    prompt = (
-        "Contexto (JSON):\n"
-        f"{json.dumps(user_ctx, ensure_ascii=False)}\n\n"
-        "Escribe un mensaje único, corto y amable para pedir confirmación de este resumen. "
-        "Mantén el contenido clave pero puedes suavizar el tono."
-    )
-
-    try:
-        resp = _client.responses.create(
-            model=LLM_MODEL,
-            input=[
-                {"role": "system", "content": _CONFIRM_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            max_output_tokens=200,
-        )
-        text = resp.output[0].content[0].text.strip()
-        if text:
-            return text
-    except Exception as e:
-        print(f"[WARN] render_confirm_draft LLM failed: {e}", flush=True)
-
-    return base

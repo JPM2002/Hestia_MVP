@@ -784,7 +784,11 @@ def is_no(text: str) -> bool:
     """
     t = (text or "").strip().lower()
     t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
-    return t in {"no", "n", "nop", "nope", "para nada"}
+    return t in {
+        "no", "n", "nop", "nope", "para nada",
+        "no gracias", "no, gracias",
+    }
+
 
 
 
@@ -1865,14 +1869,6 @@ def _handle_gerente_message(from_phone: str, text: str):
 # ================================
 # GH (Huésped) DFA helpers
 # ================================
-
-def is_no(text: str) -> bool:
-    """
-    Respuesta negativa simple ('no', 'no gracias', etc.).
-    """
-    t = (text or "").strip().lower()
-    t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
-    return t in {"no", "n", "nop", "nope", "no gracias", "no, gracias"}
 
 
 def _gh_get_state(s: Dict[str, Any]) -> str:
