@@ -72,7 +72,7 @@ DEMO_HK_CONFIRM_KEYWORD = os.getenv("DEMO_HK_CONFIRM_KEYWORD", "confirmar ticket
 # }
 
 # Backward-compatibility for the existing HK flow:
-HARDCODED_HK_PHONES: List[str] = HARDCODED_ROLE_PHONES.get("HOUSEKEEPING", [])
+#HARDCODED_HK_PHONES: List[str] = HARDCODED_ROLE_PHONES.get("HOUSEKEEPING", [])
 
 
 # ----------------------------- Copy (5-star tone) -----------------------------
