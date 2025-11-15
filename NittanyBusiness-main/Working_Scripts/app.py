@@ -352,9 +352,9 @@ def ensure_summary_in_session(s: Dict[str, Any]) -> str:
 INTERNAL_NOTIFY_TOKEN = os.getenv("INTERNAL_NOTIFY_TOKEN", "")
 
 # --- Auto-asignación / Notificaciones a técnicos ---
-ASSIGNEE_MANTENCION_PHONE = os.getenv("ASSIGNEE_MANTENCION_PHONE", "+56956326272")  # Andrés
-ASSIGNEE_HOUSEKEEPING_PHONE = os.getenv("ASSIGNEE_HOUSEKEEPING_PHONE", "+56983001018")  # Pedro
-ASSIGNEE_ROOMSERVICE_PHONE = os.getenv("ASSIGNEE_ROOMSERVICE_PHONE", "")  # opcional
+ASSIGNEE_MANTENCION_PHONE   = os.getenv("ASSIGNEE_MANTENCION_PHONE", "")  # legacy fallback
+ASSIGNEE_HOUSEKEEPING_PHONE = os.getenv("ASSIGNEE_HOUSEKEEPING_PHONE", "")
+ASSIGNEE_ROOMSERVICE_PHONE  = os.getenv("ASSIGNEE_ROOMSERVICE_PHONE", "")
 
 # Si quieres pegar link al ticket en el mensaje:
 APP_BASE_URL = os.getenv("APP_BASE_URL", "")  # ej: "https://hestia-mvp.onrender.com"
@@ -386,6 +386,46 @@ SLA_FALLBACK = {
 }
 
 # ----------------------------- DB helpers -----------------------------
+
+def _find_technician_for_area(area_u: str,
+                              org_id: int,
+                              hotel_id: int) -> Optional[Tuple[int, Optional[str]]]:
+    """
+    Return (user_id, telefono) for a TECNICO in the given area.
+    For ahora se ignoran org_id / hotel_id (1 hotel); se deja la firma preparada.
+    Preferimos técnicos con teléfono no nulo.
+    """
+    params = (area_u,)
+    if using_pg():
+        row = query_one(
+            """
+            SELECT u.id, u.telefono
+            FROM users u
+            WHERE u.role = 'TECNICO'
+              AND UPPER(COALESCE(u.area, '')) = %s
+              AND u.activo = TRUE
+            ORDER BY (u.telefono IS NULL), u.id
+            LIMIT 1
+            """,
+            params,
+        )
+    else:
+        row = query_one(
+            """
+            SELECT u.id, u.telefono
+            FROM users u
+            WHERE u.role = 'TECNICO'
+              AND UPPER(COALESCE(u.area, '')) = ?
+              AND u.activo = 1
+            ORDER BY (u.telefono IS NULL), u.id
+            LIMIT 1
+            """,
+            params,
+        )
+    if not row:
+        return None
+    return row["id"], row["telefono"]
+
 
 
 def _dsn_with_params(dsn: str, extra: dict | None = None) -> str:
@@ -627,50 +667,100 @@ def _notify_tech(phone: str, ticket_id: int, area: str, prioridad: str, detalle:
     send_whatsapp(phone, summary)
 
 
-def _auto_assign_and_notify(ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
+def _auto_assign_and_notify(
+    ticket_id: int,
+    area: str,
+    prioridad: str,
+    detalle: str,
+    ubicacion: Optional[str],
+    org_id: Optional[int] = None,
+    hotel_id: Optional[int] = None,
+):
     """
-    - Choose a technician by area (phones from env).
-    - (Optional) Assign in DB to that user if we can match by phone.
-    - Always WhatsApp the technician with summary.
-    - Log TicketHistory 'ASIGNADO_AUTO' when assigned.
+    - Seleccionar técnico según área (users.role='TECNICO', users.area, activo).
+    - Opcionalmente asignar en BD (AUTO_ASSIGN_ON_CREATE).
+    - Enviar siempre WhatsApp al técnico si tenemos teléfono.
+    - Registrar TicketHistory 'ASIGNADO_AUTO' cuando se asigna.
+    - Si no hay técnico en BD, usa los teléfonos legacy por área como fallback.
     """
     area_u = (area or "").upper()
-    to_phone = None
+    org_id = org_id or ORG_ID_DEFAULT
+    hotel_id = hotel_id or HOTEL_ID_DEFAULT
 
-    if area_u == "MANTENCION":
-        to_phone = ASSIGNEE_MANTENCION_PHONE or None
-    elif area_u == "HOUSEKEEPING":
-        to_phone = ASSIGNEE_HOUSEKEEPING_PHONE or None
-    elif area_u == "ROOMSERVICE":
-        to_phone = ASSIGNEE_ROOMSERVICE_PHONE or None
+    assigned_user_id: Optional[int] = None
+    to_phone: Optional[str] = None
 
+    # 1) Buscar técnico configurado en BD
+    try:
+        tech = _find_technician_for_area(area_u, org_id, hotel_id)
+    except Exception as e:
+        print(f"[WARN] _find_technician_for_area failed: {e}", flush=True)
+        tech = None
+
+    if tech:
+        assigned_user_id, to_phone = tech
+
+    # 2) Fallback legacy: teléfonos por área + búsqueda por teléfono
     if not to_phone:
-        return  # no mapping → do nothing
+        if area_u == "MANTENCION":
+            to_phone = ASSIGNEE_MANTENCION_PHONE or None
+        elif area_u == "HOUSEKEEPING":
+            to_phone = ASSIGNEE_HOUSEKEEPING_PHONE or None
+        elif area_u == "ROOMSERVICE":
+            to_phone = ASSIGNEE_ROOMSERVICE_PHONE or None
 
-    assigned_user_id = None
-    if AUTO_ASSIGN_ON_CREATE:
-        uid = _find_user_id_by_phone(to_phone)
-        if uid:
+        if to_phone and not assigned_user_id:
             try:
-                if using_pg():
-                    execute("UPDATE tickets SET assigned_to=%s WHERE id=%s", (uid, ticket_id))
-                    execute(
-                        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) "
-                        "VALUES (%s,%s,%s,%s,%s)",
-                        (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat())
-                    )
-                else:
-                    execute("UPDATE tickets SET assigned_to=? WHERE id=?", (uid, ticket_id))
-                    execute(
-                        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) "
-                        "VALUES (?,?,?,?,?)",
-                        (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat())
-                    )
-                assigned_user_id = uid
+                uid = _find_user_id_by_phone(to_phone)
+                if uid:
+                    assigned_user_id = uid
             except Exception as e:
-                print(f"[WARN] auto-assign failed: {e}", flush=True)
+                print(f"[WARN] _find_user_id_by_phone failed: {e}", flush=True)
 
-    prefix = "📌 Asignado a ti.\n" if assigned_user_id else ""
+    # 3) Si está activado, asignar en tickets.assigned_to
+    if AUTO_ASSIGN_ON_CREATE and assigned_user_id:
+        try:
+            if using_pg():
+                execute(
+                    "UPDATE tickets SET assigned_to=%s WHERE id=%s",
+                    (assigned_user_id, ticket_id),
+                )
+                execute(
+                    "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) "
+                    "VALUES (%s,%s,%s,%s,%s)",
+                    (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat()),
+                )
+            else:
+                execute(
+                    "UPDATE tickets SET assigned_to=? WHERE id=?",
+                    (assigned_user_id, ticket_id),
+                )
+                execute(
+                    "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) "
+                    "VALUES (?,?,?,?,?)",
+                    (ticket_id, None, "ASIGNADO_AUTO", f"area={area_u}", datetime.now().isoformat()),
+                )
+        except Exception as e:
+            print(f"[WARN] auto-assign failed: {e}", flush=True)
+            assigned_user_id = None  # no marcar como asignado si la BD falló
+
+    # 4) Si no tenemos teléfono aún pero sí user_id, intenta leerlo de users
+    if not to_phone and assigned_user_id:
+        try:
+            if using_pg():
+                row = query_one("SELECT telefono FROM users WHERE id=%s", (assigned_user_id,))
+            else:
+                row = query_one("SELECT telefono FROM users WHERE id=?", (assigned_user_id,))
+            if row and row["telefono"]:
+                to_phone = row["telefono"]
+        except Exception as e:
+            print(f"[WARN] could not fetch technician phone: {e}", flush=True)
+
+    # Sin teléfono no podemos notificar por WhatsApp
+    if not to_phone:
+        return
+
+    prefix = "📌 Asignado a ti.\n" if (assigned_user_id and AUTO_ASSIGN_ON_CREATE) else ""
     body = (
         f"{prefix}🔔 Nuevo ticket #{ticket_id}\n"
         f"Área: {area}\n"
@@ -995,10 +1085,15 @@ def session_clear(phone: str):
 
 
 # ----------------------------- Ticket creation -----------------------------
-def create_ticket(payload: Dict[str, Any], initial_status: str = "PENDIENTE_APROBACION") -> int:
+def create_ticket(payload: Dict[str, Any],
+                  initial_status: str = "PENDIENTE_APROBACION") -> int:
     now = datetime.now()
     due_dt = compute_due(now, payload["area"], payload["prioridad"])
     due_at = due_dt.isoformat() if due_dt else None
+
+    # Normalizar org/hotel (usa defaults si no vienen en payload)
+    org_id = int(payload.get("org_id", ORG_ID_DEFAULT))
+    hotel_id = int(payload.get("hotel_id", HOTEL_ID_DEFAULT))
 
     new_id = insert_and_get_id(
         """
@@ -1018,8 +1113,8 @@ def create_ticket(payload: Dict[str, Any], initial_status: str = "PENDIENTE_APRO
                 ?, ?, ?, ?)
         """,
         (
-            payload.get("org_id", ORG_ID_DEFAULT),
-            payload.get("hotel_id", HOTEL_ID_DEFAULT),
+            org_id,
+            hotel_id,
             payload["area"],
             payload["prioridad"],
             initial_status,
@@ -1036,8 +1131,9 @@ def create_ticket(payload: Dict[str, Any], initial_status: str = "PENDIENTE_APRO
         )
     )
 
+    # Persistir teléfono / nombre del huésped si existen las columnas
     guest_phone = payload.get("huesped_phone") or payload.get("huesped_id")
-    guest_name = payload.get("huesped_nombre")
+    guest_name  = payload.get("huesped_nombre")
     try:
         sets, params = [], []
         if guest_phone and table_has_column("tickets", "huesped_phone"):
@@ -1048,27 +1144,46 @@ def create_ticket(payload: Dict[str, Any], initial_status: str = "PENDIENTE_APRO
             params.append(guest_name)
         if sets:
             params.append(new_id)
-            sql = f"UPDATE tickets SET {', '.join(sets)} WHERE id=%s" if using_pg() else \
-                f"UPDATE tickets SET {', '.join(sets)} WHERE id=?"
+            sql = (
+                f"UPDATE tickets SET {', '.join(sets)} WHERE id=%s"
+                if using_pg()
+                else f"UPDATE tickets SET {', '.join(sets)} WHERE id=?"
+            )
             execute(sql, tuple(params))
     except Exception as e:
         print(f"[WARN] could not persist guest phone/name: {e}", flush=True)
 
+    # Historial de creación
     execute(
         "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
         if using_pg() else
         "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
-        (new_id, None, "CREADO", "via whatsapp", now.isoformat())
+        (new_id, None, "CREADO", "via whatsapp", now.isoformat()),
     )
     if initial_status == "PENDIENTE_APROBACION":
         execute(
             "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
             if using_pg() else
             "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
-            (new_id, None, "PENDIENTE_APROBACION", "esperando aprobación de recepción", now.isoformat())
+            (new_id, None, "PENDIENTE_APROBACION", "esperando aprobación de recepción", now.isoformat()),
         )
 
+    # Auto-asignar y notificar técnico según área / org / hotel
+    try:
+        _auto_assign_and_notify(
+            ticket_id=new_id,
+            area=payload["area"],
+            prioridad=payload["prioridad"],
+            detalle=payload.get("detalle"),
+            ubicacion=payload.get("ubicacion"),
+            org_id=org_id,
+            hotel_id=hotel_id,
+        )
+    except Exception as e:
+        print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
+
     return new_id
+
 
 
 # ----------------------------- Meta inbound helpers -----------------------------
