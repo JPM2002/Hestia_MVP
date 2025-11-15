@@ -246,15 +246,30 @@ def ticket_create():
 @bp.post('/tickets/<int:id>/confirm')
 @require_perm('ticket.confirm')
 def ticket_confirm(id):
-    """Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION), auto-asignan y notifican por WA."""
-    if 'user' not in session: 
+    """
+    Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION),
+    auto-asignan y notifican por WA.
+
+    Además:
+    - Marca approved / approved_by / approved_at
+    """
+    if 'user' not in session:
+        # If called via fetch(), a redirect is not super useful, but it's OK.
+        # If you want, you can return JSON here instead.
         return redirect(url_for('login'))
 
-    t = fetchone("""
+    user = session['user']
+    org_id, _ = current_scope()
+
+    t = fetchone(
+        """
         SELECT id, org_id, area, prioridad, estado, detalle, ubicacion, assigned_to
-        FROM Tickets WHERE id=?
-    """, (id,))
-    if not t:
+        FROM Tickets
+        WHERE id=?
+        """,
+        (id,),
+    )
+    if not t or (org_id and t['org_id'] != org_id):
         flash('Ticket no encontrado.', 'error')
         return redirect(url_for('tickets'))
 
@@ -262,13 +277,29 @@ def ticket_confirm(id):
         flash('Solo puedes confirmar/aprobar tickets pendientes.', 'error')
         return redirect(url_for('tickets'))
 
+    role = current_org_role()
+
     # SUPERVISOR: solo su área
-    if current_org_role() == 'SUPERVISOR':
+    if role == 'SUPERVISOR':
         _require_area_manage(t['area'])
 
     # Asignación simple (menor backlog del área)
     assignee = pick_assignee(t['org_id'], t['area'])
-    fields = {"estado": "ASIGNADO"}
+
+    # Approval metadata
+    if using_pg():
+        approved_val = True
+        now_iso = datetime.now(timezone.utc).isoformat()
+    else:
+        approved_val = 1
+        now_iso = datetime.now().isoformat()
+
+    fields: dict[str, Any] = {
+        "estado": "ASIGNADO",       # se va a la cola del técnico
+        "approved": approved_val,   # ahora sí está aprobado
+        "approved_by": user['id'],
+        "approved_at": now_iso,
+    }
     if assignee:
         fields["assigned_to"] = assignee
 
@@ -286,13 +317,19 @@ def ticket_confirm(id):
                     area=t['area'],
                     prioridad=t['prioridad'],
                     detalle=t['detalle'],
-                    ubicacion=t['ubicacion']
+                    ubicacion=t['ubicacion'],
                 )
             except Exception as e:
                 print(f"[WA] notify tech assignment failed: {e}", flush=True)
 
-    flash('Ticket confirmado y asignado.' if assignee else 'Ticket confirmado (sin asignar).', 'success')
+    msg = 'Ticket confirmado y asignado.' if assignee else 'Ticket confirmado (sin asignar).'
+    flash(msg, 'success')
+
+    # For the new Recepción dashboard we call this via fetch(). We only care about r.ok,
+    # so returning a redirect (200 after follow) is fine. If later you want JSON, you
+    # can add an X-Requested-With header in JS and branch here.
     return redirect(url_for('tickets'))
+
 
 def pick_assignee(org_id: int, area: str) -> int | None:
     """
@@ -349,12 +386,36 @@ def _guard_transition(t, allowed: set, verb_es: str):
 
 # ---------------------------- transitions ----------------------------
 def _update_ticket(id, fields: dict, action: str, motivo: str | None = None):
-    sets = ", ".join([f"{k}=?" for k in fields.keys()])
-    params = list(fields.values()) + [id]
-    execute(f"UPDATE Tickets SET {sets} WHERE id=?", params)
-    execute("""INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
-               VALUES (?,?,?,?,?)""",
-            (id, session['user']['id'], action, motivo, datetime.now().isoformat()))
+    """
+    Small helper: update Tickets with `fields` and write a line in TicketHistory.
+    Works on both SQLite and Postgres.
+    """
+    now = datetime.now(timezone.utc).isoformat() if using_pg() else datetime.now().isoformat()
+
+    if using_pg():
+        sets = ", ".join([f"{k}=%s" for k in fields.keys()])
+        params = list(fields.values()) + [id]
+        # tickets / tickethistory are lowercase in Supabase
+        execute(f"UPDATE tickets SET {sets} WHERE id=%s", params)
+        execute(
+            """
+            INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at)
+            VALUES (%s,%s,%s,%s,%s)
+            """,
+            (id, session["user"]["id"], action, motivo, now),
+        )
+    else:
+        sets = ", ".join([f"{k}=?" for k in fields.keys()])
+        params = list(fields.values()) + [id]
+        execute(f"UPDATE Tickets SET {sets} WHERE id=?", params)
+        execute(
+            """
+            INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
+            VALUES (?,?,?,?,?)
+            """,
+            (id, session["user"]["id"], action, motivo, now),
+        )
+
 
 def _get_ticket_or_abort(id: int):
     t = fetchone("SELECT * FROM Tickets WHERE id=?", (id,))
