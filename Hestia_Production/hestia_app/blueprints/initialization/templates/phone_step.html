@@ -23,23 +23,47 @@
       Antes de continuar usaremos tu número de WhatsApp para conectarte con el sistema.
     </p>
     <p>
-      Ingresa tu número en formato internacional
-      (por ejemplo <code>+56912345678</code>).
+      Selecciona tu país y luego escribe tu número local
+      <strong>sin</strong> el signo <code>+</code> ni el código de país.
+      Validaremos que tenga la cantidad correcta de dígitos según el país.
     </p>
 
     <form method="post">
       <div class="mb-3">
-        <label for="phone" class="form-label">Número de WhatsApp</label>
-        <input
-          type="text"
-          class="form-control"
-          id="phone"
-          name="phone"
-          value="{{ phone_value or '' }}"
-          placeholder="+56912345678"
-          required
-        >
+        <label class="form-label">Número de WhatsApp</label>
+        <div class="input-group">
+          <select
+            class="form-select"
+            name="country_code"
+            id="country_code"
+            style="max-width: 220px;"
+            required
+          >
+            {% for c in countries %}
+              <option value="{{ c.code }}"
+                      {% if c.code == selected_country_code %}selected{% endif %}>
+                {{ c.flag }} {{ c.name }} ({{ c.dial }})
+              </option>
+            {% endfor %}
+          </select>
+
+          <input
+            type="text"
+            class="form-control"
+            id="phone_local"
+            name="phone_local"
+            value="{{ phone_local_value or '' }}"
+            placeholder="Número local (solo dígitos)"
+            pattern="\\d+"
+            inputmode="numeric"
+            required
+          >
+        </div>
+        <div class="form-text">
+          Escribe solo los dígitos del número local. El prefijo internacional se toma del país seleccionado.
+        </div>
       </div>
+
       <button type="submit" class="btn btn-primary w-100">
         Enviar código de verificación
       </button>
@@ -47,8 +71,9 @@
 
   {% elif mode == 'verify' %}
     <p>
-      Enviamos un código de verificación al número
-      <strong>{{ phone_value }}</strong>.
+      Enviamos un código de verificación al número:
+      <br>
+      <strong>{{ phone_value }}</strong>
     </p>
     <p>
       Ingresa el código de 6 dígitos que recibiste por WhatsApp.
@@ -64,6 +89,8 @@
           name="code"
           placeholder="000000"
           maxlength="6"
+          pattern="\\d{6}"
+          inputmode="numeric"
           required
         >
       </div>
@@ -73,12 +100,9 @@
       </button>
     </form>
 
-    <form method="post" action="{{ url_for('initialization.phone') }}">
-      <input type="hidden" name="phone" value="{{ phone_value }}">
-      <button type="submit" class="btn btn-link w-100">
-        Volver a enviar código
-      </button>
-    </form>
+    <a href="{{ url_for('initialization.reset_phone') }}" class="btn btn-link w-100">
+      Ingresé mal mi número de WhatsApp
+    </a>
   {% endif %}
 </div>
 {% endblock %}

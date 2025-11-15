@@ -3,7 +3,7 @@ import time
 import random
 import hashlib
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import requests
 from flask import render_template, request, redirect, url_for, flash, session
@@ -17,6 +17,74 @@ META_PHONE_ID = os.getenv("WHATSAPP_CLOUD_PHONE_ID", "")
 
 # Verification code TTL (seconds)
 PHONE_CODE_TTL = 10 * 60  # 10 minutes
+
+# ---------------------------------------------------------
+# Country list for strict phone format
+#   - min_len / max_len refer to the local part (without + and country code)
+# ---------------------------------------------------------
+COUNTRY_OPTIONS: List[Dict[str, Any]] = [
+    {
+        "code": "CL",
+        "name": "Chile",
+        "flag": "🇨🇱",
+        "dial": "+56",
+        "min_len": 8,
+        "max_len": 9,
+    },
+    {
+        "code": "PE",
+        "name": "Perú",
+        "flag": "🇵🇪",
+        "dial": "+51",
+        "min_len": 9,
+        "max_len": 9,
+    },
+    {
+        "code": "DE",
+        "name": "Alemania",
+        "flag": "🇩🇪",
+        "dial": "+49",
+        "min_len": 10,
+        "max_len": 12,
+    },
+    {
+        "code": "US",
+        "name": "Estados Unidos",
+        "flag": "🇺🇸",
+        "dial": "+1",
+        "min_len": 10,
+        "max_len": 10,
+    },
+    {
+        "code": "MX",
+        "name": "México",
+        "flag": "🇲🇽",
+        "dial": "+52",
+        "min_len": 10,
+        "max_len": 10,
+    },
+]
+
+COUNTRY_MAP = {c["code"]: c for c in COUNTRY_OPTIONS}
+
+
+def _split_phone_by_country(full_phone: str) -> tuple[Optional[str], str]:
+    """
+    Given a full E.164 phone (e.g. '+56912345678'), try to detect
+    which country code it belongs to and return (country_code, local_part).
+    If no match, returns (None, digits_without_plus).
+    """
+    if not full_phone:
+        return None, ""
+    p = str(full_phone).strip()
+    if not p.startswith("+"):
+        p = "+" + p.lstrip("+")
+    for c in COUNTRY_OPTIONS:
+        dial = c["dial"]
+        if p.startswith(dial):
+            return c["code"], p[len(dial):]
+    # Fallback: no match, just strip '+'
+    return None, p.lstrip("+")
 
 
 def _session_user() -> Optional[Dict[str, Any]]:
@@ -133,7 +201,7 @@ def start():
 @bp.route("/phone", methods=["GET", "POST"])
 def phone():
     """
-    Step 1: ask for WhatsApp number, send verification code.
+    Step 1: ask for WhatsApp number (country + strict local format), send verification code.
     """
     not_logged = _require_login_redirect()
     if not_logged:
@@ -143,39 +211,93 @@ def phone():
     if not user_row:
         return redirect(url_for("auth.login"))
 
+    # --- Pre-fill from existing telefono if any ---
+    default_country_code = "CL"  # fallback
+    phone_local_value = ""
+    selected_country_code = default_country_code
+
+    if user_row.get("telefono"):
+        c_code, local_part = _split_phone_by_country(user_row["telefono"])
+        if c_code and c_code in COUNTRY_MAP:
+            selected_country_code = c_code
+        phone_local_value = local_part
+
+    # For GET: show the form
     if request.method == "GET":
         return render_template(
             "phone_step.html",
             user=user_row,
             mode="phone",
-            phone_value=user_row.get("telefono") or "",
+            countries=COUNTRY_OPTIONS,
+            selected_country_code=selected_country_code,
+            phone_local_value=phone_local_value,
         )
 
-    raw_phone = (request.form.get("phone") or "").strip()
-    if not raw_phone:
-        flash("Por favor ingresa tu número de WhatsApp.", "error")
+    # --- POST: validate + send code ---
+    country_code = (request.form.get("country_code") or "").upper()
+    raw_local = (request.form.get("phone_local") or "").strip()
+    local_digits = "".join(ch for ch in raw_local if ch.isdigit())
+
+    if country_code not in COUNTRY_MAP:
+        flash("Selecciona un país válido.", "error")
         return render_template(
             "phone_step.html",
             user=user_row,
             mode="phone",
-            phone_value=raw_phone,
+            countries=COUNTRY_OPTIONS,
+            selected_country_code=selected_country_code,
+            phone_local_value=raw_local,
         )
 
-    if not raw_phone.replace("+", "").isdigit():
-        flash("El número debe contener solo dígitos (y opcionalmente un + al inicio).", "error")
+    cinfo = COUNTRY_MAP[country_code]
+    min_len = int(cinfo["min_len"])
+    max_len = int(cinfo["max_len"])
+
+    if not local_digits:
+        flash("Por favor ingresa tu número local (solo dígitos).", "error")
         return render_template(
             "phone_step.html",
             user=user_row,
             mode="phone",
-            phone_value=raw_phone,
+            countries=COUNTRY_OPTIONS,
+            selected_country_code=country_code,
+            phone_local_value=raw_local,
         )
+
+    if not local_digits.isdigit():
+        flash("El número local debe contener solo dígitos.", "error")
+        return render_template(
+            "phone_step.html",
+            user=user_row,
+            mode="phone",
+            countries=COUNTRY_OPTIONS,
+            selected_country_code=country_code,
+            phone_local_value=raw_local,
+        )
+
+    if not (min_len <= len(local_digits) <= max_len):
+        flash(
+            f"Para {cinfo['name']} se esperan entre {min_len} y {max_len} dígitos "
+            "en el número local.",
+            "error",
+        )
+        return render_template(
+            "phone_step.html",
+            user=user_row,
+            mode="phone",
+            countries=COUNTRY_OPTIONS,
+            selected_country_code=country_code,
+            phone_local_value=raw_local,
+        )
+
+    # Normalize to E.164: +cc + local
+    normalized_phone = cinfo["dial"] + local_digits
 
     # 6-digit code
     code = f"{random.randint(0, 999999):06d}"
 
-    _store_phone_verification(user_id=user_row["id"], phone=raw_phone, code=code)
+    _store_phone_verification(user_id=user_row["id"], phone=normalized_phone, code=code)
 
-    normalized_phone = "+" + raw_phone.lstrip("+")
     execute(
         """
         UPDATE Users
@@ -270,3 +392,31 @@ def verify():
 
     flash("Tu número de WhatsApp ha sido verificado. ¡Bienvenido a Hestia!", "success")
     return redirect(url_for("dashboard.index"))
+
+
+@bp.route("/reset-phone", methods=["GET"])
+def reset_phone():
+    """
+    Allow the user (from verify step) to go back and change the number
+    if they wrote it wrong while a code is pending.
+    """
+    not_logged = _require_login_redirect()
+    if not_logged:
+        return not_logged
+
+    user_row = _current_user_row()
+    if not user_row:
+        return redirect(url_for("auth.login"))
+
+    _clear_phone_verification()
+    execute(
+        """
+        UPDATE Users
+        SET telefono = NULL, initialized = ?, phone_verified = ?, onboarding_step = ?
+        WHERE id = ?
+        """,
+        (False, False, "phone", user_row["id"]),
+    )
+
+    flash("Vamos a volver a ingresar tu número de WhatsApp.", "info")
+    return redirect(url_for("initialization.phone"))
