@@ -32,7 +32,7 @@
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tecnico.tech_available', slug=slug) }}">Disponibles</a>
     {% endif %}
     {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
-      <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
+      <a class="btn btn-sm btn-accent" href="{{ url_for('tickets.ticket_create') }}">Nuevo</a>
     {% endif %}
   </div>
 </header>
@@ -103,7 +103,7 @@
                    value="{{ 'Pendiente insumos' if is_hk else ('Bloqueado' if is_mn else 'En camino') }}">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_finish', id=t.id) }}">
             <button class="btn btn-sm btn-success">{{ 'Finalizar' if not is_rs else 'Entregado' }}</button>
           </form>
         {% endif %}
@@ -140,7 +140,7 @@
     {% else %}
       <span class="btn btn-link disabled">➕ Nuevo</span>
     {% endif %}
-    <a class="btn btn-link" href="{{ url_for('das hboard') }}">🏠 Inicio</a>
+    <a class="btn btn-link" href="{{ url_for('dashboard.index') }}">🏠 Inicio</a>
   </div>
 </nav>
 {% endblock %}
