@@ -11,7 +11,6 @@ from ...blueprints.gerencia.routes import (
     get_history_tickets_for_user,
 )
 from ...blueprints.dashboard.routes import render_best
-    # render_best(template_order, **context)
 from ...core.area import area_from_slug
 from ...core.errors import _err_or_redirect
 from ...core.shift import _shift_log_append, _shift_state
@@ -42,21 +41,68 @@ def _area_or_404(slug: str) -> str:
 
 def _tech_template_order(section: str, slug: str) -> list[str]:
     """
-    Returns a list of candidate templates for a technician view.
+    Decide which templates to try for a technician view, based on:
+      - section: "my", "in_progress", "available", "history", "tools"
+      - slug:    "housekeeping" | "mantencion" | "roomservice"
+      - g.view_mode: "mobile" | "desktop"
 
-    Example for slug="housekeeping", section="my":
-      1) tecnico_housekeeping_my.html
-      2) tecnico_mobile_list.html
-      3) tickets_mobile.html
-      4) tickets.html
+    This uses the existing templates:
+      tecnico_housekeeping_mobile.html
+      tecnico_mantencion_mobile.html
+      tecnico_roomservice_mobile.html
+      tecnico_mobile_list.html
+      tecnico_mobile_tools.html
+      tecnico_mobile.html
+      tecnico_desktop.html
+      tickets_mobile.html
+      tickets.html
     """
     slug = (slug or "").lower()
-    return [
-        f"tecnico_{slug}_{section}.html",
-        "tecnico_mobile_list.html",
-        "tickets_mobile.html",
-        "tickets.html",
-    ]
+    view_mode = getattr(g, "view_mode", "desktop")  # set by core/device.init_device
+    templates: list[str] = []
+
+    if view_mode == "mobile":
+        if section == "my":
+            # Area-specific main mobile views
+            if slug == "housekeeping":
+                templates.append("tecnico_housekeeping_mobile.html")
+            elif slug == "mantencion":
+                templates.append("tecnico_mantencion_mobile.html")
+            elif slug == "roomservice":
+                templates.append("tecnico_roomservice_mobile.html")
+            # Generic mobile fallbacks
+            templates.append("tecnico_mobile.html")
+            templates.append("tecnico_mobile_list.html")
+
+        elif section in ("in_progress", "available", "history"):
+            # List-style mobile views
+            templates.append("tecnico_mobile_list.html")
+            templates.append("tecnico_mobile.html")
+
+        elif section == "tools":
+            templates.append("tecnico_mobile_tools.html")
+            templates.append("tecnico_mobile.html")
+
+        else:
+            templates.append("tecnico_mobile.html")
+
+        # Global fallbacks
+        templates.append("tickets_mobile.html")
+        templates.append("tickets.html")
+
+    else:
+        # Desktop: single generic dashboard + fallback
+        templates.append("tecnico_desktop.html")
+        templates.append("tickets.html")
+
+    # Remove duplicates while preserving order
+    seen = set()
+    uniq: list[str] = []
+    for t in templates:
+        if t not in seen:
+            seen.add(t)
+            uniq.append(t)
+    return uniq
 
 
 # ---------------------------- Technician mobile routes ----------------------------
@@ -303,7 +349,7 @@ def hk_shift_end():
 @bp.app_context_processor
 def inject_hk_flags():
     # Exponer flag global para plantillas (ej. HK_SHIFT_ACTIVE en
-    # tecnico_housekeeping_my.html)
+    # tecnico_housekeeping_mobile.html)
     return {"HK_SHIFT_ACTIVE": _shift_state()["active"]}
 
 
@@ -338,5 +384,3 @@ def _guard_active_shift(area: str | None):
             code=403,
         )
     return None
-
-# (Placeholders for other area-specific code: Maintenance, Room Service)
