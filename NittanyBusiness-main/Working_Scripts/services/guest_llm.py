@@ -137,7 +137,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         return {}
 
     try:
-        resp = client.chat.completions.create(
+        resp = _client.chat.completions.create(
             model=LLM_MODEL,
             response_format={"type": "json_object"},
             messages=[
