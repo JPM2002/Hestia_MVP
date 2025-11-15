@@ -29,7 +29,7 @@
   </div>
   <div class="d-flex gap-2">
     {% if S != 'available' %}
-      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tech_available', slug=slug) }}">Disponibles</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tecnico.tech_available', slug=slug) }}">Disponibles</a>
     {% endif %}
     {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
       <a class="btn btn-sm btn-accent" href="{{ url_for('ticket_create') }}">Nuevo</a>
@@ -83,22 +83,22 @@
       {% if S != 'history' %}
       <div class="mt-2 d-flex flex-wrap gap-1">
         {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
-          <form method="post" action="{{ url_for('ticket_accept', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
             <button class="btn btn-sm btn-outline-primary">Aceptar</button>
           </form>
         {% endif %}
         {% if t.estado in ['ACEPTADO'] %}
-          <form method="post" action="{{ url_for('ticket_start', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_start', id=t.id) }}">
             <button class="btn btn-sm btn-dark">{{ 'Iniciar' if not is_rs else 'Preparar' }}</button>
           </form>
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
             <input type="hidden" name="motivo"
                    value="{{ 'Esperando habitación' if is_hk else ('Espera repuestos' if is_mn else 'En espera de cocina') }}">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
           </form>
         {% endif %}
         {% if t.estado in ['EN_CURSO'] %}
-          <form method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
             <input type="hidden" name="motivo"
                    value="{{ 'Pendiente insumos' if is_hk else ('Bloqueado' if is_mn else 'En camino') }}">
             <button class="btn btn-sm btn-outline-warning">Pausa</button>
@@ -108,7 +108,7 @@
           </form>
         {% endif %}
         {% if t.estado in ['PAUSADO'] %}
-          <form method="post" action="{{ url_for('ticket_resume', id=t.id) }}">
+          <form method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
             <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
           </form>
         {% endif %}
@@ -134,9 +134,9 @@
 
 <nav class="navbar fixed-bottom bg-white border-top py-2 d-md-none">
   <div class="container-fluid d-flex justify-content-around">
-    <a class="btn btn-link" href="{{ url_for('tech_available', slug=slug) }}">📋 Lista</a>
+    <a class="btn btn-link" href="{{ url_for('tecnico.tech_available', slug=slug) }}">📋 Lista</a>
     {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
-      <a class="btn btn-link" href="{{ url_for('ticket_create') }}">➕ Nuevo</a>
+      <a class="btn btn-link" href="{{ url_for('tickets.ticket_create') }}">➕ Nuevo</a>
     {% else %}
       <span class="btn btn-link disabled">➕ Nuevo</span>
     {% endif %}

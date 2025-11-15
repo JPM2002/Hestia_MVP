@@ -5,8 +5,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="page-title mb-0">Mi trabajo</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
-    <a href="{{ url_for('tickets', estado='PENDIENTE') }}" class="btn btn-outline-dark">Todos</a>
+    <a href="{{ url_for('tickets.ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets.tickets', estado='PENDIENTE') }}" class="btn btn-outline-dark">Todos</a>
   </div>
 </div>
 
