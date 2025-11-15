@@ -26,6 +26,9 @@ except Exception:
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 import threading
 
+from services.guest_llm import analyze_guest_message, render_confirm_draft
+
+
 # ----------------------------- Config -----------------------------
 
 # Recepción: a quién notificar cuando queda PENDIENTE_APROBACION
@@ -775,6 +778,15 @@ def is_yes(text: str) -> bool:
     t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
     return t in {"si", "sí", "s", "y", "yes", "ok", "vale", "dale", "de acuerdo"}
 
+def is_no(text: str) -> bool:
+    """
+    Accept common negative / rejection forms.
+    """
+    t = (text or "").strip().lower()
+    t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
+    return t in {"no", "n", "nop", "nope", "para nada"}
+
+
 
 def _gh_wants_handoff(text: str) -> bool:
     t = (text or "").strip().lower()
@@ -872,6 +884,198 @@ def transcribe_audio(audio_url: str) -> str:
                 os.remove(tmp_path)
         except Exception:
             pass
+
+# ================================
+# GH (Huésped) DFA helpers
+# ================================
+
+def _gh_get_state(s: Dict[str, Any]) -> str:
+    """
+    Current DFA state for guest flow. Defaults to GH_S0 for a fresh session.
+    """
+    return s.get("gh_state") or "GH_S0"
+
+
+def _gh_set_state(s: Dict[str, Any], state: str):
+    """
+    Set DFA state for guest flow.
+    """
+    s["gh_state"] = state
+
+
+def _gh_has_identification(s: Dict[str, Any]) -> bool:
+    """
+    True when we have both guest_name and room.
+    """
+    name = (s.get("guest_name") or "").strip()
+    room = (s.get("room") or "").strip()
+    return bool(name and room)
+
+
+def _gh_reset_request_slots(s: Dict[str, Any], keep_id: bool):
+    """
+    Clear current request slots (area, prioridad, detalle, etc.).
+    If keep_id is False, also clear guest_name and room.
+    """
+    for k in [
+        "area",
+        "prioridad",
+        "detalle",
+        "gh_pending_issue_text",
+        "_gh_last_nlu",
+        "gh_last_ticket_id",
+    ]:
+        s.pop(k, None)
+
+    if not keep_id:
+        for k in ["guest_name", "room"]:
+            s.pop(k, None)
+
+
+def _gh_send_ask_identification(phone: str):
+    """
+    Ask for both name and room in a single friendly message.
+    """
+    send_whatsapp(phone, txt("ask_name"))
+
+
+def _gh_send_ask_name_only(phone: str):
+    send_whatsapp(phone, "Perfecto. Para continuar dime, ¿*cuál es tu nombre*?")
+
+
+def _gh_send_ask_room_only(phone: str, name: Optional[str]):
+    if name:
+        msg = f"Gracias, *{name}*. ¿Cuál es tu *número de habitación*?"
+    else:
+        msg = "¿Cuál es tu *número de habitación*?"
+    send_whatsapp(phone, msg)
+
+
+def _gh_build_id_confirmation_message(s: Dict[str, Any]) -> str:
+    name = (s.get("guest_name") or "Huésped").strip()
+    room = (s.get("room") or "—").strip()
+    return (
+        "Perfecto. Solo para confirmar:\n"
+        f"👤 Huésped: *{name}*\n"
+        f"🏨 Habitación: *{room}*\n"
+        "¿Es correcto? Responde *SI* para continuar o *NO* para corregir."
+    )
+
+
+def _gh_render_closing_question(s: Dict[str, Any]) -> str:
+    name = (s.get("guest_name") or "").strip()
+    if name:
+        return f"¿Hay *algo más* en lo que pueda ayudarte, {name}? 🙂"
+    return "¿Hay *algo más* en lo que pueda ayudarte? 🙂"
+
+
+def _gh_escalate_to_reception(from_phone: str, s: Dict[str, Any], last_message: str):
+    """
+    Notify reception phones that the guest is asking for a human.
+    """
+    recips = _phones_from_env(RECEPTION_PHONES)
+    if not recips:
+        send_whatsapp(
+            from_phone,
+            "En este momento no puedo derivarte automáticamente, pero recepción podrá ayudarte "
+            "si llamas al número principal del hotel. 🛎️"
+        )
+        return
+
+    name = (s.get("guest_name") or "Huésped").strip()
+    room = (s.get("room") or "—").strip()
+    body = (
+        "📞 Solicitud de contacto humano desde Hestia\n"
+        f"De: {name} (tel: {from_phone}, hab: {room})\n"
+        f"Mensaje: {last_message or '(sin texto)'}"
+    )
+    for ph in recips:
+        send_whatsapp(ph, body)
+
+    send_whatsapp(
+        from_phone,
+        "Te pongo en contacto con recepción. En unos momentos alguien de nuestro equipo te responderá. 🛎️"
+    )
+
+
+def _gh_get_nlu(s: Dict[str, Any], text: str, state: str) -> Dict[str, Any]:
+    """
+    Cache-aware NLU wrapper: returns structured interpretation of the guest message.
+    """
+    t = (text or "").strip()
+    if not t:
+        return {}
+
+    key = f"{state}:{t}"
+    last = s.get("_gh_last_nlu") or {}
+    if last.get("key") == key:
+        return last.get("data") or {}
+
+    data = analyze_guest_message(t, s, state)
+    if not isinstance(data, dict):
+        data = {}
+    s["_gh_last_nlu"] = {"key": key, "data": data}
+    return data
+
+
+def _gh_slots_complete(s: Dict[str, Any]) -> bool:
+    """
+    For now, we consider slots complete if we have a non-empty 'detalle'.
+    Area and priority can fall back to defaults.
+    """
+    detalle = (s.get("detalle") or "").strip()
+    return bool(detalle)
+
+
+def _gh_is_cancel(text: str, s: Optional[Dict[str, Any]] = None, state: str = "GLOBAL") -> bool:
+    if not text:
+        return False
+    s = s or {}
+    nlu = _gh_get_nlu(s, text, state)
+    if nlu.get("is_cancel"):
+        return True
+    # simple fallback patterns
+    t = (text or "").strip().lower()
+    return any(p in t for p in ["cancelar", "olvídalo", "olvidalo", "no importa", "déjalo", "dejalo"])
+
+
+def _gh_is_help(text: str, s: Optional[Dict[str, Any]] = None, state: str = "GLOBAL") -> bool:
+    if not text:
+        return False
+    s = s or {}
+    nlu = _gh_get_nlu(s, text, state)
+    if nlu.get("is_help"):
+        return True
+    t = (text or "").strip().lower()
+    return any(p in t for p in ["ayuda", "qué puedes hacer", "que puedes hacer", "help"])
+
+
+def _gh_update_slots_from_text(s: Dict[str, Any], text: str, state: str = "GH_S2"):
+    """
+    Merge slot information inferred by the NLU into the session:
+    - s['area']
+    - s['prioridad']
+    - s['room']
+    - s['detalle']
+    """
+    nlu = _gh_get_nlu(s, text, state)
+    slots_area = nlu.get("area")
+    slots_prio = nlu.get("priority")
+    slots_room = nlu.get("room")
+    slots_detail = nlu.get("detail")
+
+    if slots_area:
+        s["area"] = slots_area
+    if slots_prio:
+        s["prioridad"] = slots_prio
+    if slots_room and not (s.get("room") or "").strip():
+        s["room"] = slots_room
+    if slots_detail:
+        prev = (s.get("detalle") or "").strip()
+        if prev and slots_detail != prev:
+            s["detalle"] = f"{prev} {slots_detail}"
+        else:
+            s["detalle"] = slots_detail
 
 
 # ----------------------------- WhatsApp outbound (Cloud API) -----------------------------
@@ -2106,7 +2310,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     t = (text or "").strip()
 
     # 2) Cancelación global de la solicitud actual (manteniendo identificación)
-    if _gh_is_cancel(t):
+    if _gh_is_cancel(t, s, state="GLOBAL"):
         _gh_reset_request_slots(s, keep_id=True)
         _gh_set_state(s, "GH_S5")
         session_set(from_phone, s)
@@ -2117,7 +2321,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         )
         return
 
-    # 3) Estado actual (con migración desde flujo legado si aplica)
+    # 3) Estado actual del DFA
     state = _gh_get_state(s)
 
     # Desde FIN (GH_S5) un nuevo mensaje inicia un nuevo ciclo:
@@ -2132,7 +2336,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     # GH_S0: primer mensaje huésped (no hay identificación completa)
     # --------------------------------------------------
     if state == "GH_S0" and not _gh_has_identification(s):
-        # Pedido explícito de humano → GH_S6
+        # Pedido explícito de humano → GH_S6 (uso patrón rápido)
         if _gh_wants_handoff(t):
             _gh_set_state(s, "GH_S6")
             session_set(from_phone, s)
@@ -2146,16 +2350,18 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             _gh_send_ask_identification(from_phone)
             return
 
-        # Saludo / smalltalk → pedir identificación (no_intent_detected)
+        # Saludo / smalltalk simple → pedir identificación
         if is_smalltalk(t):
             _gh_set_state(s, "GH_S0i")
             session_set(from_phone, s)
             _gh_send_ask_identification(from_phone)
             return
 
-        # Intent detectado desde el primer mensaje
-        intent = _gh_classify_intent(t)
-        if intent == "handoff_request":
+        # Análisis NLU del primer mensaje
+        nlu = _gh_get_nlu(s, t, "GH_S0")
+        intent = nlu.get("intent") or "ticket_request"
+
+        if intent == "handoff_request" or nlu.get("wants_handoff"):
             _gh_set_state(s, "GH_S6")
             session_set(from_phone, s)
             _gh_escalate_to_reception(from_phone, s, t)
@@ -2163,7 +2369,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
 
         # Intent con posible identificación incluida
         name_candidate = extract_name(t)
-        room_candidate = guess_room(t)
+        room_candidate = nlu.get("room") or guess_room(t)
 
         if name_candidate:
             s["guest_name"] = name_candidate
@@ -2195,9 +2401,10 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             if name:
                 s["guest_name"] = name
 
-        # Intentar capturar habitación si falta
+        # Intentar capturar habitación si falta (NLU + regex)
         if not (s.get("room") or "").strip():
-            room = guess_room(t)
+            nlu = _gh_get_nlu(s, t, "GH_S0i")
+            room = nlu.get("room") or guess_room(t)
             if room:
                 s["room"] = room
 
@@ -2276,15 +2483,16 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     # GH_S1: Clasificación (NLU → Σ)
     # --------------------------------------------------
     if state == "GH_S1":
-        intent = _gh_classify_intent(t)
+        nlu = _gh_get_nlu(s, t, "GH_S1")
+        intent = nlu.get("intent") or "ticket_request"
 
-        if intent == "handoff_request":
+        if intent == "handoff_request" or nlu.get("wants_handoff"):
             _gh_set_state(s, "GH_S6")
             session_set(from_phone, s)
             _gh_escalate_to_reception(from_phone, s, t)
             return
 
-        if intent == "general_chat":
+        if intent == "general_chat" and nlu.get("is_smalltalk"):
             # Pequeña charla / agradecimientos → GH_S4 (cierre suave)
             send_whatsapp(from_phone, "Gracias por tu mensaje. 😊")
             _gh_set_state(s, "GH_S4")
@@ -2307,7 +2515,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         # Intent válido / not_understood → GH_S2 (init_form)
         _gh_reset_request_slots(s, keep_id=True)
         _gh_set_state(s, "GH_S2")
-        _gh_update_slots_from_text(s, t)
+        _gh_update_slots_from_text(s, t, state="GH_S2")
         session_set(from_phone, s)
 
         if not _gh_slots_complete(s):
@@ -2315,11 +2523,12 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 send_whatsapp(from_phone, txt("ask_detail"))
             return
 
-        # Slots completos desde el primer mensaje → GH_S3 (cumplimiento) modelado como GH_S2_CONFIRM
+        # Slots completos desde el primer mensaje → GH_S2_CONFIRM (cumplimiento implícito)
         summary = ensure_summary_in_session(s)
         _gh_set_state(s, "GH_S2_CONFIRM")
         session_set(from_phone, s)
-        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        confirm_msg = render_confirm_draft(summary, s)
+        send_whatsapp(from_phone, confirm_msg)
         return
 
     # --------------------------------------------------
@@ -2327,14 +2536,14 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     # --------------------------------------------------
     if state == "GH_S2":
         # help / repeat / not_understood → escalamiento humano (GH_S6)
-        if _gh_wants_handoff(t) or _gh_is_help(t):
+        if _gh_is_help(t, s, state="GH_S2"):
             _gh_set_state(s, "GH_S6")
             session_set(from_phone, s)
             _gh_escalate_to_reception(from_phone, s, t)
             return
 
         # provide_slot → seguimos en GH_S2 hasta completar
-        _gh_update_slots_from_text(s, t)
+        _gh_update_slots_from_text(s, t, state="GH_S2")
         session_set(from_phone, s)
 
         if not _gh_slots_complete(s):
@@ -2342,11 +2551,12 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 send_whatsapp(from_phone, txt("ask_detail"))
             return
 
-        # slots_complete → GH_S3 modelado como confirmación de borrador
+        # slots_complete → GH_S2_CONFIRM (confirmación de borrador)
         summary = ensure_summary_in_session(s)
         _gh_set_state(s, "GH_S2_CONFIRM")
         session_set(from_phone, s)
-        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        confirm_msg = render_confirm_draft(summary, s)
+        send_whatsapp(from_phone, confirm_msg)
         return
 
     # --------------------------------------------------
@@ -2417,8 +2627,19 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             )
             return
 
-        # no | thanks | general_chat → GH_S5 (FIN)
-        if is_no(t) or _gh_classify_intent(t) == "general_chat":
+        # no → GH_S5 (FIN)
+        if is_no(t):
+            _gh_set_state(s, "GH_S5")
+            session_set(from_phone, s)
+            send_whatsapp(
+                from_phone,
+                "Gracias por contactarnos. Que tengas una excelente estadía. 🌟"
+            )
+            return
+
+        # Usar NLU para decidir si es agradecimiento o nueva solicitud
+        nlu = _gh_get_nlu(s, t, "GH_S4")
+        if nlu.get("intent") == "general_chat" and nlu.get("is_smalltalk"):
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             send_whatsapp(
@@ -2430,7 +2651,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         # Cualquier otra cosa se interpreta como nueva solicitud directa
         _gh_reset_request_slots(s, keep_id=True)
         _gh_set_state(s, "GH_S2")
-        _gh_update_slots_from_text(s, t)
+        _gh_update_slots_from_text(s, t, state="GH_S2")
         session_set(from_phone, s)
 
         if not _gh_slots_complete(s):
@@ -2441,7 +2662,8 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         summary = ensure_summary_in_session(s)
         _gh_set_state(s, "GH_S2_CONFIRM")
         session_set(from_phone, s)
-        send_whatsapp(from_phone, txt("confirm_draft", summary=summary))
+        confirm_msg = render_confirm_draft(summary, s)
+        send_whatsapp(from_phone, confirm_msg)
         return
 
     # --------------------------------------------------
@@ -2451,6 +2673,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     _gh_set_state(s, "GH_S0")
     session_set(from_phone, s)
     _gh_send_ask_identification(from_phone)
+
 
 
 if __name__ == "__main__":
