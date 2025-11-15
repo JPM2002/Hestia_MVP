@@ -1867,6 +1867,9 @@ def _handle_gerente_message(from_phone: str, text: str):
 # ================================
 
 def is_no(text: str) -> bool:
+    """
+    Respuesta negativa simple ('no', 'no gracias', etc.).
+    """
     t = (text or "").strip().lower()
     t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
     return t in {"no", "n", "nop", "nope", "no gracias", "no, gracias"}
@@ -1875,6 +1878,7 @@ def is_no(text: str) -> bool:
 def _gh_get_state(s: Dict[str, Any]) -> str:
     """
     Devuelve el estado DFA del huésped, migrando si venimos del flujo legado.
+
     Estados principales:
       GH_S0        → primer mensaje
       GH_S0i       → pedir identificación (nombre + habitación)
@@ -1902,6 +1906,9 @@ def _gh_get_state(s: Dict[str, Any]) -> str:
 
 
 def _gh_set_state(s: Dict[str, Any], state: str):
+    """
+    Setea el estado DFA del huésped y refresca timestamp de la sesión.
+    """
     s["gh_state"] = state
     s["ts"] = time.time()
 
@@ -1913,45 +1920,32 @@ def _gh_has_identification(s: Dict[str, Any]) -> bool:
     return bool((s.get("guest_name") or "").strip()) and bool((s.get("room") or "").strip())
 
 
-def _gh_is_cancel(text: str) -> bool:
+def _gh_reset_request_slots(s: Dict[str, Any], keep_id: bool = True):
     """
-    El huésped quiere cancelar la solicitud actual.
+    Limpia solo los datos de la solicitud (área, prioridad, detalle, etc.),
+    opcionalmente manteniendo la identificación del huésped.
+    También resetea el cache de NLU.
     """
-    t = (text or "").strip().lower()
-    if not t:
-        return False
-    patterns = [
-        "cancelar",
-        "olvida",
-        "olvídalo",
-        "olvidalo",
-        "ya no",
-        "no importa",
-        "da igual",
-    ]
-    return any(p in t for p in patterns)
+    for key in (
+        "area",
+        "prioridad",
+        "detalle",
+        "gh_pending_issue_text",
+        "gh_last_intent",
+        "_gh_last_nlu",
+        "gh_last_ticket_id",
+    ):
+        s.pop(key, None)
 
-
-def _gh_is_help(text: str) -> bool:
-    """
-    El huésped pide ayuda / repetir durante slot filling.
-    """
-    t = (text or "").strip().lower()
-    if not t:
-        return False
-    patterns = [
-        "ayuda",
-        "no entiendo",
-        "repiteme",
-        "repite",
-        "puedes repetir",
-        "qué puedo hacer",
-        "que puedo hacer",
-    ]
-    return any(p in t for p in patterns)
+    if not keep_id:
+        s.pop("guest_name", None)
+        s.pop("room", None)
 
 
 def _gh_send_ask_identification(from_phone: str):
+    """
+    Pregunta por nombre + habitación en un solo mensaje.
+    """
     send_whatsapp(
         from_phone,
         "🌟 Para ayudarte, necesito saber quién eres.\n"
@@ -1979,8 +1973,8 @@ def _gh_build_id_confirmation_message(s: Dict[str, Any]) -> str:
     """
     Mensaje de confirmación de identificación (GH_S0c).
     """
-    name = s.get("guest_name") or ""
-    room = s.get("room") or ""
+    name = (s.get("guest_name") or "").strip()
+    room = (s.get("room") or "").strip()
     if name and room:
         return (
             "Perfecto. Solo para confirmar:\n\n"
@@ -1992,6 +1986,16 @@ def _gh_build_id_confirmation_message(s: Dict[str, Any]) -> str:
         "Solo necesito que me confirmes tus datos.\n"
         "Responde *SI* si son correctos o *NO* si quieres cambiarlos."
     )
+
+
+def _gh_render_closing_question(s: Dict[str, Any]) -> str:
+    """
+    Texto para GH_S4 → '¿algo más?' con nombre si lo tenemos.
+    """
+    name = (s.get("guest_name") or "").strip()
+    if name:
+        return f"¿Hay *algo más* en lo que pueda ayudarte, {name}? 🙂"
+    return "¿Hay *algo más* en lo que pueda ayudarte? 🙂"
 
 
 def _gh_escalate_to_reception(from_phone: str, s: Dict[str, Any], last_text: str):
@@ -2022,57 +2026,182 @@ def _gh_escalate_to_reception(from_phone: str, s: Dict[str, Any], last_text: str
         send_whatsapp(ph, summary)
 
 
-def _gh_reset_request_slots(s: Dict[str, Any], keep_id: bool = True):
-    """
-    Limpia solo los datos de la solicitud (área, prioridad, detalle),
-    opcionalmente manteniendo la identificación del huésped.
-    """
-    for key in ("area", "prioridad", "detalle", "gh_pending_issue_text", "gh_last_intent"):
-        s.pop(key, None)
-    if not keep_id:
-        s.pop("guest_name", None)
-        s.pop("room", None)
+# ---------- NLU helpers (usan services.guest_nlu.analyze_guest_message) ----------
 
-
-def _gh_update_slots_from_text(s: Dict[str, Any], text: str):
+def _gh_get_nlu(s: Dict[str, Any], text: str, state: str) -> Dict[str, Any]:
     """
-    Usa el texto para rellenar/actualizar los slots de la solicitud:
-      - detalle (concatenando si ya existía algo)
-      - área (heurística)
-      - prioridad (heurística)
+    Wrapper con cache para NLU: devuelve interpretación estructurada del mensaje.
     """
     t = (text or "").strip()
     if not t:
-        return
+        return {}
 
-    detalle = (s.get("detalle") or "").strip()
-    if not detalle:
-        s["detalle"] = t
-    else:
-        s["detalle"] = detalle + "\n" + t
+    key = f"{state}:{t}"
+    last = s.get("_gh_last_nlu") or {}
+    if last.get("key") == key:
+        return last.get("data") or {}
 
-    if not (s.get("area") or "").strip():
-        s["area"] = guess_area(t)
-    if not (s.get("prioridad") or "").strip():
-        s["prioridad"] = guess_priority(t)
+    data = analyze_guest_message(t, s, state)
+    if not isinstance(data, dict):
+        data = {}
+    s["_gh_last_nlu"] = {"key": key, "data": data}
+    return data
 
 
 def _gh_slots_complete(s: Dict[str, Any]) -> bool:
     """
     Por ahora consideramos suficiente tener un 'detalle' no vacío.
-    Área y prioridad se infieren automáticamente.
+    Área y prioridad se infieren automáticamente o por NLU.
     """
-    return bool((s.get("detalle") or "").strip())
+    detalle = (s.get("detalle") or "").strip()
+    return bool(detalle)
+
+
+def _gh_is_cancel(
+    text: str,
+    s: Optional[Dict[str, Any]] = None,
+    state: str = "GLOBAL",
+) -> bool:
+    """
+    Detecta si el huésped quiere cancelar la solicitud actual.
+
+    Puede usarse como:
+      _gh_is_cancel(text)
+      _gh_is_cancel(text, s, state="GLOBAL")
+
+    Primero intenta vía NLU; si no, cae a patrones simples.
+    """
+    if not text:
+        return False
+
+    # 1) Intento vía NLU
+    if s is not None:
+        try:
+            nlu = _gh_get_nlu(s, text, state)
+            if nlu.get("is_cancel"):
+                return True
+        except Exception as e:
+            print(f"[WARN] _gh_is_cancel NLU failed: {e}", flush=True)
+
+    # 2) Patrones simples
+    t = (text or "").strip().lower()
+    patterns = [
+        "cancelar",
+        "olvida",
+        "olvídalo",
+        "olvidalo",
+        "ya no",
+        "no importa",
+        "da igual",
+        "déjalo",
+        "dejalo",
+    ]
+    return any(p in t for p in patterns)
+
+
+def _gh_is_help(
+    text: str,
+    s: Optional[Dict[str, Any]] = None,
+    state: str = "GLOBAL",
+) -> bool:
+    """
+    El huésped pide ayuda / repetir durante slot filling.
+    Se apoya en NLU si está disponible.
+    """
+    if not text:
+        return False
+
+    # 1) Intento vía NLU
+    if s is not None:
+        try:
+            nlu = _gh_get_nlu(s, text, state)
+            if nlu.get("is_help"):
+                return True
+        except Exception as e:
+            print(f"[WARN] _gh_is_help NLU failed: {e}", flush=True)
+
+    # 2) Patrones simples
+    t = (text or "").strip().lower()
+    patterns = [
+        "ayuda",
+        "no entiendo",
+        "repiteme",
+        "repite",
+        "puedes repetir",
+        "qué puedo hacer",
+        "que puedo hacer",
+        "help",
+    ]
+    return any(p in t for p in patterns)
+
+
+def _gh_update_slots_from_text(
+    s: Dict[str, Any],
+    text: str,
+    state: str = "GH_S2",
+):
+    """
+    Usa NLU + heurísticas para rellenar/actualizar los slots de la solicitud:
+      - detalle
+      - área
+      - prioridad
+      - room (si viene en el mensaje)
+    """
+    t = (text or "").strip()
+    if not t:
+        return
+
+    # 1) Interpretación vía NLU
+    nlu = {}
+    try:
+        nlu = _gh_get_nlu(s, t, state)
+    except Exception as e:
+        print(f"[WARN] _gh_update_slots_from_text NLU failed: {e}", flush=True)
+
+    slots_area = nlu.get("area")
+    slots_prio = nlu.get("priority")
+    slots_room = nlu.get("room")
+    slots_detail = nlu.get("detail")
+
+    # 2) detalle: si NLU no da 'detail', usamos el texto bruto
+    if slots_detail:
+        new_detail = slots_detail.strip()
+    else:
+        new_detail = t
+
+    prev = (s.get("detalle") or "").strip()
+    if prev and new_detail != prev:
+        s["detalle"] = f"{prev}\n{new_detail}"
+    else:
+        s["detalle"] = new_detail
+
+    # 3) área
+    if slots_area:
+        s["area"] = slots_area
+    elif not (s.get("area") or "").strip():
+        s["area"] = guess_area(t)
+
+    # 4) prioridad
+    if slots_prio:
+        s["prioridad"] = slots_prio
+    elif not (s.get("prioridad") or "").strip():
+        s["prioridad"] = guess_priority(t)
+
+    # 5) room (si no la teníamos aún)
+    if slots_room and not (s.get("room") or "").strip():
+        s["room"] = slots_room
 
 
 def _gh_classify_intent(text: str) -> str:
     """
-    Clasificación muy simple de intent:
+    Clasificación simple de intent basada en patrones:
       - 'handoff_request' → quiere hablar con alguien
       - 'cancel'          → cancelar solicitud
       - 'general_chat'    → gracias / smalltalk / cierre
       - 'ticket_request'  → algo que suena a problema/petición
       - 'unknown'         → vacío o no se puede clasificar
+
+    (Si quieres, en el futuro se puede reescribir para usar NLU.)
     """
     t = (text or "").strip().lower()
     if not t:
@@ -2092,15 +2221,6 @@ def _gh_classify_intent(text: str) -> str:
 
     return "ticket_request"
 
-
-def _gh_render_closing_question(s: Dict[str, Any]) -> str:
-    """
-    Texto para GH_S4 → '¿algo más?' con nombre si lo tenemos.
-    """
-    name = s.get("guest_name") or None
-    if name:
-        return f"¿Hay *algo más* en lo que pueda ayudarte, {name}? 🙂"
-    return "¿Hay *algo más* en lo que pueda ayudarte? 🙂"
 
 
 # ================================
