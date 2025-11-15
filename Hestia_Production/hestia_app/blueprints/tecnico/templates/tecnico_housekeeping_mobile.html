@@ -144,7 +144,7 @@
         {% if ns.featured.estado == 'EN_CURSO' %}
           <div class="d-flex gap-2">
             {# === ADDED: requires-shift + disabled when turno inactivo === #}
-            <form class="flex-fill requires-shift" method="post" action="{{ url_for('tickets.tickets.ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
+            <form class="flex-fill requires-shift" method="post" action="{{ url_for('tickets.ticket_pause', id=ns.featured.id) }}?next={{ request.path }}">
               <input type="hidden" name="motivo" value="Esperando habitación">
               <button class="btn btn-lg btn-outline-warning w-100" {{ 'disabled' if not shift_ok }}>Pausar</button>
             </form>
