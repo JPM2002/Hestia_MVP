@@ -58,7 +58,15 @@
     <table class="table mb-0 align-middle">
       <thead class="table-light">
         <tr>
-          <th>ID</th><th>Área</th><th>Prioridad</th><th>Estado</th><th>Detalle</th><th>Ubicación</th><th>Creado</th><th>Vence</th><th>Acciones</th>
+          <th>ID</th>
+          <th>Área</th>
+          <th>Prioridad</th>
+          <th>Estado</th>
+          <th>Detalle</th>
+          <th>Ubicación</th>
+          <th>Creado</th>
+          <th>Vence</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -71,28 +79,39 @@
           <td class="text-truncate" style="max-width: 340px">{{ t.detalle }}</td>
           <td>{{ t.ubicacion }}</td>
           <td><small>{{ t.created_at|short_dt }}</small></td>
-          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at|short_dt if t.due_at else '-' }}</small></td>
+          <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}">
+            <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
+          </td>
           <td class="text-nowrap">
-            {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
+            {# Aceptar: PENDIENTE / ASIGNADO / DERIVADO -> ACEPATADO #}
+            {% if t.estado in ['PENDIENTE','ASIGNADO','DERIVADO'] %}
               <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
                 <button class="btn btn-sm btn-outline-primary">Aceptar</button>
               </form>
             {% endif %}
-            {% if t.estado in ['ACEPTADO','PAUSADO'] %}
-              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
-                <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
-              </form>
-            {% endif %}
-            {% if t.estado in ['ACEPTADO','EN_CURSO'] %}
+
+            {# ACEPTADO -> EN_CURSO #}
+            {% if t.estado == 'ACEPTADO' %}
               <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_start', id=t.id) }}">
                 <button class="btn btn-sm btn-outline-dark">Iniciar</button>
               </form>
+            {% endif %}
+
+            {# EN_CURSO -> PAUSADO / RESUELTO #}
+            {% if t.estado == 'EN_CURSO' %}
               <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
                 <input type="hidden" name="motivo" value="En espera">
                 <button class="btn btn-sm btn-outline-warning">Pausa</button>
               </form>
-              <form class="d-inline" method="post" action="{{ url_for('ticket_finish', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_finish', id=t.id) }}">
                 <button class="btn btn-sm btn-success">Resolver</button>
+              </form>
+            {% endif %}
+
+            {# PAUSADO -> EN_CURSO #}
+            {% if t.estado == 'PAUSADO' %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
+                <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
               </form>
             {% endif %}
           </td>
@@ -119,7 +138,7 @@
 
   // KPI counts
   const count = (pred) => items.filter(pred).length;
-  const asignados = count(t => ['PENDIENTE','ASIGNADO'].includes(t.estado));
+  const asignados = count(t => ['PENDIENTE','ASIGNADO','DERIVADO'].includes(t.estado));
   const enCurso   = count(t => t.estado === 'EN_CURSO' || t.estado === 'ACEPTADO');
   const criticos  = count(t => t.is_critical);
 
@@ -140,21 +159,37 @@
     type: 'doughnut',
     data: {
       labels: Object.keys(byEstado),
-      datasets: [{ data: Object.values(byEstado), backgroundColor: [ACCENT, BRAND, WARNING, CRITICAL, '#999', '#bbb'] }]
+      datasets: [{
+        data: Object.values(byEstado),
+        backgroundColor: [ACCENT, BRAND, WARNING, CRITICAL, '#999', '#bbb']
+      }]
     },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } }
+    }
   });
 
   // Prioridad bar
   const byPrio = groupBy(items, 'prioridad');
   const prioOrder = ['URGENTE','ALTA','MEDIA','BAJA'];
+  const prioLabels = prioOrder.filter(p => byPrio[p]);
   new Chart(document.getElementById('prioChart'), {
     type: 'bar',
     data: {
-      labels: prioOrder.filter(p => byPrio[p]),
-      datasets: [{ label: 'Tickets', data: prioOrder.filter(p => byPrio[p]).map(p => byPrio[p]), backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }]
+      labels: prioLabels,
+      datasets: [{
+        label: 'Tickets',
+        data: prioLabels.map(p => byPrio[p]),
+        backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT]
+      }]
     },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
   });
 </script>
 {% endblock %}
