@@ -91,9 +91,24 @@ def _tech_template_order(section: str, slug: str) -> list[str]:
         templates.append("tickets.html")
 
     else:
-        # Desktop: single generic dashboard + fallback
-        templates.append("tecnico_desktop.html")
+        if section == "my":
+            # Area-specific main DESKTOP views
+            if slug == "housekeeping":
+                templates.append("dashboard_tecnico_housekeeping_desktop.html")
+            elif slug == "mantencion":
+                templates.append("dashboard_tecnico_mantencion_desktop.html")
+            elif slug == "roomservice":
+                templates.append("dashboard_tecnico_roomservice_desktop.html")
+
+            # Generic desktop fallback for "my"
+            templates.append("tecnico_desktop.html")
+        else:
+            # Other sections: generic desktop dashboard
+            templates.append("tecnico_desktop.html")
+
+        # Global desktop fallback
         templates.append("tickets.html")
+
 
     # Remove duplicates while preserving order
     seen = set()

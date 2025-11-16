@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+{% block title %}Mi trabajo{% endblock %}
+
+{% block content %}
+<style>
+  /* Small busy spinner inline on buttons */
+  .btn[aria-busy="true"]::after{
+    content:"";
+    display:inline-block;
+    width:1rem;height:1rem;margin-left:.4rem;
+    border:.15rem solid currentColor;border-right-color:transparent;border-radius:50%;
+    vertical-align:-.2rem; animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  /* Tiny toast (desktop, center-bottom) */
+  .hk-toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+    background: #111; color: #fff; padding: .6rem .9rem; border-radius: .75rem;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    font-size: .95rem; z-index: 1080; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .hk-toast.show  { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .hk-toast.success{ background:#28a745; }  /* green  */
+  .hk-toast.warn   { background:#ffc107; color:#111; } /* yellow */
+  .hk-toast.error  { background:#dc3545; } /* red */
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="page-title mb-0">Mi trabajo</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('tickets.ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets.tickets', estado='PENDIENTE') }}" class="btn btn-outline-dark">Todos</a>
+  </div>
+</div>
+
+<!-- Turno (shift) controls — same behavior as mobile HK, but desktop layout -->
+<section class="mb-3">
+  <div class="d-flex gap-2">
+    <!-- Start as outline; turns solid when activo -->
+    <button id="btn-shift-start" class="btn btn-outline-success">Iniciar turno</button>
+    <!-- Pause is outline; turns solid when pausado -->
+    <button id="btn-shift-pause" class="btn btn-outline-warning">Pausa</button>
+    <button id="btn-shift-stop"  class="btn btn-outline-danger">Cerrar turno</button>
+  </div>
+  <div class="small text-muted mt-1" id="shift-status">Turno: inactivo</div>
+</section>
+
+<!-- Personal KPIs -->
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">Asignados</div>
+      <div id="kpi-asignados" class="display-6 fw-bold">0</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">En curso</div>
+      <div id="kpi-curso" class="display-6 fw-bold">0</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card"><div class="card-body">
+      <div class="text-muted">Críticos</div>
+      <div id="kpi-criticos" class="display-6 fw-bold">0</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- My charts -->
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Estados de mis tickets</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="estadoChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Prioridades</div>
+      <div class="card-body" style="height:300px">
+        <canvas id="prioChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card mt-3">
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>Área</th>
+          <th>Prioridad</th>
+          <th>Estado</th>
+          <th>Detalle</th>
+          <th>Ubicación</th>
+          <th>Creado</th>
+          <th>Vence</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in (tickets or []) %}
+        <tr class="{% if t.is_critical %}table-warning{% endif %}">
+          <td>{{ t.id }}</td>
+          <td>{{ t.area }}</td>
+          <td>{{ t.prioridad }}</td>
+          <td>{{ t.estado|nice_state }}</td>
+          <td class="text-truncate" style="max-width: 340px">{{ t.detalle }}</td>
+          <td>{{ t.ubicacion }}</td>
+          <td><small>{{ t.created_at|short_dt }}</small></td>
+          <td class="{% if t.is_critical %}text-danger fw-semibold{% endif %}">
+            <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
+          </td>
+          <td class="text-nowrap">
+            {# Aceptar: PENDIENTE / ASIGNADO / DERIVADO -> ACEPTADO #}
+            {% if t.estado in ['PENDIENTE','ASIGNADO','DERIVADO'] %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
+                <button class="btn btn-sm btn-outline-primary">Aceptar</button>
+              </form>
+            {% endif %}
+
+            {# ACEPTADO -> EN_CURSO #}
+            {% if t.estado == 'ACEPTADO' %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_start', id=t.id) }}">
+                <button class="btn btn-sm btn-outline-dark">Iniciar</button>
+              </form>
+            {% endif %}
+
+            {# EN_CURSO -> PAUSADO / RESUELTO #}
+            {% if t.estado == 'EN_CURSO' %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
+                <input type="hidden" name="motivo" value="En espera">
+                <button class="btn btn-sm btn-outline-warning">Pausa</button>
+              </form>
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_finish', id=t.id) }}">
+                <button class="btn btn-sm btn-success">Resolver</button>
+              </form>
+            {% endif %}
+
+            {# PAUSADO -> EN_CURSO #}
+            {% if t.estado == 'PAUSADO' %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_resume', id=t.id) }}">
+                <button class="btn btn-sm btn-outline-secondary">Reanudar</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No tienes tickets asignados.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="hk-toast" class="hk-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<script>
+  // ---- Toast helpers ----
+  const hkToastEl = document.getElementById('hk-toast');
+  let hkToastTimer = null;
+
+  function showToast(msg, kind='success', ms=2200){
+    if(!hkToastEl) return;
+    hkToastEl.className = `hk-toast ${kind}`;
+    hkToastEl.textContent = msg;
+    requestAnimationFrame(()=> hkToastEl.classList.add('show'));
+    clearTimeout(hkToastTimer);
+    hkToastTimer = setTimeout(()=> hkToastEl.classList.remove('show'), ms);
+  }
+
+  // HH:MM locale
+  function fmtHHMM(isoOrDate){
+    try{
+      const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }catch(_){ return ''; }
+  }
+
+  // Map endpoint -> human message
+  function actionMessageFromUrl(url){
+    if (url.includes('ticket_accept')) return '✅ Has tomado este ticket.';
+    if (url.includes('ticket_start'))  return '▶️ Has iniciado el ticket.';
+    if (url.includes('ticket_pause'))  return '⏸️ Has pausado el ticket.';
+    if (url.includes('ticket_finish')) return '🏁 Has finalizado el ticket.';
+    if (url.includes('ticket_resume')) return '⏯️ Has reanudado el ticket.';
+    if (url.endsWith('/start'))        return '✅ Turno iniciado.';
+    if (url.endsWith('/pause'))        return '⏸️ Turno en pausa.';
+    if (url.endsWith('/end'))          return '🏁 Turno finalizado.';
+    return '✔️ Acción realizada.';
+  }
+
+  function toastKindFromUrl(url){
+    // Shift actions
+    if (url.endsWith('/start')) return 'success';
+    if (url.endsWith('/pause')) return 'warn';
+    if (url.endsWith('/end'))   return 'error';
+
+    // Ticket pause in yellow
+    if (url.includes('ticket_pause')) return 'warn';
+
+    return 'success';
+  }
+
+  // ========= Shift controls (desktop) =========
+  const shiftStatus = document.getElementById('shift-status');
+  const btnStart = document.getElementById('btn-shift-start');
+  const btnPause = document.getElementById('btn-shift-pause');
+  const btnStop  = document.getElementById('btn-shift-stop');
+
+  function setSolid(btn, base){
+    if (!btn) return;
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(solid);
+  }
+  function setOutline(btn, base){
+    if (!btn) return;
+    const solid = `btn-${base}`, outline = `btn-outline-${base}`;
+    btn.classList.remove(solid, outline);
+    btn.classList.add(outline);
+  }
+
+  function applyVisualState(j){
+    // reset
+    setOutline(btnStart,'success');
+    setOutline(btnPause,'warning');
+    setOutline(btnStop,'danger');
+
+    if (!j || (!j.active && !j.started_at && !j.ended_at)) {
+      return; // inactivo
+    }
+    if (j.ended_at) {
+      // turno cerrado, no cambiamos botones
+      return;
+    }
+    if (j.paused) {
+      setSolid(btnPause,'warning');
+    } else if (j.active) {
+      setSolid(btnStart,'success');
+    }
+  }
+
+  function labelFromState(j){
+    if (!j || (!j.active && !j.started_at && !j.ended_at)) return 'Turno: inactivo';
+
+    if (j.ended_at){
+      const hhmm = fmtHHMM(j.ended_at);
+      return `Turno: finalizado — ${hhmm} hrs`;
+    }
+    if (j.paused) return 'Turno: en pausa';
+
+    try{
+      const hhmm = fmtHHMM(j.started_at);
+      return `Turno: activo desde ${hhmm} hrs`;
+    }catch(_){
+      return 'Turno: activo';
+    }
+  }
+
+  async function refreshShiftStatus(){
+    try{
+      const r = await fetch('/api/hk/shift');
+      if(!r.ok) throw new Error();
+      const j = await r.json();
+      shiftStatus.textContent = labelFromState(j);
+      applyVisualState(j);
+    } catch(_){
+      shiftStatus.textContent = 'Turno: inactivo';
+      applyVisualState(null);
+    }
+  }
+
+  async function postNoContent(url, btn){
+    try{
+      if (btn) { btn.setAttribute('aria-busy','true'); btn.disabled = true; }
+      const r = await fetch(url, { method: 'POST' });
+      await refreshShiftStatus();
+      if (r.ok) {
+        showToast(actionMessageFromUrl(url), toastKindFromUrl(url));
+      } else {
+        showToast('❌ No se pudo actualizar el estado del turno.', 'error', 2800);
+      }
+      return r.ok;
+    } catch(e){
+      showToast('❌ Error de conexión. Inténtalo nuevamente.', 'error', 2800);
+      return false;
+    } finally {
+      if (btn) { btn.removeAttribute('aria-busy'); btn.disabled = false; }
+    }
+  }
+
+  btnStart?.addEventListener('click', ()=>postNoContent('/hk/shift/start', btnStart));
+  btnPause?.addEventListener('click', ()=>postNoContent('/hk/shift/pause', btnPause));
+  btnStop ?.addEventListener('click', ()=>postNoContent('/hk/shift/end',   btnStop));
+
+  // Inicializar estado del turno
+  refreshShiftStatus();
+</script>
+
+<script>
+  // ===== Existing KPIs + charts =====
+  const css = getComputedStyle(document.documentElement);
+  const BRAND    = css.getPropertyValue('--brand').trim()    || '#16242D';
+  const ACCENT   = css.getPropertyValue('--accent').trim()   || '#41D4A8';
+  const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
+  const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
+
+  const items = {{ (tickets or []) | tojson }};
+
+  // KPI counts
+  const count = (pred) => items.filter(pred).length;
+  const asignados = count(t => ['PENDIENTE','ASIGNADO','DERIVADO'].includes(t.estado));
+  const enCurso   = count(t => t.estado === 'EN_CURSO' || t.estado === 'ACEPTADO');
+  const criticos  = count(t => t.is_critical);
+
+  document.getElementById('kpi-asignados').textContent = asignados;
+  document.getElementById('kpi-curso').textContent = enCurso;
+  document.getElementById('kpi-criticos').textContent = criticos;
+
+  // Group helpers
+  function groupBy(arr, key) {
+    const m = {};
+    arr.forEach(o => { m[o[key]] = (m[o[key]] || 0) + 1; });
+    return m;
+  }
+
+  // Estado doughnut
+  const byEstado = groupBy(items, 'estado');
+  new Chart(document.getElementById('estadoChart'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(byEstado),
+      datasets: [{
+        data: Object.values(byEstado),
+        backgroundColor: [ACCENT, BRAND, WARNING, CRITICAL, '#999', '#bbb']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } }
+    }
+  });
+
+  // Prioridad bar
+  const byPrio = groupBy(items, 'prioridad');
+  const prioOrder = ['URGENTE','ALTA','MEDIA','BAJA'];
+  const prioLabels = prioOrder.filter(p => byPrio[p]);
+  new Chart(document.getElementById('prioChart'), {
+    type: 'bar',
+    data: {
+      labels: prioLabels,
+      datasets: [{
+        label: 'Tickets',
+        data: prioLabels.map(p => byPrio[p]),
+        backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT]
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+</script>
+{% endblock %}
