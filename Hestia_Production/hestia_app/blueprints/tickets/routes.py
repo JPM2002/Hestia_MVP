@@ -741,3 +741,37 @@ def ticket_finish(id: int):
         print(f"[WA] notify guest final failed: {e}", flush=True)
 
     return _ok_or_redirect("Ticket resuelto.", ticket_id=id, new_estado="RESUELTO")
+
+@bp.post("/tickets/<int:id>/delete")
+@require_perm("tickets:delete")  # nuevo permiso específico para baja lógica
+def ticket_delete(id: int):
+    """
+    Baja lógica (soft delete) de un ticket.
+    - Marca estado = 'ELIMINADO'
+    - Marca deleted_at con timestamp actual
+    - Registra motivo en TicketHistory.motivo
+    """
+    if "user" not in session:
+        return _err_or_redirect("No autenticado.", 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect("Ticket no encontrado.", 404)
+
+    motivo = (request.form.get("motivo") or "").strip() or None
+
+    deleted_now = (
+        datetime.now(timezone.utc).isoformat()
+        if using_pg()
+        else datetime.now().isoformat()
+    )
+
+    fields: Dict[str, Any] = {
+        "estado": "ELIMINADO",
+        "deleted_at": deleted_now,
+    }
+
+    _update_ticket(id, fields, "ELIMINADO", motivo)
+
+    # Desde el dashboard de recepción se llama vía fetch() y solo se mira r.ok
+    return jsonify({"ok": True})
