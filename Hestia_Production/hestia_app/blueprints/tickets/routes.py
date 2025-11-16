@@ -191,16 +191,18 @@ def _tech_choices_by_area(org_id: int, hotel_id: int | None) -> Dict[str, List[D
 # --------------------------------------------------------------------
 
 @bp.get("/tickets", endpoint="tickets")
-@require_perm("ticket.view.all")  # usa tu código legacy aquí
+@require_perm("tickets:view_all")  # or "ticket.view.all" if you go full-legacy
 def ticket_list():
     """
     Canonical list/landing for Tickets.
     Endpoint name = 'tickets.tickets' so the navbar link in base.html works.
     Renders templates/tickets.html (or tickets/tickets.html depending on blueprint config).
     """
-    org_id, _ = current_scope()
-    if not org_id:
-        flash("Sin contexto de organización.", "error")
+    # <<< FIX HERE: unpack both org_id and hotel_id >>>
+    org_id, hotel_id = current_scope()
+
+    if not org_id or not hotel_id:
+        flash("Sin contexto de organización/hotel.", "error")
         return redirect(url_for("dashboard.index"))
 
     # --- Filters (match your tickets.html form) ---
@@ -237,7 +239,7 @@ def ticket_list():
     rows = fetchall(
         f"""
         SELECT id, area, prioridad, estado, detalle, ubicacion, canal_origen,
-               created_at, due_at, finished_at
+               created_at, due_at, finished_at, assigned_to
         FROM Tickets
         WHERE {' AND '.join(where)}
         ORDER BY created_at DESC
@@ -260,6 +262,7 @@ def ticket_list():
             "due_at": r.get("due_at"),
             "finished_at": r.get("finished_at"),
             "is_critical": _safe_is_critical(now, r.get("due_at")),
+            "assigned_to": r.get("assigned_to"),
         }
         for r in rows
     ]
@@ -272,6 +275,7 @@ def ticket_list():
         "period": period,
     }
 
+    # <<< FIX HERE: hotel_id is now defined >>>
     tech_choices_by_area = _tech_choices_by_area(org_id, hotel_id)
 
     return render_template(
@@ -279,9 +283,9 @@ def ticket_list():
         user=session.get("user"),
         tickets=tickets,
         filters=filters,
-        tech_choices_by_area=tech_choices_by_area,
         device=getattr(g, "device", None),
         view=getattr(g, "view_mode", "auto"),
+        tech_choices_by_area=tech_choices_by_area,
     )
 
 
