@@ -191,7 +191,7 @@ def _tech_choices_by_area(org_id: int, hotel_id: int | None) -> Dict[str, List[D
 # --------------------------------------------------------------------
 
 @bp.get("/tickets", endpoint="tickets")
-@require_perm("tickets:view_all")  # or "ticket.view.all" if you go full-legacy
+@require_perm("ticket.view.all")  # or "ticket.view.all" if you go full-legacy
 def ticket_list():
     """
     Canonical list/landing for Tickets.
