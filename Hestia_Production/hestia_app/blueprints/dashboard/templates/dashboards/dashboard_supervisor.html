@@ -112,6 +112,7 @@
             <small>{{ t.due_at|short_dt if t.due_at else '-' }}</small>
           </td>
           <td class="text-end">
+            {# Reasignar siempre disponible si hay técnicos configurados #}
             {% if techs %}
               <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_reassign', id=t.id) }}">
                 <select name="assigned_to" class="form-select form-select-sm d-inline w-auto align-text-top me-1">
@@ -126,11 +127,18 @@
             {% else %}
               <button class="btn btn-sm btn-outline-secondary me-1" disabled>Reasignar</button>
             {% endif %}
-            <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
-              <input type="hidden" name="motivo" value="Pausa operativa">
-              <button class="btn btn-sm btn-outline-warning">Pausar</button>
-            </form>
+
+            {# Pausar solo tiene sentido si el ticket está EN_CURSO, para no chocar con ALLOWED_TRANSITIONS["pause"] #}
+            {% if t.estado == 'EN_CURSO' %}
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
+                <input type="hidden" name="motivo" value="Pausa operativa">
+                <button class="btn btn-sm btn-outline-warning">Pausar</button>
+              </form>
+            {% else %}
+              <button class="btn btn-sm btn-outline-warning" disabled>Pausar</button>
+            {% endif %}
           </td>
+
         </tr>
       {% else %}
         <tr class="empty-row"><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>

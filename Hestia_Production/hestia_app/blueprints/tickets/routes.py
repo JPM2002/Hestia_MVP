@@ -86,12 +86,20 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------
 
 @bp.post("/tickets/<int:ticket_id>/edit")
-@require_perm("tickets:change_state")  # nuevo código de permiso
+@require_perm("tickets:change_state")  # permiso genérico para edición
 def ticket_edit(ticket_id: int):
-    user = session.get("user") or {}
-    org_id, _ = current_scope()
-    if not org_id:
-        return jsonify({"ok": False, "error": "Sin contexto de organización"}), 400
+    if "user" not in session:
+        return jsonify({"ok": False, "error": "No autenticado"}), 401
+
+    # Respeta multi-tenant y devuelve None si no corresponde a la org actual
+    t = _get_ticket_or_abort(ticket_id)
+    if t is None:
+        return jsonify({"ok": False, "error": "Ticket no encontrado"}), 404
+
+    # RBAC extra: un SUPERVISOR solo puede editar su área
+    role = current_org_role()
+    if role == "SUPERVISOR":
+        _require_area_manage(t["area"])
 
     detalle = (request.form.get("detalle") or "").strip()
     prioridad = (request.form.get("prioridad") or "").strip().upper() or None
@@ -102,26 +110,18 @@ def ticket_edit(ticket_id: int):
     if prioridad and prioridad not in valid_prios:
         return jsonify({"ok": False, "error": "Prioridad inválida"}), 400
 
-    # update (tabla tickets, pero case da igual en SQLite/Postgres sin comillas)
-    execute(
-        """
-        UPDATE Tickets
-        SET detalle=?, prioridad=?, ubicacion=?
-        WHERE id=? AND org_id=?
-        """,
-        (detalle or None, prioridad, ubicacion, ticket_id, org_id),
-    )
+    fields: Dict[str, Any] = {
+        "detalle": detalle or None,
+        "prioridad": prioridad,
+        "ubicacion": ubicacion,
+    }
 
-    # history
-    execute(
-        """
-        INSERT INTO TicketHistory(ticket_id, actor_user_id, action, motivo, at)
-        VALUES (?,?,?,?,?)
-        """,
-        (ticket_id, user.get("id"), "EDITADO", None, datetime.now().isoformat()),
-    )
+    # Usa el helper común: hace UPDATE + TicketHistory("EDITADO")
+    _update_ticket(ticket_id, fields, "EDITADO")
 
+    # El frontend de recepción solo mira r.ok, así que basta con 200 + JSON
     return jsonify({"ok": True})
+
 
 
 # --------------------------------------------------------------------
@@ -428,6 +428,58 @@ def ticket_confirm(id: int):
     )
     flash(msg, "success")
     return redirect(url_for("tickets"))
+
+@bp.post("/tickets/<int:id>/reassign")
+@require_perm("tickets:change_state")  # o un permiso más fino si quieres, p.ej. "tickets:reassign"
+def ticket_reassign(id: int):
+    """
+    Reasignar ticket a otro técnico desde el dashboard de supervisor/gerente.
+    Solo toca assigned_to y registra el movimiento en TicketHistory.
+    """
+    if "user" not in session:
+        return _err_or_redirect("No autenticado.", 401)
+
+    t = _get_ticket_or_abort(id)
+    if t is None:
+        return _err_or_redirect("Ticket no encontrado.", 404)
+
+    role = current_org_role()
+    # Supervisor solo puede gestionar su área
+    if role == "SUPERVISOR":
+        _require_area_manage(t["area"])
+
+    assigned_raw = (request.form.get("assigned_to") or "").strip()
+    if not assigned_raw.isdigit():
+        return _err_or_redirect("Técnico inválido.", 400)
+
+    new_assignee = int(assigned_raw)
+
+    # Actualiza assigned_to y registra REASIGNADO
+    _update_ticket(
+        id,
+        {"assigned_to": new_assignee},
+        "REASIGNADO",
+    )
+
+    # (Opcional) Notificar por WhatsApp al nuevo técnico igual que en confirm()
+    try:
+        tech = fetchone("SELECT telefono FROM Users WHERE id=?", (new_assignee,))
+        to_phone = (tech.get("telefono") if tech else None) or ""
+        if to_phone.strip():
+            _notify_tech_assignment(
+                to_phone=to_phone,
+                ticket_id=id,
+                area=t["area"],
+                prioridad=t["prioridad"],
+                detalle=t["detalle"],
+                ubicacion=t["ubicacion"],
+            )
+    except Exception as e:
+        print(f"[WA] notify tech reassignment failed: {e}", flush=True)
+
+    # Devuelve JSON si es XHR/HX, o redirige con flash si viene de un <form>
+    return _ok_or_redirect("Ticket reasignado.", ticket_id=id)
+
 
 
 # --------------------------------------------------------------------
