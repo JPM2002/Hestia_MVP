@@ -78,67 +78,6 @@ def get_global_kpis():
     return kpis, charts
 
 
-def get_area_data(area: str | None):
-    """KPIs + tickets abiertos para SUPERVISOR (scoped by ORG; filter by area si viene)."""
-    org_id, hotel_id = current_scope()
-    if not org_id:
-        return {"area": area, "critical": 0, "active": 0, "resolved_24h": 0}, []
-
-    params = [org_id]
-    where = ["org_id=?"]
-    # If you want to limit by hotel, uncomment:
-    # if hotel_id: where.append("hotel_id=?"); params.append(hotel_id)
-    if area:
-        where.append("area=?"); params.append(area)
-
-    now = datetime.now()
-    active = fetchall(
-        f"""
-        SELECT id, due_at
-        FROM Tickets
-        WHERE {' AND '.join(where)}
-          AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
-        """, params
-    )
-    total_active = len(active)
-    critical = sum(1 for r in active if is_critical(now, r['due_at']))
-
-    cut24 = (datetime.now() - timedelta(days=1)).isoformat()
-    resolved_24 = fetchone(
-        f"""
-        SELECT COUNT(1) c
-        FROM Tickets
-        WHERE {' AND '.join(where)} AND estado='RESUELTO'
-        AND finished_at >= ?
-        """, params + [cut24]
-    )['c']
-
-    kpis = {
-        "area": area,
-        "critical": critical,
-        "active": total_active,
-        "resolved_24h": resolved_24
-    }
-
-    rows = fetchall(
-        f"""
-        SELECT id, area, prioridad, estado, detalle, ubicacion, created_at, due_at, assigned_to, canal_origen
-        FROM Tickets
-        WHERE {' AND '.join(where)}
-          AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
-        ORDER BY created_at DESC
-        """, params
-    )
-    tickets = [{
-        "id": r["id"], "area": r["area"], "prioridad": r["prioridad"], "estado": r["estado"],
-        "detalle": r["detalle"], "ubicacion": r["ubicacion"], "created_at": r["created_at"],
-        "due_at": r["due_at"], "is_critical": is_critical(datetime.now(), r["due_at"]),
-        "assigned_to": r["assigned_to"],
-        "canal": r["canal_origen"],
-    } for r in rows]
-    return kpis, tickets
-
-
 def get_assigned_tickets_for_area(user_id: int, area: str | None):
     now = datetime.now()
     org_id, _ = current_scope()
