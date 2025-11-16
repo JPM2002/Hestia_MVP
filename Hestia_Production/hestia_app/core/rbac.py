@@ -5,24 +5,31 @@ from ..services.db import fetchone, fetchall
 
 DEFAULT_PERMS = {
     "SUPERADMIN": {"*"},
-    "GERENTE": {
+        "GERENTE": {
         "ticket.view.all", "ticket.assign", "ticket.confirm", "ticket.create",
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
         "ticket.transition.resume", "ticket.transition.finish",
+        "ticket.update",
+        "ticket.delete",           # <-- add this
     },
     "SUPERVISOR": {
-        "ticket.view.all",
-        "ticket.view.area", "ticket.assign", "ticket.confirm", "ticket.create",
+        "ticket.view.all", "ticket.view.area", "ticket.assign", "ticket.confirm",
+        "ticket.create",
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
         "ticket.transition.resume", "ticket.transition.finish",
+        "ticket.update",
+        "ticket.delete",           # optional, if you want supervisors to delete
     },
     "RECEPCION": {
-        "ticket.view.area", "ticket.create", "ticket.confirm", "ticket.update"
+        "ticket.view.area", "ticket.create", "ticket.confirm", "ticket.update",
+        # decide if recepción can delete:
+        # "ticket.delete",
     },
     "TECNICO": {
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
-        "ticket.transition.resume", "ticket.transition.finish","ticket.view.area"
+        "ticket.transition.resume", "ticket.transition.finish", "ticket.view.area",
     },
+
 }
 
 # All of these values exist on the table called permissions in the DB
@@ -47,22 +54,35 @@ def role_effective_perms(role_code: str) -> set[str]:
     if not role_code:
         return set()
 
-    base = set(c.get(role_code, set()))
+    # OLD (buggy):
+    # base = set(c.get(role_code, set()))
+    # NEW:
+    base = set(DEFAULT_PERMS.get(role_code, set()))
+
     try:
-        perms = set()
-        seen = set()
+        perms: set[str] = set()
+        seen: set[str] = set()
         rc = role_code
         while rc and rc not in seen:
             seen.add(rc)
-            for r in fetchall("SELECT perm_code, allow FROM RolePermissions WHERE role_code=?", (rc,)):
+            for r in fetchall(
+                "SELECT perm_code, allow FROM RolePermissions WHERE role_code=?",
+                (rc,),
+            ):
                 if bool(r.get("allow", 1)):
                     perms.add(r["perm_code"])
-            parent = fetchone("SELECT inherits_code FROM Roles WHERE code=?", (rc,))
+
+            parent = fetchone(
+                "SELECT inherits_code FROM Roles WHERE code=?",
+                (rc,),
+            )
             rc = parent["inherits_code"] if parent else None
+
         return base | perms
     except Exception:
-        # If RBAC tables are missing, stick to defaults
         return base
+
+
 
 def has_perm(code: str) -> bool:
     role = current_org_role()

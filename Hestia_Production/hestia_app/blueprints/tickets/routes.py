@@ -86,7 +86,7 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------
 
 @bp.post("/tickets/<int:ticket_id>/edit")
-@require_perm("tickets:change_state")  # permiso genérico para edición
+@require_perm("ticket.update")  # was "tickets:change_state"
 def ticket_edit(ticket_id: int):
     if "user" not in session:
         return jsonify({"ok": False, "error": "No autenticado"}), 401
@@ -129,7 +129,7 @@ def ticket_edit(ticket_id: int):
 # --------------------------------------------------------------------
 
 @bp.get("/tickets", endpoint="tickets")
-@require_perm("tickets:view_all")  # listado global por organización
+@require_perm("ticket.view.all")  # was "tickets:view_all"
 def ticket_list():
     """
     Canonical list/landing for Tickets.
@@ -225,7 +225,7 @@ def ticket_list():
 # --------------------------------------------------------------------
 
 @bp.route("/tickets/create", methods=["GET", "POST"])
-@require_perm("tickets:create")
+@require_perm("ticket.create")  # was "tickets:create"
 def ticket_create():
     if "user" not in session:
         return redirect(url_for("auth.login"))
@@ -345,7 +345,7 @@ def ticket_create():
 # --------------------------------------------------------------------
 
 @bp.post("/tickets/<int:id>/confirm")
-@require_perm("tickets:approve")  # código nuevo: GERENTE (y SUPERADMIN)
+@require_perm("ticket.confirm")  # was "tickets:approve"
 def ticket_confirm(id: int):
     """
     Recepción/Supervisor/Gerente confirman o aprueban (incluye PENDIENTE_APROBACION),
@@ -430,7 +430,7 @@ def ticket_confirm(id: int):
     return redirect(url_for("tickets"))
 
 @bp.post("/tickets/<int:id>/reassign")
-@require_perm("tickets:change_state")  # o un permiso más fino si quieres, p.ej. "tickets:reassign"
+@require_perm("ticket.assign")  # was "tickets:change_state"
 def ticket_reassign(id: int):
     """
     Reasignar ticket a otro técnico desde el dashboard de supervisor/gerente.
@@ -610,7 +610,7 @@ def _get_ticket_or_abort(id: int):
 # --------------------------------------------------------------------
 
 @bp.post("/tickets/<int:id>/accept")
-@require_perm("tickets:change_state")
+@require_perm("ticket.transition.accept")  # was "tickets:change_state"
 def ticket_accept(id: int):
     if "user" not in session:
         return _err_or_redirect("No autenticado.", 401)
@@ -655,7 +655,7 @@ def ticket_accept(id: int):
 
 
 @bp.post("/tickets/<int:id>/start")
-@require_perm("tickets:change_state")
+@require_perm("ticket.transition.start")  # was "tickets:change_state"
 def ticket_start(id: int):
     if "user" not in session:
         return _err_or_redirect("No autenticado.", 401)
@@ -687,7 +687,7 @@ def ticket_start(id: int):
 
 
 @bp.post("/tickets/<int:id>/pause")
-@require_perm("tickets:change_state")
+@require_perm("ticket.transition.pause")  # was "tickets:change_state"
 def ticket_pause(id: int):
     if "user" not in session:
         return _err_or_redirect("No autenticado.", 401)
@@ -716,7 +716,7 @@ def ticket_pause(id: int):
 
 
 @bp.post("/tickets/<int:id>/resume")
-@require_perm("tickets:change_state")
+@require_perm("ticket.transition.resume")  # was "tickets:change_state"
 def ticket_resume(id: int):
     if "user" not in session:
         return _err_or_redirect("No autenticado.", 401)
@@ -744,7 +744,7 @@ def ticket_resume(id: int):
 
 
 @bp.post("/tickets/<int:id>/finish")
-@require_perm("tickets:change_state")
+@require_perm("ticket.transition.finish")  # was "tickets:change_state"
 def ticket_finish(id: int):
     if "user" not in session:
         return _err_or_redirect("No autenticado.", 401)
@@ -795,7 +795,7 @@ def ticket_finish(id: int):
     return _ok_or_redirect("Ticket resuelto.", ticket_id=id, new_estado="RESUELTO")
 
 @bp.post("/tickets/<int:id>/delete")
-@require_perm("tickets:delete")  # nuevo permiso específico para baja lógica
+@require_perm("ticket.delete")  # was "tickets:delete"
 def ticket_delete(id: int):
     """
     Baja lógica (soft delete) de un ticket.
