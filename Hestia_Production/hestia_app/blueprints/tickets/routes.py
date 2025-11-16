@@ -125,11 +125,73 @@ def ticket_edit(ticket_id: int):
 
 
 # --------------------------------------------------------------------
+# Técnicos por área (para UI de asignación)
+# --------------------------------------------------------------------
+
+def _tech_choices_by_area(org_id: int, hotel_id: int | None) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Devuelve un dict {AREA_CODE: [ {id, username, open_count}, ... ] }
+    para todos los técnicos de la org, con cantidad de tickets abiertos.
+    Los counts se filtran por org y hotel.
+    """
+
+    # 1) Tickets abiertos por técnico
+    open_rows = fetchall(
+        """
+        SELECT assigned_to AS tech_id, COUNT(1) AS cnt
+        FROM Tickets
+        WHERE org_id = ?
+          AND assigned_to IS NOT NULL
+          AND estado IN ('PENDIENTE','ASIGNADO','ACEPTADO','EN_CURSO','PAUSADO','DERIVADO')
+          {hotel_filter}
+        GROUP BY assigned_to
+        """.format(hotel_filter="AND hotel_id=?" if hotel_id else ""),
+        ( (org_id, hotel_id) if hotel_id else (org_id,) ),
+    )
+    open_map = {r["tech_id"]: r["cnt"] for r in open_rows if r["tech_id"] is not None}
+
+    # 2) Técnicos por área (OrgUsers + OrgUserAreas o Users.area)
+    tech_rows = fetchall(
+        """
+        SELECT u.id,
+               u.username,
+               COALESCE(oa.area_code, u.area) AS area
+        FROM Users u
+        JOIN OrgUsers ou
+          ON ou.user_id = u.id AND ou.org_id = ?
+        LEFT JOIN OrgUserAreas oa
+          ON oa.org_id = ou.org_id AND oa.user_id = ou.user_id
+        WHERE ou.role = 'TECNICO'
+        """,
+        (org_id,),
+    )
+
+    by_area: Dict[str, List[Dict[str, Any]]] = {}
+    for r in tech_rows:
+        area = (r["area"] or "").upper()
+        if not area:
+            continue
+        by_area.setdefault(area, []).append(
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "open_count": open_map.get(r["id"], 0),
+            }
+        )
+
+    # Ordenar por menor carga primero
+    for area_list in by_area.values():
+        area_list.sort(key=lambda x: x["open_count"])
+
+    return by_area
+
+
+# --------------------------------------------------------------------
 # Listado de tickets (vista clásica)
 # --------------------------------------------------------------------
 
 @bp.get("/tickets", endpoint="tickets")
-@require_perm("ticket.view.all")  # was "tickets:view_all"
+@require_perm("ticket.view.all")  # usa tu código legacy aquí
 def ticket_list():
     """
     Canonical list/landing for Tickets.
@@ -210,11 +272,14 @@ def ticket_list():
         "period": period,
     }
 
+    tech_choices_by_area = _tech_choices_by_area(org_id, hotel_id)
+
     return render_template(
         "tickets.html",
         user=session.get("user"),
         tickets=tickets,
         filters=filters,
+        tech_choices_by_area=tech_choices_by_area,
         device=getattr(g, "device", None),
         view=getattr(g, "view_mode", "auto"),
     )
