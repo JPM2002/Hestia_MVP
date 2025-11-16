@@ -21,9 +21,11 @@ DEFAULT_PERMS = {
     },
     "TECNICO": {
         "ticket.transition.accept", "ticket.transition.start", "ticket.transition.pause",
-        "ticket.transition.resume", "ticket.transition.finish",
+        "ticket.transition.resume", "ticket.transition.finish","ticket.view.area"
     },
 }
+
+# All of these values exist on the table called permissions in the DB
 
 def current_org_role() -> str | None:
     """Return the OrgUsers.role for this user in current org, or SUPERADMIN."""
@@ -45,7 +47,7 @@ def role_effective_perms(role_code: str) -> set[str]:
     if not role_code:
         return set()
 
-    base = set(DEFAULT_PERMS.get(role_code, set()))
+    base = set(c.get(role_code, set()))
     try:
         perms = set()
         seen = set()

@@ -42,7 +42,6 @@
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary"
-       href="{{ url_for('tickets.tickets', area='HOUSEKEEPING') }}">Todos</a>
     {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
       <a class="btn btn-sm btn-accent" href="{{ url_for('tickets.ticket_create') }}">Nuevo</a>
     {% endif %}
