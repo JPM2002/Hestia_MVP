@@ -40,12 +40,6 @@
     <h1 class="h5 mb-0">🧹 Housekeeping</h1>
     <div class="small text-muted">Vista móvil</div>
   </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-sm btn-outline-secondary"
-    {% if user and user.role in ['GERENTE','SUPERVISOR','RECEPCION'] %}
-      <a class="btn btn-sm btn-accent" href="{{ url_for('tickets.ticket_create') }}">Nuevo</a>
-    {% endif %}
-  </div>
 </header>
 
 <!-- Shift controls -->
