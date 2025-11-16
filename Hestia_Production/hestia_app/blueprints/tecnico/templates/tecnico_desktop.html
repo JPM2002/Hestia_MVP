@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Mi trabajo (Escritorio){% endblock %}
+{% block title %}Mi trabajo{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="page-title mb-0">Mi trabajo</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
-    <a href="{{ url_for('tickets', estado='PENDIENTE') }}" class="btn btn-outline-dark">Todos</a>
+    <a href="{{ url_for('tickets.ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets.tickets', estado='PENDIENTE') }}" class="btn btn-outline-dark">Todos</a>
   </div>
 </div>
 
-<!-- KPIs -->
+<!-- Personal KPIs -->
 <div class="row g-3">
   <div class="col-md-4">
     <div class="card stat-card"><div class="card-body">
@@ -32,6 +32,7 @@
   </div>
 </div>
 
+<!-- My charts -->
 <div class="row g-3 mt-1">
   <div class="col-lg-6">
     <div class="card h-100">
@@ -66,11 +67,11 @@
           <td>{{ t.id }}</td>
           <td>{{ t.area }}</td>
           <td>{{ t.prioridad }}</td>
-          <td>{{ t.estado }}</td>
+          <td>{{ t.estado|nice_state }}</td>
           <td class="text-truncate" style="max-width: 340px">{{ t.detalle }}</td>
           <td>{{ t.ubicacion }}</td>
-          <td><small>{{ t.created_at }}</small></td>
-          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at or '-' }}</small></td>
+          <td><small>{{ t.created_at|short_dt }}</small></td>
+          <td class="{{ 'text-danger fw-semibold' if t.is_critical }}"><small>{{ t.due_at|short_dt if t.due_at else '-' }}</small></td>
           <td class="text-nowrap">
             {% if t.estado in ['PENDIENTE','ASIGNADO'] %}
               <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_accept', id=t.id) }}">
@@ -116,6 +117,7 @@
 
   const items = {{ (tickets or []) | tojson }};
 
+  // KPI counts
   const count = (pred) => items.filter(pred).length;
   const asignados = count(t => ['PENDIENTE','ASIGNADO'].includes(t.estado));
   const enCurso   = count(t => t.estado === 'EN_CURSO' || t.estado === 'ACEPTADO');
@@ -125,25 +127,33 @@
   document.getElementById('kpi-curso').textContent = enCurso;
   document.getElementById('kpi-criticos').textContent = criticos;
 
+  // Group helpers
   function groupBy(arr, key) {
     const m = {};
-    arr.forEach(o => { const k=o[key]||'—'; m[k]=(m[k]||0)+1; });
+    arr.forEach(o => { m[o[key]] = (m[o[key]] || 0) + 1; });
     return m;
   }
 
+  // Estado doughnut
   const byEstado = groupBy(items, 'estado');
   new Chart(document.getElementById('estadoChart'), {
     type: 'doughnut',
-    data: { labels: Object.keys(byEstado), datasets: [{ data: Object.values(byEstado), backgroundColor: [ACCENT, BRAND, WARNING, CRITICAL, '#999', '#bbb'] }] },
+    data: {
+      labels: Object.keys(byEstado),
+      datasets: [{ data: Object.values(byEstado), backgroundColor: [ACCENT, BRAND, WARNING, CRITICAL, '#999', '#bbb'] }]
+    },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
   });
 
+  // Prioridad bar
   const byPrio = groupBy(items, 'prioridad');
   const prioOrder = ['URGENTE','ALTA','MEDIA','BAJA'];
-  const labels = prioOrder.filter(p => byPrio[p]);
   new Chart(document.getElementById('prioChart'), {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'Tickets', data: labels.map(p => byPrio[p]), backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }] },
+    data: {
+      labels: prioOrder.filter(p => byPrio[p]),
+      datasets: [{ label: 'Tickets', data: prioOrder.filter(p => byPrio[p]).map(p => byPrio[p]), backgroundColor: [CRITICAL, WARNING, BRAND, ACCENT] }]
+    },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
   });
 </script>
