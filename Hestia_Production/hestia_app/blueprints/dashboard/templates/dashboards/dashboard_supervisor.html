@@ -282,7 +282,7 @@
 <script>
   // ---------- Charts: backlog_by_tech ----------
   (async () => {
-    const j = await getJSON("{{ url_for(supervisor.'api_sup_backlog_by_tech') }}", MOCK_BACKLOG_BY_TECH);
+    const j = await getJSON("{{ url_for('supervisor.api_sup_backlog_by_tech') }}", MOCK_BACKLOG_BY_TECH);
     const ctx = document.getElementById('techChart');
     if (!ctx) return;
     new Chart(ctx, {
