@@ -296,7 +296,7 @@
 
   // ---------- Charts: open_by_priority ----------
   (async () => {
-    const j = await getJSON("{{ url_for('api_sup_open_by_priority') }}", MOCK_OPEN_BY_PRIORITY);
+    const j = await getJSON("{{ url_for('supervisor.api_sup_open_by_priority') }}", MOCK_OPEN_BY_PRIORITY);
     const ctx = document.getElementById('prioChart');
     if (!ctx) return;
     new Chart(ctx, {
