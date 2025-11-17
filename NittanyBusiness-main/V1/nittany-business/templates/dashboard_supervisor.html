@@ -5,8 +5,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="page-title mb-0">Área: {{ kpis.area or 'Supervisor' }}</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
-    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-outline-dark">Ver tickets</a>
+    <a href="{{ url_for('tickets.ticket_create') }}" class="btn btn-accent">Nuevo ticket</a>
+    <a href="{{ url_for('tickets.tickets', area=kpis.area) }}" class="btn btn-outline-dark">Ver tickets</a>
   </div>
 </div>
 
@@ -89,7 +89,7 @@
 <div class="card mt-3" id="open-card">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <span>Tickets abiertos ({{ kpis.area or 'área' }})</span>
-    <a href="{{ url_for('tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
+    <a href="{{ url_for('tickets.tickets', area=kpis.area) }}" class="btn btn-sm btn-outline-dark">Ver todo</a>
   </div>
 
   <div class="table-responsive">
@@ -113,7 +113,7 @@
           </td>
           <td class="text-end">
             {% if techs %}
-              <form class="d-inline" method="post" action="{{ url_for('ticket_reassign', id=t.id) }}">
+              <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_reassign', id=t.id) }}">
                 <select name="assigned_to" class="form-select form-select-sm d-inline w-auto align-text-top me-1">
                   {% for tech in techs %}
                     <option value="{{ tech.id }}" {% if (t.assigned_to|string) == (tech.id|string) %}selected{% endif %}>
@@ -126,7 +126,7 @@
             {% else %}
               <button class="btn btn-sm btn-outline-secondary me-1" disabled>Reasignar</button>
             {% endif %}
-            <form class="d-inline" method="post" action="{{ url_for('ticket_pause', id=t.id) }}">
+            <form class="d-inline" method="post" action="{{ url_for('tickets.ticket_pause', id=t.id) }}">
               <input type="hidden" name="motivo" value="Pausa operativa">
               <button class="btn btn-sm btn-outline-warning">Pausar</button>
             </form>
@@ -258,15 +258,15 @@
 
 <script>
   // ---------- Quick probes passing AREA (for early load / debugging hooks you had) ----------
-  fetch(`{{ url_for('api_sup_open_by_type') }}?area=${encodeURIComponent(AREA)}`)
+  fetch(`{{ url_for('supervisor.api_sup_open_by_type') }}?area=${encodeURIComponent(AREA)}`)
     .then(r => r.ok ? r.json() : {labels:[],values:[]})
     .then(() => { /* draw handled below with fallback renderer */ });
 
-  fetch(`{{ url_for('api_sup_performance_by_user') }}?area=${encodeURIComponent(AREA)}`)
+  fetch(`{{ url_for('supervisor.api_sup_performance_by_user') }}?area=${encodeURIComponent(AREA)}`)
     .then(r => r.ok ? r.json() : {items:[]})
     .then(() => { /* table filled below with fallback renderer */ });
 
-  fetch(`{{ url_for('api_supervisor_team_stats') }}?area=${encodeURIComponent(AREA)}`)
+  fetch(`{{ url_for('supervisor.api_supervisor_team_stats') }}?area=${encodeURIComponent(AREA)}`)
     .then(r => r.ok ? r.json() : {})
     .then(() => { /* used below for rank/prio/teams */ });
 </script>
@@ -274,7 +274,7 @@
 <script>
   // ---------- Charts: backlog_by_tech ----------
   (async () => {
-    const j = await getJSON("{{ url_for('api_sup_backlog_by_tech') }}", MOCK_BACKLOG_BY_TECH);
+    const j = await getJSON("{{ url_for('supervisor.api_sup_backlog_by_tech') }}", MOCK_BACKLOG_BY_TECH);
     const ctx = document.getElementById('techChart');
     if (!ctx) return;
     new Chart(ctx, {
@@ -288,7 +288,7 @@
 
   // ---------- Charts: open_by_priority ----------
   (async () => {
-    const j = await getJSON("{{ url_for('api_sup_open_by_priority') }}", MOCK_OPEN_BY_PRIORITY);
+    const j = await getJSON("{{ url_for('supervisor.api_sup_open_by_priority') }}", MOCK_OPEN_BY_PRIORITY);
     const ctx = document.getElementById('prioChart');
     if (!ctx) return;
     new Chart(ctx, {
@@ -305,7 +305,7 @@
 <script>
   // ---------- Team stats table + ranking + incidencias por prioridad (30d) ----------
   (async function(){
-    const url = new URL("{{ url_for('api_supervisor_team_stats') }}", window.location.origin);
+    const url = new URL("{{ url_for('supervisor.api_supervisor_team_stats') }}", window.location.origin);
     if (AREA) url.searchParams.set('area', AREA);
     const j = await getJSON(url, MOCK_TEAM_STATS);
 
@@ -356,7 +356,7 @@
 <script>
   // ---------- Incidencias por tipo (abiertos, área actual) ----------
   (async () => {
-    const url = new URL("{{ url_for('api_sup_open_by_type') }}", window.location.origin);
+    const url = new URL("{{ url_for('supervisor.api_sup_open_by_type') }}", window.location.origin);
     if (AREA) url.searchParams.set('area', AREA);
     const byType = await getJSON(url, MOCK_OPEN_BY_TYPE);
 
@@ -375,7 +375,7 @@
 
   // ---------- Desempeño del equipo (tabla compacta 30d) ----------
   (async () => {
-    const url = new URL("{{ url_for('api_sup_performance_by_user') }}", window.location.origin);
+    const url = new URL("{{ url_for('supervisor.api_sup_performance_by_user') }}", window.location.origin);
     if (AREA) url.searchParams.set('area', AREA);
     const perf = await getJSON(url, { rows: MOCK_PERF_ROWS });
 
