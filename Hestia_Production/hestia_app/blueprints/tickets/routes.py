@@ -402,6 +402,10 @@ def ticket_create():
         "housekeeping_whatsapp",
         "mantenimiento_app",
         "roomservice_llamada",
+        "supervisor_whatsapp",
+        " radio_mantenimiento",
+        "radio_supervisora", 
+        "radio_recepción"
     ]
     return render_template(
         "ticket_create.html",
