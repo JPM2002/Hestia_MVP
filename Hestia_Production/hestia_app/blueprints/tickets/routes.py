@@ -380,7 +380,7 @@ def ticket_create():
             )
             if nxt and str(nxt).startswith("/"):
                 return redirect(nxt)
-            return redirect(url_for("tickets"))
+            return redirect(url_for("tickets.tickets"))
 
         except Exception as e:
             current_app.logger.exception("Error creando ticket")
@@ -442,11 +442,11 @@ def ticket_confirm(id: int):
     )
     if not t or (org_id and t["org_id"] != org_id):
         flash("Ticket no encontrado.", "error")
-        return redirect(url_for("tickets"))
+        return redirect(url_for("tickets.tickets"))
 
     if t["estado"] not in ("PENDIENTE_APROBACION", "PENDIENTE"):
         flash("Solo puedes confirmar/aprobar tickets pendientes.", "error")
-        return redirect(url_for("tickets"))
+        return redirect(url_for("tickets.tickets"))
 
     role = current_org_role()
 
@@ -499,7 +499,7 @@ def ticket_confirm(id: int):
         else "Ticket confirmado (sin asignar)."
     )
     flash(msg, "success")
-    return redirect(url_for("tickets"))
+    return redirect(url_for("tickets.tickets"))
 
 @bp.post("/tickets/<int:id>/reassign")
 @require_perm("ticket.assign")  # was "tickets:change_state"
