@@ -347,7 +347,19 @@
   const WARNING  = css.getPropertyValue('--warning').trim()  || '#C09B5F';
   const CRITICAL = css.getPropertyValue('--critical').trim() || '#E5484D';
 
-    const fmtHours = (m) => (m != null ? (m / 60).toFixed(1) + ' h' : '—');
+    const fmtHours = (m) => {
+  if (m == null) return '—';          // null / undefined → dash
+
+  // m comes in minutes (may be float); round to nearest minute
+  const totalMin = Math.round(m);
+  const h   = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+
+  if (h <= 0)          return `${min} min`;          // < 1h → only minutes
+  if (min === 0)       return `${h} h`;              // exact hours
+  return `${h} h ${min} min`;                        // e.g. "65 h 50 min"
+};
+
 
 
   const r = await fetch("{{ url_for('gerencia.api_gerencia_summary') }}");
