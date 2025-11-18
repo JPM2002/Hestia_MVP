@@ -316,7 +316,9 @@ def ticket_create():
         ubicacion  = (request.form.get("ubicacion") or "").strip()
         canal      = (request.form.get("canal_origen") or "recepcion").strip()
         huesped_id = (request.form.get("huesped_id") or "").strip() or None
-        qr_required = 1 if request.form.get("qr_required") else 0
+
+        # IMPORTANT: send a bool, not an int, to match Postgres boolean column
+        qr_required = bool(request.form.get("qr_required"))
 
         created_at = datetime.now()
         due_dt = compute_due(created_at, area, prioridad)
@@ -350,7 +352,7 @@ def ticket_create():
                     None,                         # assigned_to
                     session["user"]["id"],        # created_by
                     None,                         # confidence_score
-                    qr_required,
+                    qr_required,                  # now True/False
                 ),
             )
 
@@ -389,6 +391,7 @@ def ticket_create():
                 or request.referrer
             )
             return redirect(nxt or url_for("tickets"))
+
 
     # GET
     areas = ["MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"]
