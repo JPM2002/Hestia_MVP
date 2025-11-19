@@ -2718,4 +2718,4 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
 if __name__ == "__main__":
     ensure_runtime_tables()  # safe to call again
     print(f"[BOOT] WhatsApp webhook starting on port {PORT} (DB={'PG' if using_pg() else 'SQLite'})", flush=True)
-    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False) 
