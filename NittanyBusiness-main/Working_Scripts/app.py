@@ -2068,7 +2068,7 @@ def _gh_send_ask_identification(from_phone: str):
 def _gh_send_ask_name_only(from_phone: str):
     send_whatsapp(
         from_phone,
-        "Perfecto. Para continuar dime, ¿*cuál es tu nombre*?"
+        "Perfecto. Para continuar dime, ¿*cuál es tu nombre*?(escribelo para poder guardar la sollicitud con tu nombre)"
     )
 
 
