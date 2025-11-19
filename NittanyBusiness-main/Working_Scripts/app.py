@@ -34,8 +34,9 @@ from services.guest_llm import analyze_guest_message, render_confirm_draft
 # Recepción: a quién notificar cuando queda PENDIENTE_APROBACION
 # Ej: "+56911111111,+56922222222"
 RECEPTION_PHONES = os.getenv("RECEPTION_PHONES", "+56996107169")
-
-# --- DEMO HK confirm flow (no DB writes) ---
+# Housekeeping (Andrés): a quién notificar cuando hay ticket nuevo HK
+HK_TECH_PHONES = os.getenv("HK_TECH_PHONES", "+56956326272")
+# --- DEMO HK confirm flow (no DB writes) ---   
 DEMO_MODE_HK = os.getenv("DEMO_MODE_HK", "on").lower()   # "on" | "off"
 DEMO_HK_DELAY_SECS = int(os.getenv("DEMO_HK_DELAY_SECS", "40"))
 
@@ -105,7 +106,7 @@ COPY = {
         "Cuando esté listo, responde *SI* para confirmarlo.",
     "ticket_created":
         "✅ ¡Gracias, {guest}! Hemos registrado el ticket #{ticket_id}.\n"
-        "Nuestro equipo ya está atendiendo tu solicitud. 🌟",
+        "Nuestro equipo ya está atendiendo tu solicitud.",
     "guest_final":
         "✨ ¡Listo, {name}! Tu solicitud (ticket #{ticket_id}) ha sido *resuelta*.\n"
         "Gracias por confiar en nosotros. Si necesitas algo más, aquí estaré. 💫",
@@ -125,6 +126,13 @@ COPY = {
         "primero debes completar tu proceso de verificación en Hestia.\n\n"
         "Por favor continúa con el proceso de verificación de tu cuenta "
         "para poder utilizar todas las funciones del sistema.",
+    # NEW: mensaje específico para HK (Andrés)
+    "hk_new_pending":
+        "🧹 Hola Andrés, hay un nuevo ticket de *{area}* #{ticket_id}.\n"
+        "Prioridad: {prioridad}\n"
+        "Habitación: {habitacion}\n"
+        "Detalle: {detalle}\n"
+        "{link}",
 }
 
 
@@ -651,6 +659,30 @@ def _notify_reception_pending(ticket_id: int, area: str, prioridad: str, detalle
     )
     for ph in recips:
         send_whatsapp(ph, body)
+
+def _notify_hk_pending(ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
+    """
+    Notifica a housekeeping (Andrés) cuando se crea un ticket HK
+    desde el flujo de huésped.
+    """
+    recips = _phones_from_env(HK_TECH_PHONES)
+    if not recips:
+        return
+
+    link = _ticket_link(ticket_id)
+    body = txt(
+        "hk_new_pending",
+        ticket_id=ticket_id,
+        area=area or "—",
+        prioridad=prioridad or "—",
+        habitacion=ubicacion or "—",
+        detalle=detalle or "—",
+        link=(f"Abrir: {link}" if link else ""),
+    )
+
+    for ph in recips:
+        send_whatsapp(ph, body)
+
 
 
 def _notify_tech(phone: str, ticket_id: int, area: str, prioridad: str, detalle: str, ubicacion: Optional[str]):
@@ -2059,7 +2091,7 @@ def _gh_send_ask_identification(from_phone: str):
     """
     send_whatsapp(
         from_phone,
-        "🌟 Para ayudarte, necesito saber quién eres.\n"
+        "👩🏼‍💼 Hola! soy su asistente virtual y para ayudarle necesito la siguiente información\n"
         "Por favor dime *tu nombre* y tu *número de habitación* "
         "(por ejemplo: `Soy Ana de la 312`)."
     )
@@ -2068,7 +2100,7 @@ def _gh_send_ask_identification(from_phone: str):
 def _gh_send_ask_name_only(from_phone: str):
     send_whatsapp(
         from_phone,
-        "Perfecto. Para continuar dime, ¿*cuál es tu nombre*?(escribelo para poder guardar la sollicitud con tu nombre)"
+        "Genial. ¿*Cuál es tu nombre*? (Lo necesito para guardar tu solicitud). Aviso rápido: estamos en versión beta 😊"
     )
 
 
@@ -2626,13 +2658,25 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 from_phone,
                 txt("ticket_created", guest=s.get("guest_name", "Huésped"), ticket_id=ticket_id)
             )
-            _notify_reception_pending(
-                ticket_id,
-                payload["area"],
-                payload["prioridad"],
-                payload["detalle"],
-                payload.get("ubicacion"),
-            )
+            
+            # _notify_reception_pending(
+            #     ticket_id,
+            #     payload["area"],
+            #     payload["prioridad"],
+            #     payload["detalle"],
+            #     payload.get("ubicacion"),
+            # )
+    
+            # NEW: notificar a Andrés solo si es un ticket de housekeeping
+            if payload["area"] == "HOUSEKEEPING":
+                _notify_hk_pending(
+                    ticket_id,
+                    payload["area"],
+                    payload["prioridad"],
+                    payload["detalle"],
+                    payload.get("ubicacion"),
+                )
+
             send_whatsapp(from_phone, _gh_render_closing_question(s))
             return
 
