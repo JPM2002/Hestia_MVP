@@ -2482,12 +2482,10 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     state = _gh_get_state(s)
     print(f"[DEBUG] GH state before FAQ: {state}, text={t!r}", flush=True)
 
-    # 4) Capa FAQ temprana (más global):
-    #    Antes de entrar a la lógica de tickets, intentamos contestar como FAQ
-    #    mientras NO estemos en estados profundos de formulario.
-    FAQ_ALLOWED_STATES = {"GH_S0", "GH_S0i", "GH_S1", "GH_S4", "GH_S5"}
-
-    if t and state in FAQ_ALLOWED_STATES:
+    # 4) Capa FAQ temprana:
+    #    - Si estamos en GH_S0 (primer mensaje) o GH_S5 (FIN),
+    #      intentamos primero contestar como FAQ.
+    if t and state in {"GH_S0", "GH_S5"}:
         asked_at = datetime.now().isoformat()
         faq = maybe_answer_faq(t, s)
         print(f"[DEBUG] maybe_answer_faq result: {faq}", flush=True)
@@ -2519,7 +2517,6 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             return
-
 
     # 5) Si no fue FAQ o estamos en otro estado, seguimos con el DFA clásico
 

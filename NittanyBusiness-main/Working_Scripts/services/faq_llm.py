@@ -76,7 +76,7 @@ Rules:
 
 def _call_faq_llm(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    Low-level LLM call that enforces JSON output.
+    Low-level LLM call that enforces JSON output (via prompt).
     """
     try:
         resp = _client.responses.create(
@@ -88,7 +88,6 @@ def _call_faq_llm(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     "content": json.dumps(payload, ensure_ascii=False),
                 },
             ],
-            response_format={"type": "json_object"},
             max_output_tokens=256,
         )
         content = resp.output[0].content[0].text
@@ -99,6 +98,7 @@ def _call_faq_llm(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"[WARN] faq_llm json call failed: {e}", flush=True)
         return None
+
 
 
 def maybe_answer_faq(text: str, session: Dict[str, Any] | None = None) -> Dict[str, Any]:
