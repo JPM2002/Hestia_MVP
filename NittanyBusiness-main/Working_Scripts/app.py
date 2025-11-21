@@ -2478,23 +2478,27 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         )
         return
 
-    # 3) Estado actual del DFA
+        # 3) Estado actual del DFA
     state = _gh_get_state(s)
+
+    # Normalizar estado vacío: trátalo como FIN
+    if not state:
+        state = "GH_S5"
+
     print(f"[DEBUG] GH state before FAQ: {state}, text={t!r}", flush=True)
 
-    # 4) Capa FAQ temprana:
-    #    - Si estamos en GH_S0 (primer mensaje) o GH_S5 (FIN),
-    #      intentamos primero contestar como FAQ.
-    if t and state in {"GH_S0", "GH_S5"}:
+    # 4) Capa FAQ GLOBAL:
+    #    Cualquier mensaje que sea puramente FAQ se responde directamente,
+    #    sin importar en qué estado esté el DFA.
+    if t:
         asked_at = datetime.now().isoformat()
-        faq = maybe_answer_faq(t, s)
+        faq = maybe_answer_faq(t, s)  # usa services/faq_llm.maybe_answer_faq
         print(f"[DEBUG] maybe_answer_faq result: {faq}", flush=True)
 
         if faq.get("handled"):
             answer = (faq.get("answer") or "").strip()
             if answer:
                 answered_at = datetime.now().isoformat()
-                # Log en historial FAQ (si lo tienes)
                 try:
                     log_faq_history(
                         guest_phone=from_phone,
@@ -2513,12 +2517,13 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 )
                 send_whatsapp(from_phone, answer)
 
-            # Después de un FAQ, quedamos en FIN (GH_S5) esperando la próxima pregunta
+            # Después de responder una FAQ, dejamos la sesión en FIN (GH_S5)
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             return
 
-    # 5) Si no fue FAQ o estamos en otro estado, seguimos con el DFA clásico
+    # 5) Si NO fue FAQ, seguimos con el DFA clásico a partir del estado actual
+
 
     # Desde FIN (GH_S5) un nuevo mensaje inicia un nuevo ciclo:
     if state == "GH_S5":
