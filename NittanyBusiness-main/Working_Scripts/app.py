@@ -2449,24 +2449,12 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         )
         return
 
-    # 3) Estado actual del DFA
-    state = _gh_get_state(s)
+    # 3) Estado actual del DFA; si no hay, asumimos que está en reposo (GH_S5)
+    state = _gh_get_state(s) or "GH_S5"
 
-    # Normalizar estado vacío: trátalo como FIN
-    if not state:
-        state = "GH_S5"
-
-    # Desde FIN (GH_S5) un nuevo mensaje entra primero por GH_Q0 (capa FAQ)
+    # 3.1 Capa FAQ previa cuando el bot está “en reposo”
+    #     (nuevo ciclo o después de haber terminado uno anterior)
     if state == "GH_S5":
-        state = "GH_Q0"
-        _gh_set_state(s, state)
-        session_set(from_phone, s)
-
-    # --------------------------------------------------
-    # GH_Q0: capa FAQ / respuestas rápidas
-    # --------------------------------------------------
-    if state == "GH_Q0":
-        # Si no hay texto (falló transcripción), saltar FAQ y seguir flujo normal
         if t:
             asked_at = datetime.now().isoformat()
             faq = maybe_answer_faq(t, s)
@@ -2475,7 +2463,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 answer = (faq.get("answer") or "").strip()
                 if answer:
                     answered_at = datetime.now().isoformat()
-                    # Log en FAQhistory
+                    # Guardar en FAQhistory
                     log_faq_history(
                         guest_phone=from_phone,
                         question_text=t,
@@ -2484,15 +2472,19 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                         asked_at=asked_at,
                         answered_at=answered_at,
                     )
-                    # Responder al huésped
                     send_whatsapp(from_phone, answer)
+                    print(
+                        f"[FAQ] handled message from {from_phone} "
+                        f"key={faq.get('matched_key')}",
+                        flush=True,
+                    )
 
-                # Después de responder FAQ volvemos a FIN de ciclo
+                # Tras contestar la FAQ volvemos a estado “idle”
                 _gh_set_state(s, "GH_S5")
                 session_set(from_phone, s)
                 return
 
-        # No es (claramente) FAQ → enrutar al DFA clásico
+        # No es FAQ → entrar al DFA clásico con o sin identificación previa
         if _gh_has_identification(s):
             state = "GH_S1"
         else:
