@@ -2483,9 +2483,16 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     print(f"[DEBUG] GH state before FAQ: {state}, text={t!r}", flush=True)
 
     # 4) Capa FAQ temprana:
-    #    - Si estamos en GH_S0 (primer mensaje) o GH_S5 (FIN),
-    #      intentamos primero contestar como FAQ.
-    if t and state in {"GH_S0", "GH_S5"}:
+    #    - Si estamos en GH_S0 (primer mensaje), GH_S0i (pidiendo identificación),
+    #      GH_S0c (confirmando datos) o GH_S5 (FIN),
+    #      intentamos primero contestar como FAQ *si no hay solicitud activa*.
+    faq_eligible_states = {"GH_S0", "GH_S0i", "GH_S0c", "GH_S5"}
+    if (
+        t
+        and state in faq_eligible_states
+        and not s.get("detalle")
+        and not s.get("gh_pending_issue_text")
+    ):
         asked_at = datetime.now().isoformat()
         faq = maybe_answer_faq(t, s)
         print(f"[DEBUG] maybe_answer_faq result: {faq}", flush=True)
@@ -2517,6 +2524,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             return
+
 
     # 5) Si no fue FAQ o estamos en otro estado, seguimos con el DFA clásico
 
