@@ -1821,6 +1821,7 @@ def _hk_show_today_summary(from_phone: str, s: Dict[str, Any]):
 
     send_whatsapp(from_phone, "\n".join(lines))
 
+#checkpoint
 @app.route("/webhook/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     # 1) Verification (Meta calls GET once when you set up webhook)
