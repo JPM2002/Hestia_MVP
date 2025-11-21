@@ -1273,7 +1273,6 @@ def log_faq_history(
 
 
 
-
 # ----------------------------- Meta inbound helpers -----------------------------
 app = Flask(__name__)
 
@@ -2449,48 +2448,53 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
         )
         return
 
-    # 3) Estado actual del DFA; si no hay, asumimos que está en reposo (GH_S5)
-    state = _gh_get_state(s) or "GH_S5"
+    # 3) Estado actual del DFA
+    state = _gh_get_state(s)
 
-    # 3.1 Capa FAQ previa cuando el bot está “en reposo”
-    #     (nuevo ciclo o después de haber terminado uno anterior)
+    # Normalizar estado vacío: trátalo como FIN
+    if not state:
+        state = "GH_S5"
+
+    # 4) Capa FAQ: si estamos en FIN (GH_S5), primero intentamos responder como FAQ
+    if t and state == "GH_S5":
+        asked_at = datetime.now().isoformat()
+        faq = maybe_answer_faq(t, s)
+
+        if faq.get("handled"):
+            answer = (faq.get("answer") or "").strip()
+            if answer:
+                answered_at = datetime.now().isoformat()
+                # Log en FAQhistory
+                log_faq_history(
+                    guest_phone=from_phone,
+                    question_text=t,
+                    answer_text=answer,
+                    matched_key=faq.get("matched_key"),
+                    asked_at=asked_at,
+                    answered_at=answered_at,
+                )
+                # Responder al huésped
+                send_whatsapp(from_phone, answer)
+
+            # Seguimos en estado FIN (GH_S5), esperando la próxima pregunta/mensaje
+            _gh_set_state(s, "GH_S5")
+            session_set(from_phone, s)
+            return
+
+    # 5) Si no fue FAQ o estamos en otro estado, seguimos con el DFA clásico
+
+    # Desde FIN (GH_S5) un nuevo mensaje inicia un nuevo ciclo:
     if state == "GH_S5":
-        if t:
-            asked_at = datetime.now().isoformat()
-            faq = maybe_answer_faq(t, s)
-
-            if faq.get("handled"):
-                answer = (faq.get("answer") or "").strip()
-                if answer:
-                    answered_at = datetime.now().isoformat()
-                    # Guardar en FAQhistory
-                    log_faq_history(
-                        guest_phone=from_phone,
-                        question_text=t,
-                        answer_text=answer,
-                        matched_key=faq.get("matched_key"),
-                        asked_at=asked_at,
-                        answered_at=answered_at,
-                    )
-                    send_whatsapp(from_phone, answer)
-                    print(
-                        f"[FAQ] handled message from {from_phone} "
-                        f"key={faq.get('matched_key')}",
-                        flush=True,
-                    )
-
-                # Tras contestar la FAQ volvemos a estado “idle”
-                _gh_set_state(s, "GH_S5")
-                session_set(from_phone, s)
-                return
-
-        # No es FAQ → entrar al DFA clásico con o sin identificación previa
         if _gh_has_identification(s):
             state = "GH_S1"
         else:
             state = "GH_S0"
         _gh_set_state(s, state)
         session_set(from_phone, s)
+
+    # …a partir de aquí DEJA TODO TU DFA COMO LO TENÍAS…
+    # GH_S0, GH_S0i, GH_S0c, GH_S1, GH_S2, GH_S2_CONFIRM, GH_S4, GH_S5 fallback, etc.
+
 
     # --------------------------------------------------
     # GH_S0: primer mensaje huésped (no hay identificación completa)

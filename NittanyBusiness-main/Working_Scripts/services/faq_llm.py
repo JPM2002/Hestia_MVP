@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, List
 
 from openai import OpenAI
 
+
 _client = OpenAI()
 FAQ_LLM_MODEL = os.getenv("FAQ_LLM_MODEL", "gpt-4.1-mini")
 
@@ -72,7 +73,6 @@ Rules:
 - Never invent policies that are not present in faq_items.
 - Output ONLY valid JSON. No extra text, no comments, no explanations.
 """
-
 
 def _call_faq_llm(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
