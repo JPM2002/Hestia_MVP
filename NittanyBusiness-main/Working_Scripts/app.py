@@ -2481,12 +2481,10 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     # 3) Estado actual del DFA
     state = _gh_get_state(s)
 
-    # Normalizar estado vacío: trátalo como FIN
-    if not state:
-        state = "GH_S5"
-
-    # 4) Capa FAQ: si estamos en FIN (GH_S5), primero intentamos responder como FAQ
-    if t and state == "GH_S5":
+    # 4) Capa FAQ temprana:
+    #    - Si estamos en GH_S0 (primer mensaje) o GH_S5 (FIN),
+    #      intentamos primero contestar como FAQ.
+    if t and state in {"GH_S0", "GH_S5"}:
         asked_at = datetime.now().isoformat()
         faq = maybe_answer_faq(t, s)
 
@@ -2494,7 +2492,6 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             answer = (faq.get("answer") or "").strip()
             if answer:
                 answered_at = datetime.now().isoformat()
-                # Log en FAQhistory
                 log_faq_history(
                     guest_phone=from_phone,
                     question_text=t,
@@ -2503,10 +2500,13 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                     asked_at=asked_at,
                     answered_at=answered_at,
                 )
-                # Responder al huésped
+                print(
+                    f"[FAQ] handled={faq.get('matched_key')} from={from_phone} q={t!r}",
+                    flush=True,
+                )
                 send_whatsapp(from_phone, answer)
 
-            # Seguimos en estado FIN (GH_S5), esperando la próxima pregunta/mensaje
+            # Después de un FAQ, nos quedamos en FIN (GH_S5) esperando la próxima pregunta
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             return
@@ -2524,6 +2524,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
 
     # …a partir de aquí DEJA TODO TU DFA COMO LO TENÍAS…
     # GH_S0, GH_S0i, GH_S0c, GH_S1, GH_S2, GH_S2_CONFIRM, GH_S4, GH_S5 fallback, etc.
+
 
 
     # --------------------------------------------------
