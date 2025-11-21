@@ -2487,12 +2487,7 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     #      GH_S0c (confirmando datos) o GH_S5 (FIN),
     #      intentamos primero contestar como FAQ *si no hay solicitud activa*.
     faq_eligible_states = {"GH_S0", "GH_S0i", "GH_S0c", "GH_S5"}
-    if (
-        t
-        and state in faq_eligible_states
-        and not s.get("detalle")
-        and not s.get("gh_pending_issue_text")
-    ):
+    if t and state in faq_eligible_states:
         asked_at = datetime.now().isoformat()
         faq = maybe_answer_faq(t, s)
         print(f"[DEBUG] maybe_answer_faq result: {faq}", flush=True)
@@ -2501,7 +2496,6 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             answer = (faq.get("answer") or "").strip()
             if answer:
                 answered_at = datetime.now().isoformat()
-                # Log en historial FAQ (si lo tienes)
                 try:
                     log_faq_history(
                         guest_phone=from_phone,
@@ -2520,7 +2514,6 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
                 )
                 send_whatsapp(from_phone, answer)
 
-            # Después de un FAQ, quedamos en FIN (GH_S5) esperando la próxima pregunta
             _gh_set_state(s, "GH_S5")
             session_set(from_phone, s)
             return
@@ -2536,67 +2529,6 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
             state = "GH_S0"
         _gh_set_state(s, state)
         session_set(from_phone, s)
-
-    # --------------------------------------------------
-    # GH_S0: primer mensaje huésped (no hay identificación completa)
-    # --------------------------------------------------
-    if state == "GH_S0" and not _gh_has_identification(s):
-        # Pedido explícito de humano → GH_S6
-        if _gh_wants_handoff(t):
-            _gh_set_state(s, "GH_S6")
-            session_set(from_phone, s)
-            _gh_escalate_to_reception(from_phone, s, t)
-            return
-
-        # Mensaje vacío → pedir identificación
-        if not t:
-            _gh_set_state(s, "GH_S0i")
-            session_set(from_phone, s)
-            _gh_send_ask_identification(from_phone)
-            return
-
-        # Saludo / smalltalk simple → pedir identificación
-        if is_smalltalk(t):
-            _gh_set_state(s, "GH_S0i")
-            session_set(from_phone, s)
-            _gh_send_ask_identification(from_phone)
-            return
-
-        # Análisis NLU del primer mensaje
-        nlu = _gh_get_nlu(s, t, "GH_S0")
-        intent = nlu.get("intent") or "ticket_request"
-
-        if intent == "handoff_request" or nlu.get("wants_handoff"):
-            _gh_set_state(s, "GH_S6")
-            session_set(from_phone, s)
-            _gh_escalate_to_reception(from_phone, s, t)
-            return
-
-        # Intent con posible identificación incluida
-        name_candidate = extract_name(t)
-        room_candidate = nlu.get("room") or guess_room(t)
-
-        if name_candidate:
-            s["guest_name"] = name_candidate
-        if room_candidate:
-            s["room"] = room_candidate
-
-        if _gh_has_identification(s):
-            # Intent detectado + ID presente → guardar en buffer y confirmar ID
-            s["gh_pending_issue_text"] = t
-            _gh_set_state(s, "GH_S0c")
-            session_set(from_phone, s)
-            send_whatsapp(from_phone, _gh_build_id_confirmation_message(s))
-            return
-
-        # Intent detectado pero falta ID → GH_S0i (guardar requerimiento en buffer)
-        s["gh_pending_issue_text"] = t
-        _gh_set_state(s, "GH_S0i")
-        session_set(from_phone, s)
-        _gh_send_ask_identification(from_phone)
-        return
-
-    # ...desde aquí deja TODO igual como ya lo tienes (GH_S0i, GH_S0c, GH_S1, GH_S2, GH_S2_CONFIRM, GH_S4, GH_S5 fallback, etc.)...
 
     # --------------------------------------------------
     # GH_S0: primer mensaje huésped (no hay identificación completa)
