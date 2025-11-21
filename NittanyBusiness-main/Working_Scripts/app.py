@@ -27,6 +27,10 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 import threading
 
 from services.guest_llm import analyze_guest_message, render_confirm_draft
+from services.faq_llm import maybe_answer_faq
+#TODO
+# Prefer a specific FAQ DSN; fall back to your existing ones.
+FAQ_PG_DSN = os.getenv("FAQ_PG_DSN") or os.getenv("PG_DSN") or os.getenv("DATABASE_URL")
 
 
 # ----------------------------- Config -----------------------------
@@ -1218,6 +1222,58 @@ def create_ticket(payload: Dict[str, Any],
 
 
 
+def log_faq_history(
+    guest_phone: str,
+    question_text: str,
+    answer_text: str,
+    matched_key: str | None = None,
+    asked_at: str | None = None,
+    answered_at: str | None = None,
+):
+    """
+    Insert a row into public.FAQhistory.
+
+    Uses ORG_ID_DEFAULT / HOTEL_ID_DEFAULT as in create_ticket.
+    Opens a short-lived connection; replace with your pool if desired.
+    """
+    if pg is None or not FAQ_PG_DSN:
+        # No Postgres driver or DSN configured
+        return
+
+    q_time = asked_at or datetime.now().isoformat()
+    a_time = answered_at or q_time
+
+    try:
+        conn = pg.connect(FAQ_PG_DSN)
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO public."FAQhistory"
+                        (org_id, hotel_id, guest_phone, question_text,
+                         answer_text, matched_key, asked_at, answered_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        """,
+                        (
+                            ORG_ID_DEFAULT,
+                            HOTEL_ID_DEFAULT,
+                            guest_phone,
+                            question_text,
+                            answer_text,
+                            matched_key,
+                            q_time,
+                            a_time,
+                        ),
+                    )
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[WARN] FAQhistory insert failed: {e}", flush=True)
+
+
+
+
 # ----------------------------- Meta inbound helpers -----------------------------
 app = Flask(__name__)
 
@@ -2396,13 +2452,53 @@ def _handle_guest_message(from_phone: str, text: str, audio_url: str | None):
     # 3) Estado actual del DFA
     state = _gh_get_state(s)
 
-    # Desde FIN (GH_S5) un nuevo mensaje inicia un nuevo ciclo:
+    # Normalizar estado vacío: trátalo como FIN
+    if not state:
+        state = "GH_S5"
+
+    # Desde FIN (GH_S5) un nuevo mensaje entra primero por GH_Q0 (capa FAQ)
     if state == "GH_S5":
+        state = "GH_Q0"
+        _gh_set_state(s, state)
+        session_set(from_phone, s)
+
+    # --------------------------------------------------
+    # GH_Q0: capa FAQ / respuestas rápidas
+    # --------------------------------------------------
+    if state == "GH_Q0":
+        # Si no hay texto (falló transcripción), saltar FAQ y seguir flujo normal
+        if t:
+            asked_at = datetime.now().isoformat()
+            faq = maybe_answer_faq(t, s)
+
+            if faq.get("handled"):
+                answer = (faq.get("answer") or "").strip()
+                if answer:
+                    answered_at = datetime.now().isoformat()
+                    # Log en FAQhistory
+                    log_faq_history(
+                        guest_phone=from_phone,
+                        question_text=t,
+                        answer_text=answer,
+                        matched_key=faq.get("matched_key"),
+                        asked_at=asked_at,
+                        answered_at=answered_at,
+                    )
+                    # Responder al huésped
+                    send_whatsapp(from_phone, answer)
+
+                # Después de responder FAQ volvemos a FIN de ciclo
+                _gh_set_state(s, "GH_S5")
+                session_set(from_phone, s)
+                return
+
+        # No es (claramente) FAQ → enrutar al DFA clásico
         if _gh_has_identification(s):
             state = "GH_S1"
         else:
             state = "GH_S0"
         _gh_set_state(s, state)
+        session_set(from_phone, s)
 
     # --------------------------------------------------
     # GH_S0: primer mensaje huésped (no hay identificación completa)
