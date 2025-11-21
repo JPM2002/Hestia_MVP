@@ -1889,20 +1889,50 @@ def whatsapp_webhook():
             # Return the challenge so Meta accepts the webhook
             return challenge, 200
         return "Verification failed", 403
+    
+    if request.method == "POST":
+        try:
+            raw_body = request.get_data(as_text=True)
+            print(f"[DEBUG] Raw inbound body: {raw_body}", flush=True)
+        except Exception as e:
+            print(f"[WARN] Could not read raw body: {e}", flush=True)
+
 
     # 2) Incoming messages (Meta calls POST for each message)
     from_phone, text, audio_url = _normalize_inbound(request)
 
-    # NEW: ignore status / malformed webhooks that don't have a real user message
-    if not from_phone and not text and not audio_url:
-        print("[INFO] Webhook without user message (status or malformed). Ignoring.", flush=True)
-        return jsonify({"status": "ignored", "reason": "no_message"}), 200
+    # Always log what we *parsed* from the request
+    print(f"[IN ← {from_phone or '∅'}] text={text!r} audio_url={audio_url!r}", flush=True)
 
-    # Optional: dedupe by WhatsApp message id (wamid) if present
+    # Parse JSON once so we can inspect statuses as well
     try:
         data = request.get_json(force=True, silent=True) or {}
     except Exception:
         data = {}
+
+    # If we didn't get a message (no phone, no text, no audio), check if it's a STATUS update
+    if not from_phone and not text and not audio_url:
+        try:
+            entry = (data.get("entry") or [])[0]
+            change = (entry.get("changes") or [])[0]
+            value = change.get("value") or {}
+            statuses = value.get("statuses") or []
+            if statuses:
+                # This is a delivery/read/etc. status. Log it so you can see it.
+                print(
+                    "[INFO] WhatsApp status update: "
+                    f"{json.dumps(statuses, ensure_ascii=False)}",
+                    flush=True,
+                )
+                # We still don't want to send this into the guest/worker DFA.
+                return jsonify({"status": "ok", "kind": "status"}), 200
+        except Exception as e:
+            print(f"[WARN] Could not parse inbound status payload: {e}", flush=True)
+
+        # Truly no message and no statuses → malformed or irrelevant ping
+        print("[INFO] Webhook without user message or status. Ignoring.", flush=True)
+        return jsonify({"status": 'ignored', 'reason': 'no_message'}), 200
+
 
     wamid = None
     try:
