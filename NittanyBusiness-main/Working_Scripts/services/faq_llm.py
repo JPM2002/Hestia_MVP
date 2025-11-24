@@ -12,7 +12,7 @@ FAQ_LLM_MODEL = os.getenv("FAQ_LLM_MODEL", "gpt-4.1-mini")
 # Simple FAQ knowledge base – EDIT these entries to match your hotel.
 # You can add/remove items, just keep the same keys ("key", "q", "a").
 FAQ_ITEMS: List[Dict[str, str]] = [
-    # 1. Check-in / Check-out
+    # 1. Check-in / Check-out 
     {"key": "checkin_time", "q": "¿A qué hora es el check-in?", "a": "El check-in es a partir de las 14:00 hrs."},
     {"key": "early_checkin", "q": "¿Puedo hacer check-in antes de la hora?", "a": "Sí, siempre sujeto a la disponibilidad del momento; de lo contrario puede aplicar un cargo adicional."},
     {"key": "checkout_time", "q": "¿A qué hora es el check-out?", "a": "El check-out es hasta las 12:00 hrs."},
