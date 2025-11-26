@@ -1,11 +1,6 @@
 # gateway_app/blueprints/webhook/__init__.py
-"""
-Webhook blueprint package.
+from flask import Blueprint
 
-Exposes:
-    bp  -> the Flask Blueprint for WhatsApp webhooks.
-"""
+bp = Blueprint("webhook", __name__, url_prefix="/webhook")
 
-from .routes import bp
-
-__all__ = ["bp"]
+from . import routes  # noqa
