@@ -1,49 +1,34 @@
 # gateway_app/config.py
-"""
-Central configuration for the WhatsApp gateway service.
-
-All configuration is read from environment variables so it works
-both locally and on Render.
-"""
-
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 
 
-def _as_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
+def _get_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return val.lower() in {"1", "true", "yes", "y", "on"}
 
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
-    # Flask / runtime
-    ENV: str = os.getenv("FLASK_ENV", "production")
-    DEBUG: bool = _as_bool(os.getenv("DEBUG"), False)
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-change-me")
-
-    # Database
+    # Core envs from Render
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-
-    # OpenAI + LLM models
+    INTERNAL_NOTIFY_TOKEN: str = os.getenv("INTERNAL_NOTIFY_TOKEN", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     TRANSCRIBE_PROVIDER: str = os.getenv("TRANSCRIBE_PROVIDER", "openai")
-    GUEST_LLM_MODEL: str = os.getenv("GUEST_LLM_MODEL", "gpt-4.1-mini")
-    FAQ_LLM_MODEL: str = os.getenv("FAQ_LLM_MODEL", "gpt-4.1-mini")
 
-    # WhatsApp Cloud API
-    WHATSAPP_CLOUD_TOKEN: str = os.getenv("WHATSAPP_CLOUD_TOKEN", "")
     WHATSAPP_CLOUD_PHONE_ID: str = os.getenv("WHATSAPP_CLOUD_PHONE_ID", "")
+    WHATSAPP_CLOUD_TOKEN: str = os.getenv("WHATSAPP_CLOUD_TOKEN", "")
     WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
 
-    # Internal notifications (to main Hestia app or other backend)
-    INTERNAL_NOTIFY_TOKEN: str = os.getenv("INTERNAL_NOTIFY_TOKEN", "")
+    # Runtime / logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    ENV: str = os.getenv("ENV", "production")
 
-    # Optional: base URL of the main Hestia backend if we need to call it
-    HESTIA_BACKEND_BASE_URL: str = os.getenv("HESTIA_BACKEND_BASE_URL", "")
+    # Flags used by create_app()
+    TESTING: bool = _get_bool("TESTING", False)
+    DEBUG: bool = _get_bool("DEBUG", False)
 
 
 cfg = Config()

@@ -13,6 +13,8 @@ from gateway_app.config import cfg
 from gateway_app.filters import register_filters
 from gateway_app.logging_cfg import configure_logging
 
+from .config import cfg
+
 
 def create_app() -> Flask:
     """
