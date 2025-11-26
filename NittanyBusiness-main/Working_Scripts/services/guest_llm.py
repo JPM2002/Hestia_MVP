@@ -1,11 +1,37 @@
-import os
+# gateway_app/services/guest_llm.py
+"""
+Guest NLU + confirmation text helpers for Hestia WhatsApp flow.
+
+Exports:
+- analyze_guest_message(text: str, session: dict, state: str) -> dict
+- render_confirm_draft(summary: str, session: dict) -> str
+"""
+
+from __future__ import annotations
+
 import json
+import os
 from typing import Any, Dict, Optional
 
 from openai import OpenAI
 
-_client = OpenAI()
+from gateway_app.config import cfg
+
+# ---------------------------------------------------------------------
+# OpenAI client + model configuration
+# ---------------------------------------------------------------------
+
+# Prefer the key from our central config; fall back to default env behavior.
+if cfg.OPENAI_API_KEY:
+    _client = OpenAI(api_key=cfg.OPENAI_API_KEY)
+else:
+    _client = OpenAI()
+
 LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4.1-mini")
+
+# ---------------------------------------------------------------------
+# Base system prompt (more detailed NLU spec)
+# ---------------------------------------------------------------------
 
 _BASE_SYSTEM_PROMPT = """
 You are the NLU module for Hestia, a WhatsApp assistant for hotel guests.
@@ -112,9 +138,21 @@ If something is not clearly present, use null for that field.
 Always follow the schema exactly and output ONLY the JSON object.
 """
 
+# ---------------------------------------------------------------------
+# Helper using the Responses API with JSON output
+# ---------------------------------------------------------------------
 
 
-def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) -> Optional[Dict[str, Any]]:
+def _call_json_llm(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 256,
+) -> Optional[Dict[str, Any]]:
+    """
+    Generic helper to call the Responses API and force JSON output.
+    Currently unused by the main NLU entrypoint, but kept for parity with
+    the original implementation (can be reused for other tools).
+    """
     try:
         resp = _client.responses.create(
             model=LLM_MODEL,
@@ -132,7 +170,26 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
         return None
 
 
+# ---------------------------------------------------------------------
+# Main NLU entrypoint used by the DFA / webhook
+# ---------------------------------------------------------------------
+
+
 def analyze_guest_message(text: str, session: dict, state: str) -> dict:
+    """
+    NLU for a single guest message.
+
+    Input:
+        text   – raw WhatsApp message text
+        session – session dict (currently unused but kept for compatibility)
+        state  – DFA state name (string), included as context for the model
+
+    Output:
+        dict with keys:
+            intent, area, priority, room, detail,
+            is_cancel, is_help, is_smalltalk, wants_handoff
+        or {} on error.
+    """
     if not text or not text.strip():
         return {}
 
@@ -147,15 +204,15 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
                         "Eres un NLU para mensajes de huéspedes de hotel por WhatsApp. "
                         "Devuelves SIEMPRE un JSON con esta forma:\n\n"
                         "{\n"
-                        '  "intent": "ticket_request | handoff_request | general_chat | cancel | unknown",\n'
-                        '  "area": "MANTENCION | HOUSEKEEPING | ROOMSERVICE | null",\n'
-                        '  "priority": "URGENTE | ALTA | MEDIA | BAJA | null",\n'
-                        '  "room": "string o null",\n'
-                        '  "detail": "string o null",\n'
-                        '  "is_cancel": bool,\n'
-                        '  "is_help": bool,\n'
-                        '  "is_smalltalk": bool,\n'
-                        '  "wants_handoff": bool\n'
+                        '  \"intent\": \"ticket_request | handoff_request | general_chat | cancel | unknown\",\n'
+                        '  \"area\": \"MANTENCION | HOUSEKEEPING | ROOMSERVICE | null\",\n'
+                        '  \"priority\": \"URGENTE | ALTA | MEDIA | BAJA | null\",\n'
+                        '  \"room\": \"string o null\",\n'
+                        '  \"detail\": \"string o null\",\n'
+                        '  \"is_cancel\": bool,\n'
+                        '  \"is_help\": bool,\n'
+                        '  \"is_smalltalk\": bool,\n'
+                        '  \"wants_handoff\": bool\n'
                         "}\n\n"
                         "No incluyas texto fuera del JSON."
                     ),
@@ -173,7 +230,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         data = json.loads(raw)
         if not isinstance(data, dict):
             return {}
-        # Normaliza claves esperadas
+        # Normalize expected keys and types
         return {
             "intent": data.get("intent"),
             "area": data.get("area"),
@@ -190,6 +247,10 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------
+# Confirmation message helper
+# ---------------------------------------------------------------------
+
 _CONFIRM_SYSTEM_PROMPT = """
 You help write short, friendly WhatsApp replies for a hotel guest assistant (Hestia).
 Always answer in Spanish, using a warm but concise tone.
@@ -198,6 +259,12 @@ You will receive the context and must return a single string (no JSON).
 
 
 def render_confirm_draft(summary: str, session: dict) -> str:
+    """
+    Build the confirmation message sent to the guest before creating a ticket.
+
+    This does NOT call the LLM: it just formats a fixed Spanish template with
+    the guest name (if available) and the provided summary.
+    """
     name = (session.get("guest_name") or "Huésped").strip()
     return (
         f"📝 {name}, este es el resumen de tu solicitud:\n\n"
@@ -206,4 +273,3 @@ def render_confirm_draft(summary: str, session: dict) -> str:
         "Si quieres cambiar algo responde *NO* y podrás editar área, prioridad, "
         "habitación o detalle."
     )
-
