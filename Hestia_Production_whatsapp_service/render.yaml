@@ -1,0 +1,8 @@
+# render.yaml
+services:
+  - type: web
+    name: hestia-whatsapp-gateway
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -c gunicorn.conf.py wsgi:app

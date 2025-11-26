@@ -1,222 +1,266 @@
-# gateway_app/services/audio.py
+# gateway_app/services/db.py
 """
-Audio download + transcription helpers for WhatsApp voice notes.
+Database helper layer with PostgreSQL + SQLite fallback.
 
-Responsibilities:
-- Fetch media from WhatsApp Cloud API using a media_id.
-- Store audio in a temporary file.
-- Transcribe using the provider indicated by TRANSCRIBE_PROVIDER.
+Goals:
+- Use DATABASE_URL from config.
+- If it's a PostgreSQL URL (postgres:// or postgresql://) and psycopg2 is installed,
+  use PostgreSQL.
+- Otherwise, fall back to SQLite using a local file.
+- Provide small helper functions:
+    - using_pg()
+    - execute(sql, params)
+    - fetchone(sql, params)
+    - fetchall(sql, params)
+    - insert_and_get_id(sql, params)
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import tempfile
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Iterable, Optional, Sequence
 
-import requests
-from openai import OpenAI
+import sqlite3 as sqlite
 
 from gateway_app.config import cfg
 
 logger = logging.getLogger(__name__)
 
-WHATSAPP_API_BASE = "https://graph.facebook.com/v21.0"
+# Optional PostgreSQL support
+pg = None
+pg_extras = None
+try:
+    import psycopg2 as pg
+    import psycopg2.extras as pg_extras
+except Exception:  # psycopg2 is optional
+    pg = None
+    pg_extras = None
 
 
-@dataclass
-class AudioDownloadResult:
-    path: str
-    mime_type: Optional[str]
+_DB_URL = cfg.DATABASE_URL or ""
+_DEFAULT_SQLITE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "gateway.db",
+)
 
 
-class AudioError(RuntimeError):
-    """Raised for audio download or transcription issues."""
+def _is_pg_dsn(dsn: str) -> bool:
+    if not dsn:
+        return False
+    dsn_lower = dsn.lower()
+    return dsn_lower.startswith("postgres://") or dsn_lower.startswith("postgresql://")
 
 
-def _whatsapp_headers() -> dict:
-    if not cfg.WHATSAPP_CLOUD_TOKEN:
-        logger.error("WHATSAPP_CLOUD_TOKEN is not configured for audio download.")
-    return {
-        "Authorization": f"Bearer {cfg.WHATSAPP_CLOUD_TOKEN}",
-    }
+_USING_PG = _is_pg_dsn(_DB_URL) and pg is not None
 
 
-def fetch_whatsapp_media_url(media_id: str) -> Tuple[str, Optional[str]]:
+def using_pg() -> bool:
+    """Return True if we are using PostgreSQL, False if using SQLite."""
+    return _USING_PG
+
+
+def _sqlite_path_from_url(dsn: str) -> str:
     """
-    Step 1: Get the direct media URL from a WhatsApp media_id.
-
-    This calls:
-      GET /{media_id}
-    which returns JSON with a "url" field and "mime_type".
+    Convert a sqlite URL (like sqlite:///path/to/db.sqlite3) or bare path
+    into a filesystem path.
     """
-    url = f"{WHATSAPP_API_BASE}/{media_id}"
-    logger.info("Fetching WhatsApp media URL", extra={"media_id": media_id})
+    if not dsn:
+        return _DEFAULT_SQLITE_PATH
 
-    resp = requests.get(url, headers=_whatsapp_headers(), timeout=15)
-    try:
-        data = resp.json()
-    except Exception as exc:
-        logger.exception("Failed to decode WhatsApp media metadata JSON")
-        raise AudioError(f"Invalid JSON from WhatsApp media metadata: {exc}") from exc
+    if dsn.startswith("sqlite:///"):
+        return dsn.replace("sqlite:///", "", 1)
+    if dsn.startswith("sqlite://"):
+        # handle sqlite://relative/path.db
+        return dsn.replace("sqlite://", "", 1)
 
-    if not resp.ok:
-        logger.error("WhatsApp media metadata error %s: %s", resp.status_code, data)
-        raise AudioError(f"WhatsApp media metadata error {resp.status_code}: {data}")
-
-    media_url = data.get("url")
-    mime_type = data.get("mime_type")
-    if not media_url:
-        logger.error("WhatsApp media metadata missing 'url' field: %s", data)
-        raise AudioError("WhatsApp media metadata missing 'url' field")
-
-    return media_url, mime_type
+    # If it doesn't look like a URL, treat as plain path.
+    return dsn
 
 
-def download_whatsapp_media_to_temp(media_id: str) -> AudioDownloadResult:
-    """
-    Download WhatsApp media identified by media_id into a temp file.
+_SQLITE_PATH = _sqlite_path_from_url(_DB_URL) if not _USING_PG else None
 
-    Returns:
-        AudioDownloadResult(path=temp_file_path, mime_type=original_mime_type)
-    """
-    media_url, mime_type = fetch_whatsapp_media_url(media_id)
 
-    logger.info(
-        "Downloading WhatsApp media",
-        extra={"media_id": media_id, "mime_type": mime_type},
+def _pg_connect():
+    if not pg:
+        raise RuntimeError("psycopg2 is not installed but PostgreSQL DSN was provided.")
+    if not _DB_URL:
+        raise RuntimeError("DATABASE_URL is empty; cannot connect to PostgreSQL.")
+    return pg.connect(_DB_URL)
+
+
+def _sqlite_connect():
+    path = _SQLITE_PATH or _DEFAULT_SQLITE_PATH
+    conn = sqlite.connect(
+        path,
+        detect_types=sqlite.PARSE_DECLTYPES | sqlite.PARSE_COLNAMES,
+        check_same_thread=False,
     )
+    return conn
 
-    resp = requests.get(media_url, headers=_whatsapp_headers(), timeout=30, stream=True)
-    if not resp.ok:
-        logger.error("WhatsApp media download error %s", resp.status_code)
-        raise AudioError(f"WhatsApp media download error {resp.status_code}")
 
-    suffix = _guess_extension_from_mime(mime_type)
-    fd, path = tempfile.mkstemp(suffix=suffix or ".bin", prefix="wa_audio_")
-    os.close(fd)
+def _get_conn_and_cursor(dict_cursor: bool = False):
+    """
+    Internal helper returning (conn, cursor).
 
+    - For PostgreSQL + dict_cursor=True → RealDictCursor.
+    - For SQLite + dict_cursor=True → row_factory = sqlite.Row.
+    """
+    if using_pg():
+        conn = _pg_connect()
+        if dict_cursor and pg_extras:
+            cur = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
+        else:
+            cur = conn.cursor()
+        return conn, cur
+
+    # SQLite
+    conn = _sqlite_connect()
+    if dict_cursor:
+        conn.row_factory = sqlite.Row
+        cur = conn.cursor()
+    else:
+        cur = conn.cursor()
+    return conn, cur
+
+
+# ------------------- Public helpers -------------------
+
+
+def execute(
+    sql: str,
+    params: Optional[Sequence[Any]] = None,
+    *,
+    commit: bool = True,
+) -> int:
+    """
+    Execute a statement (INSERT/UPDATE/DELETE/DDL). Returns rowcount.
+
+    For SELECT queries prefer fetchone/fetchall.
+    """
+    params = params or ()
+    logger.debug("DB execute", extra={"sql": sql, "params": params})
+
+    conn, cur = _get_conn_and_cursor(dict_cursor=False)
     try:
-        with open(path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-    except Exception as exc:
-        logger.exception("Failed to write WhatsApp media to temp file")
-        # Best-effort cleanup
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        raise AudioError(f"Failed to write media to temp file: {exc}") from exc
-
-    logger.info("WhatsApp media stored to temp file", extra={"path": path})
-    return AudioDownloadResult(path=path, mime_type=mime_type)
-
-
-def _guess_extension_from_mime(mime_type: Optional[str]) -> Optional[str]:
-    if not mime_type:
-        return None
-    # Very small mapping; expand as needed
-    if "ogg" in mime_type:
-        return ".ogg"
-    if "mpeg" in mime_type or "mp3" in mime_type:
-        return ".mp3"
-    if "wav" in mime_type:
-        return ".wav"
-    if "m4a" in mime_type or "mp4" in mime_type:
-        return ".m4a"
-    return None
-
-
-# ---------- Transcription ----------
-
-
-def _openai_client() -> OpenAI:
-    if not cfg.OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY is not configured for transcription.")
-        raise AudioError("OPENAI_API_KEY is missing; cannot transcribe audio.")
-    return OpenAI(api_key=cfg.OPENAI_API_KEY)
-
-
-def transcribe_file(
-    file_path: str,
-    language: Optional[str] = None,
-) -> str:
-    """
-    Transcribe a local audio file using the provider set in TRANSCRIBE_PROVIDER.
-
-    Currently supports:
-    - 'openai' or 'whisper': OpenAI Whisper API.
-    """
-    provider = (cfg.TRANSCRIBE_PROVIDER or "openai").lower()
-    logger.info(
-        "Transcribing audio file",
-        extra={"path": file_path, "provider": provider, "language": language},
-    )
-
-    if provider in {"openai", "whisper"}:
-        return _transcribe_with_openai(file_path, language=language)
-
-    # If at some point you add Deepgram, AssemblyAI, etc., branch here.
-    logger.error("Unsupported TRANSCRIBE_PROVIDER=%s", provider)
-    raise AudioError(f"Unsupported TRANSCRIBE_PROVIDER={provider!r}")
-
-
-def _transcribe_with_openai(file_path: str, language: Optional[str] = None) -> str:
-    """
-    Transcribe using OpenAI Whisper.
-
-    Model name can be swapped later (e.g., 'whisper-1' or future audio models).
-    """
-    client = _openai_client()
-
-    try:
-        with open(file_path, "rb") as f:
-            # Whisper-1 is stable and widely available
-            kwargs = {"model": "whisper-1"}
-            if language:
-                kwargs["language"] = language
-
-            result = client.audio.transcriptions.create(file=f, **kwargs)
-    except Exception as exc:
-        logger.exception("OpenAI transcription failed")
-        raise AudioError(f"OpenAI transcription failed: {exc}") from exc
-
-    # `result.text` is the standard field returned by Whisper API
-    text = getattr(result, "text", None)
-    if not text:
-        logger.error("OpenAI transcription result missing 'text' field: %s", result)
-        raise AudioError("OpenAI transcription result missing 'text' field")
-
-    return text.strip()
-
-
-def transcribe_whatsapp_audio(
-    media_id: str,
-    language: Optional[str] = None,
-    cleanup: bool = True,
-) -> str:
-    """
-    Convenience function:
-
-    - Download WhatsApp media into a temp file.
-    - Transcribe using configured provider.
-    - Optionally delete temp file after transcription.
-
-    Returns:
-        Transcribed text.
-    """
-    dl = download_whatsapp_media_to_temp(media_id)
-    try:
-        text = transcribe_file(dl.path, language=language)
+        cur.execute(sql, params)
+        if commit:
+            conn.commit()
+        return cur.rowcount
     finally:
-        if cleanup:
-            try:
-                os.remove(dl.path)
-            except OSError:
-                logger.warning("Failed to remove temp audio file", exc_info=True)
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
 
-    return text
+
+def fetchone(
+    sql: str,
+    params: Optional[Sequence[Any]] = None,
+) -> Optional[dict]:
+    """
+    Execute a SELECT and return a single row as dict-like (or None).
+
+    For SQLite, this will be a sqlite.Row (indexable by column name).
+    For PostgreSQL, a psycopg2 RealDictRow if psycopg2.extras is available.
+    """
+    params = params or ()
+    logger.debug("DB fetchone", extra={"sql": sql, "params": params})
+
+    conn, cur = _get_conn_and_cursor(dict_cursor=True)
+    try:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if row is None:
+            return None
+        # Convert sqlite.Row / RealDictRow to plain dict to be safe:
+        return dict(row)
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetchall(
+    sql: str,
+    params: Optional[Sequence[Any]] = None,
+) -> list[dict]:
+    """
+    Execute a SELECT and return all rows as list of dict.
+    """
+    params = params or ()
+    logger.debug("DB fetchall", extra={"sql": sql, "params": params})
+
+    conn, cur = _get_conn_and_cursor(dict_cursor=True)
+    try:
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+        return [dict(r) for r in rows]
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def insert_and_get_id(
+    sql: str,
+    params: Optional[Sequence[Any]] = None,
+) -> Any:
+    """
+    Execute an INSERT and return the new primary key.
+
+    PostgreSQL:
+        - Your SQL *may* contain 'RETURNING id' (or similar); if it does,
+          we will fetch that and return it.
+        - If not, we will use cursor.lastrowid (usually None in psycopg2),
+          so it's recommended to use RETURNING for PostgreSQL.
+
+    SQLite:
+        - Uses cursor.lastrowid.
+    """
+    params = params or ()
+    logger.debug("DB insert_and_get_id", extra={"sql": sql, "params": params})
+
+    conn, cur = _get_conn_and_cursor(dict_cursor=False)
+    try:
+        cur.execute(sql, params)
+
+        returned_id = None
+        try:
+            row = cur.fetchone()
+            if row is not None:
+                returned_id = row[0]
+        except Exception:
+            # No RETURNING clause
+            returned_id = None
+
+        conn.commit()
+
+        if returned_id is not None:
+            return returned_id
+
+        # Fallback for SQLite or non-RETURNING inserts
+        return getattr(cur, "lastrowid", None)
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass

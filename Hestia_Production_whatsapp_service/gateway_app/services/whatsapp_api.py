@@ -1,17 +1,24 @@
 # gateway_app/services/whatsapp_api.py
 """
-Thin wrapper around the WhatsApp Cloud API.
+Wrapper para la WhatsApp Cloud API.
 
-This module centralizes all outbound WhatsApp calls so that:
-- blueprints just call helper functions (send text, templates, etc.)
-- we can later swap providers or add logging / retries in one place.
+Responsabilidades principales:
+- Construir el endpoint correcto usando WHATSAPP_CLOUD_PHONE_ID.
+- Adjuntar el token de acceso WHATSAPP_CLOUD_TOKEN.
+- Proveer funciones sencillas para:
+  - Enviar mensajes de texto.
+  - Enviar plantillas.
+  - Marcar mensajes como leídos.
+  - Enviar reacciones.
+  - (Opcional) enviar 'typing' / acción de escritura.
+
+Este módulo NO sabe nada del negocio de Hestia; solo de hablar con la API.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -22,130 +29,131 @@ logger = logging.getLogger(__name__)
 WHATSAPP_API_BASE = "https://graph.facebook.com/v21.0"
 
 
-class WhatsAppError(RuntimeError):
-    """Raised when WhatsApp API returns an error response."""
-
-
-def _get_headers() -> Dict[str, str]:
-    if not cfg.WHATSAPP_CLOUD_TOKEN:
-        logger.error("WHATSAPP_CLOUD_TOKEN is not configured.")
-    return {
-        "Authorization": f"Bearer {cfg.WHATSAPP_CLOUD_TOKEN}",
-        "Content-Type": "application/json",
-    }
+class WhatsAppAPIError(RuntimeError):
+    """Errores de llamada a la WhatsApp Cloud API."""
 
 
 def _messages_url() -> str:
-    if not cfg.WHATSAPP_CLOUD_PHONE_ID:
-        logger.error("WHATSAPP_CLOUD_PHONE_ID is not configured.")
-    return f"{WHATSAPP_API_BASE}/{cfg.WHATSAPP_CLOUD_PHONE_ID}/messages"
+    """
+    Construye la URL base para POST /{phone-number-id}/messages.
+    """
+    phone_id = (cfg.WHATSAPP_CLOUD_PHONE_ID or "").strip()
+    if not phone_id:
+        logger.error("WHATSAPP_CLOUD_PHONE_ID no está configurado.")
+        raise WhatsAppAPIError("WHATSAPP_CLOUD_PHONE_ID is missing.")
+    return f"{WHATSAPP_API_BASE}/{phone_id}/messages"
 
 
-def _handle_response(resp: requests.Response) -> Dict[str, Any]:
+def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """
+    Cabeceras comunes para todas las llamadas a la Cloud API.
+    """
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        logger.error("WHATSAPP_CLOUD_TOKEN no está configurado.")
+        raise WhatsAppAPIError("WHATSAPP_CLOUD_TOKEN is missing.")
+
+    headers: Dict[str, str] = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper para enviar un POST a /{phone-number-id}/messages con manejo de errores.
+    """
+    url = _messages_url()
+    logger.info("Enviando mensaje a WhatsApp Cloud API", extra={"payload": payload})
+
+    resp = requests.post(url, headers=_headers(), json=payload, timeout=15)
+
     try:
         data = resp.json()
     except Exception:
-        logger.exception("Failed to decode WhatsApp response JSON")
+        logger.exception("No se pudo decodificar la respuesta de WhatsApp como JSON")
+        # Si no es JSON pero el status es OK, aún así fallamos controladamente
+        if resp.ok:
+            raise WhatsAppAPIError("WhatsApp response is not valid JSON.")
         resp.raise_for_status()
-        # If raise_for_status doesn't raise, still raise a generic error
-        raise WhatsAppError("WhatsApp response is not valid JSON")
+        raise WhatsAppAPIError("WhatsApp request failed and response is not JSON.")
 
     if not resp.ok:
-        logger.error("WhatsApp API error %s: %s", resp.status_code, json.dumps(data))
-        raise WhatsAppError(f"WhatsApp API error {resp.status_code}: {data}")
+        logger.error(
+            "Error en WhatsApp API %s: %s", resp.status_code, data
+        )
+        raise WhatsAppAPIError(f"WhatsApp API error {resp.status_code}: {data}")
 
     return data
 
 
-def send_text_message(
+# ---------------------------------------------------------------------------
+# Funciones públicas de envío
+# ---------------------------------------------------------------------------
+
+
+def send_whatsapp_text(
     to: str,
-    body: str,
+    text: str,
+    *,
     preview_url: bool = False,
-    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Send a simple text message via WhatsApp Cloud API.
+    Enviar un mensaje de texto sencillo a un número de WhatsApp.
 
-    :param to: WhatsApp recipient id (phone number in international format).
-    :param body: Message text.
-    :param preview_url: Whether to allow link previews.
-    :param metadata: Optional extra info to log (e.g., ticket id, org id).
-    :return: Parsed JSON response.
+    Args:
+        to: wa_id del destinatario (ej. '56998765432').
+        text: cuerpo del mensaje.
+        preview_url: si es True, permite previsualización de enlaces (si los hay).
+
+    Returns:
+        dict con el JSON de respuesta de la API.
     """
     payload: Dict[str, Any] = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
         "text": {
-            "body": body,
+            "body": text,
             "preview_url": preview_url,
         },
     }
-
-    log_extra = metadata.copy() if metadata else {}
-    log_extra.update({"to": to, "length": len(body)})
-
-    logger.info("Sending WhatsApp text", extra=log_extra)
-
-    resp = requests.post(_messages_url(), headers=_get_headers(), json=payload, timeout=15)
-    return _handle_response(resp)
+    return _post(payload)
 
 
-def send_interactive_message(
-    to: str,
-    interactive: Dict[str, Any],
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Send an interactive message (buttons, list, etc.).
-
-    `interactive` should follow WhatsApp Cloud API format, e.g.:
-
-    {
-        "type": "button",
-        "body": {"text": "Choose an option:"},
-        "action": {
-            "buttons": [
-                {"type": "reply", "reply": {"id": "opt_1", "title": "Option 1"}},
-                ...
-            ]
-        },
-    }
-    """
-    payload: Dict[str, Any] = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": interactive,
-    }
-
-    log_extra = metadata.copy() if metadata else {}
-    log_extra.update({"to": to, "interactive_type": interactive.get("type")})
-
-    logger.info("Sending WhatsApp interactive message", extra=log_extra)
-
-    resp = requests.post(_messages_url(), headers=_get_headers(), json=payload, timeout=15)
-    return _handle_response(resp)
-
-
-def send_template_message(
+def send_whatsapp_template(
     to: str,
     template_name: str,
-    language_code: str = "es",
-    components: Optional[list[Dict[str, Any]]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    *,
+    lang: str = "es",
+    components: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Send a template message (pre-approved by Meta).
+    Enviar una plantilla de WhatsApp previamente aprobada.
 
-    :param to: Recipient WA id.
-    :param template_name: Name of the approved template.
-    :param language_code: Language code, e.g., 'es', 'en_US'.
-    :param components: Optional list of template components.
+    Args:
+        to: wa_id del destinatario.
+        template_name: nombre EXACTO de la plantilla en Meta.
+        lang: código de idioma, por ejemplo 'es', 'es_CL', 'en_US'.
+        components: lista opcional de 'components' para variables de la plantilla.
+
+    Ejemplo components:
+        [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": "Huésped"},
+                    {"type": "text", "text": "123"},
+                ],
+            }
+        ]
     """
     template: Dict[str, Any] = {
         "name": template_name,
-        "language": {"code": language_code},
+        "language": {"code": lang},
     }
     if components:
         template["components"] = components
@@ -156,29 +164,77 @@ def send_template_message(
         "type": "template",
         "template": template,
     }
-
-    log_extra = metadata.copy() if metadata else {}
-    log_extra.update({"to": to, "template": template_name})
-
-    logger.info("Sending WhatsApp template", extra=log_extra)
-
-    resp = requests.post(_messages_url(), headers=_get_headers(), json=payload, timeout=15)
-    return _handle_response(resp)
+    return _post(payload)
 
 
-def mark_message_read(message_id: str) -> Dict[str, Any]:
+def mark_whatsapp_message_read(message_id: str) -> Dict[str, Any]:
     """
-    Mark an incoming message as 'read' in WhatsApp.
+    Marcar un mensaje entrante como 'read' en la Cloud API.
 
-    This is optional but keeps the WA UI tidy.
+    Args:
+        message_id: id del mensaje recibido (wamid...)
+
+    Returns:
+        dict con el JSON de respuesta.
     """
-    payload = {
+    payload: Dict[str, Any] = {
         "messaging_product": "whatsapp",
         "status": "read",
         "message_id": message_id,
     }
+    return _post(payload)
 
-    logger.info("Marking WhatsApp message as read", extra={"message_id": message_id})
 
-    resp = requests.post(_messages_url(), headers=_get_headers(), json=payload, timeout=15)
-    return _handle_response(resp)
+def send_whatsapp_reaction(
+    to: str,
+    message_id: str,
+    emoji: str,
+) -> Dict[str, Any]:
+    """
+    Enviar una reacción (emoji) a un mensaje.
+
+    Args:
+        to: wa_id del destinatario.
+        message_id: id del mensaje al que reaccionamos.
+        emoji: carácter emoji, por ejemplo "👍" o "✅".
+    """
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "reaction",
+        "reaction": {
+            "message_id": message_id,
+            "emoji": emoji,
+        },
+    }
+    return _post(payload)
+
+
+def send_whatsapp_typing(
+    to: str,
+    *,
+    typing_on: bool = True,
+) -> Dict[str, Any]:
+    """
+    Enviar señal de 'escribiendo' (typing).
+
+    Nota: La estructura exacta puede variar según la versión de la API.
+    Ajusta si Meta cambia el formato.
+
+    Args:
+        to: wa_id del destinatario.
+        typing_on: True para "escribiendo", False para detener.
+
+    Returns:
+        dict con la respuesta de la API.
+    """
+    # Algunos ejemplos de documentación usan "typing" con valores "typing" / "stopped".
+    state = "typing" if typing_on else "stopped"
+
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "typing",
+        "typing": state,
+    }
+    return _post(payload)
