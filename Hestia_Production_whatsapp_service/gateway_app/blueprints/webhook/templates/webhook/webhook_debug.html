@@ -1,0 +1,26 @@
+{# gateway_app/blueprints/webhook/templates/webhook/webhook_debug.html #}
+{% extends "base.html" %}
+
+{% block title %}Webhook debug{% endblock %}
+
+{% block content %}
+  <h1>Webhook debug</h1>
+
+  <p>Vista de depuración para inspeccionar manualmente los webhooks de WhatsApp.</p>
+
+  {% if payload %}
+    <h2>Último payload recibido</h2>
+    <pre style="white-space: pre-wrap; word-break: break-word;">
+{{ payload }}
+    </pre>
+  {% else %}
+    <p>No se ha proporcionado ningún payload a esta plantilla.</p>
+  {% endif %}
+
+  {% if extra %}
+    <h2>Contexto adicional</h2>
+    <pre style="white-space: pre-wrap; word-break: break-word;">
+{{ extra }}
+    </pre>
+  {% endif %}
+{% endblock %}
