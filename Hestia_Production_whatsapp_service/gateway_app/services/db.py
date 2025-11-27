@@ -1,4 +1,5 @@
 # gateway_app/services/db.py
+
 """
 Simple DB helper with Postgres primary + SQLite fallback.
 
@@ -40,6 +41,8 @@ from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from gateway_app.config import cfg
+from gateway_app.services import with_db_defaults
+
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +108,16 @@ def _get_connection():
     """
     url = cfg.DATABASE_URL or ""
     if _is_postgres_url(url):
-        logger.debug("Using Postgres connection for DATABASE_URL.")
-        return _connect_postgres(url)
+        # Normalize DSN (e.g. ensure sslmode=require) without breaking existing URLs
+        dsn = with_db_defaults(url)
+        logger.debug("Using Postgres connection for DATABASE_URL.", extra={"dsn": dsn})
+        return _connect_postgres(dsn)
 
     # Fallback to SQLite
     sqlite_path = _sqlite_path_from_url(url or "./gateway.db")
     logger.debug("Using SQLite connection at %s", sqlite_path)
     return _connect_sqlite(sqlite_path)
+
 
 
 @contextmanager

@@ -143,7 +143,11 @@ Always follow the schema exactly and output ONLY the JSON object.
 """
 
 
-def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) -> Optional[Dict[str, Any]]:
+def _call_json_llm(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 256,
+) -> Optional[Dict[str, Any]]:
     """
     Helper that uses the Responses API in JSON mode (text.format = {"type": "json_object"})
     and parses the result into a Python dict.
@@ -155,7 +159,7 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            # NEW: JSON mode is now configured via text.format, not response_format
+            # JSON mode is now configured via text.format, not response_format
             text={
                 "format": {
                     "type": "json_object"
@@ -164,7 +168,7 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
             max_output_tokens=max_tokens,
         )
 
-        # Responses API: text is in output[0].content[0].text
+        # Responses API: JSON text is in output[0].content[0].text
         content = resp.output[0].content[0].text
         return json.loads(content)
 
@@ -200,7 +204,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
 
     # Normalize / guard rails
     intent = data.get("intent")
-    # Map `unknown` to `not_understood` just in case the model uses the old label.
+    # Map `unknown` to `not_understood` just in case the model uses an old label.
     if intent == "unknown":
         intent = "not_understood"
 

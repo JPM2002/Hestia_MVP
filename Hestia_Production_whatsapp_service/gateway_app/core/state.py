@@ -27,6 +27,8 @@ Design notes
 from __future__ import annotations
 
 import logging
+import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from gateway_app.core.models import NLUResult
@@ -34,6 +36,24 @@ from gateway_app.core.timefmt import utcnow
 from gateway_app.services import faq_llm, guest_llm, notify
 
 logger = logging.getLogger(__name__)
+
+
+# IDs para tu backend de tickets (ajusta según tu setup)
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "1"))
+HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
+
+from gateway_app.services.tickets import create_ticket
+
+try:
+    from app.services.tickets import create_ticket  # AJUSTA EL MÓDULO A TU PROYECTO
+except Exception:
+    def create_ticket(payload, initial_status="PENDIENTE_APROBACION"):
+        logger.error(
+            "create_ticket() stub called. Debes importar aquí tu función real "
+            "de creación de tickets para que se escriban en la BD.",
+            extra={"payload": payload, "initial_status": initial_status},
+        )
+        return None
 
 # ---------------------------------------------------------------------------
 # Conversation state constants
@@ -377,6 +397,33 @@ def _smalltalk_reply(original: str) -> str:
     return "Entendido. Cualquier cosa que necesites, solo escríbeme por aquí."
 
 
+
+# ---------------------------------------------------------------------------
+# Ticket handling helpers
+# ---------------------------------------------------------------------------
+
+_YES_TOKENS = {"si", "sí", "s", "y", "yes", "ok", "vale", "dale", "de acuerdo"}
+_NO_TOKENS = {
+    "no", "n", "nop", "nope", "para nada",
+    "no gracias", "no, gracias",
+}
+
+
+def _normalize_yes_no_token(text: str) -> str:
+    t = (text or "").strip().lower()
+    # quitar puntuación final, emojis simples, etc.
+    t = re.sub(r"[!.,;:()\[\]\-—_*~·•«»\"'`´]+$", "", t).strip()
+    return t
+
+
+def _is_yes(text: str) -> bool:
+    return _normalize_yes_no_token(text) in _YES_TOKENS
+
+
+def _is_no(text: str) -> bool:
+    return _normalize_yes_no_token(text) in _NO_TOKENS
+
+
 # ---------------------------------------------------------------------------
 # Ticket handling helpers
 # ---------------------------------------------------------------------------
@@ -447,44 +494,71 @@ def _handle_ticket_confirmation_yes_no(
         handled = True  -> message was treated as a confirmation response.
         handled = False -> caller should continue normal processing.
     """
-    normalized = msg.strip().upper()
+    actions: List[Dict[str, Any]] = []
 
-    # Variants of "yes"
-    if normalized in {"SI", "SÍ", "SI.", "SÍ.", "OK", "OK."}:
+    # ---------- YES = crear ticket ----------
+    if _is_yes(msg):
         draft = session.get("data", {}).get("ticket_draft") or {}
-        session["state"] = STATE_NEW
 
-        # Notify internal system (for now, just a generic event)
+        # Construir payload equivalente al código monolítico antiguo
+        payload = {
+            "org_id": ORG_ID_DEFAULT,
+            "hotel_id": HOTEL_ID_DEFAULT,
+            "area": draft.get("area") or "MANTENCION",
+            "prioridad": draft.get("priority") or "MEDIA",
+            "detalle": draft.get("detail") or "",
+            "canal_origen": "huesped_whatsapp",
+            "ubicacion": draft.get("room") or session.get("room"),
+            "huesped_id": session.get("phone"),
+            "huesped_phone": session.get("phone"),
+            "huesped_nombre": session.get("guest_name") or "",
+        }
+
+        # Crear ticket en tu backend (usa tu create_ticket real)
+        ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+
+        # Opcional: seguir notificando al sistema central, si lo usas
         notify.notify_internal(
             "ticket_created",
             {
-                "draft": draft,
+                "ticket_id": ticket_id,
+                "payload": payload,
                 "wa_id": session.get("wa_id"),
                 "phone": session.get("phone"),
                 "guest_name": session.get("guest_name"),
             },
         )
 
-        actions = [
-            _text_action(
-                "Perfecto, he creado tu ticket y lo he enviado al equipo del hotel. "
+        # Volvemos al estado "normal" después de crear el ticket
+        session["state"] = STATE_NEW
+
+        if ticket_id:
+            text = (
+                f"Perfecto, he creado tu ticket #{ticket_id} y lo he enviado al equipo del hotel. "
                 "Te avisaremos cuando esté resuelto."
             )
-        ]
-        # Opcional: limpiar borrador
+        else:
+            # Si por cualquier motivo create_ticket devolvió None,
+            # avisamos al huésped pero también dejamos constancia en logs.
+            text = (
+                "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
+                "El equipo de recepción ha sido notificado."
+            )
+
+        actions.append(_text_action(text))
         _clear_ticket_draft(session)
         return True, actions
 
-    # Variants of "no"
-    if normalized in {"NO", "NO."}:
+    # ---------- NO = volver a modo edición ----------
+    if _is_no(msg):
         session["state"] = STATE_TICKET_DRAFT
-        actions = [
+        actions.append(
             _text_action(
                 "Sin problema. Dime qué parte quieres cambiar "
                 "(área, prioridad, habitación o detalle) y te enviaré un nuevo resumen."
             )
-        ]
+        )
         return True, actions
 
-    # Anything else: not treated as YES/NO confirmation
+    # Cualquier otra cosa no se interpreta como confirmación
     return False, []
