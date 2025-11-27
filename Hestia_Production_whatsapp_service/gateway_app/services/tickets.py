@@ -1,121 +1,141 @@
-# gateway_app/services/tickets.py
-
-from __future__ import annotations
-
 from datetime import datetime
-import os
 from typing import Any, Dict
 
-from gateway_app.services.sla import compute_due      # AJUSTA si tu módulo tiene otro nombre
-from gateway_app.services.db import (                 # AJUSTA estos imports a tu proyecto real
+from gateway_app.config import cfg
+from gateway_app.services.db import (
     execute,
     insert_and_get_id,
     using_pg,
     table_has_column,
 )
-from gateway_app.services.notify import _auto_assign_and_notify  # AJUSTA si está en otro módulo
-
-# Defaults para org/hotel (puedes cambiarlos o ponerlos en env)
-ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "1"))
-HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
+from gateway_app.services.sla import compute_due
+from gateway_app.services.notify import _auto_assign_and_notify
 
 
-# ----------------------------- Ticket creation -----------------------------
 def create_ticket(
     payload: Dict[str, Any],
     initial_status: str = "PENDIENTE_APROBACION",
 ) -> int:
     """
-    Crea un ticket en la tabla tickets y registra el historial,
-    imitando el comportamiento del código monolítico original.
+    Crea un ticket en la tabla `tickets` usando el payload proveniente del gateway
+    y devuelve el id del ticket creado.
     """
     now = datetime.now()
-    due_dt = compute_due(payload["area"], payload["prioridad"])
-    due_at = due_dt.isoformat() if due_dt else None
 
-    # Normalizar org/hotel (usa defaults si no vienen en payload)
-    org_id = int(payload.get("org_id", ORG_ID_DEFAULT))
-    hotel_id = int(payload.get("hotel_id", HOTEL_ID_DEFAULT))
+    # SLA: prioridad + created_at
+    try:
+        due_dt = compute_due(priority=payload.get("prioridad"), created_at=now)
+        due_at = due_dt.isoformat()
+    except Exception as e:
+        print(f"[WARN] compute_due failed: {e}", flush=True)
+        due_at = None
 
-    new_id = insert_and_get_id(
-        """
-        INSERT INTO tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen,
-                            ubicacion, huesped_id, created_at, due_at,
-                            assigned_to, created_by, confidence_score, qr_required)
-        VALUES (%s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s, %s)
-        """ if using_pg() else
-        """
-        INSERT INTO tickets(org_id, hotel_id, area, prioridad, estado, detalle, canal_origen,
-                            ubicacion, huesped_id, created_at, due_at,
-                            assigned_to, created_by, confidence_score, qr_required)
-        VALUES (?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?)
-        """,
-        (
+    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", 1)))
+    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", 1)))
+
+    is_pg = using_pg()
+    ph = "%s" if is_pg else "?"
+
+    # Inserción principal en tickets
+    sql = f"""
+        INSERT INTO tickets(
             org_id,
             hotel_id,
-            payload["area"],
-            payload["prioridad"],
-            initial_status,
-            payload["detalle"],
-            payload.get("canal_origen", "huesped_whatsapp"),
-            payload.get("ubicacion"),
-            payload.get("huesped_id"),
-            now.isoformat(),
+            area,
+            prioridad,
+            estado,
+            detalle,
+            canal_origen,
+            ubicacion,
+            huesped_id,
+            created_at,
             due_at,
-            None,
-            None,
-            float(payload.get("confidence_score", 0.85)),
-            bool(payload.get("qr_required", False)),
+            assigned_to,
+            created_by,
+            confidence_score,
+            qr_required
         )
+        VALUES (
+            {ph}, {ph}, {ph}, {ph}, {ph},
+            {ph}, {ph}, {ph}, {ph}, {ph},
+            {ph}, {ph}, {ph}, {ph}, {ph}
+        )
+    """
+
+    params = (
+        org_id,
+        hotel_id,
+        payload.get("area"),
+        payload.get("prioridad"),
+        initial_status,
+        payload.get("detalle"),
+        payload.get("canal_origen", "huesped_whatsapp"),
+        payload.get("ubicacion"),
+        payload.get("huesped_id"),
+        now.isoformat(),
+        due_at,
+        None,  # assigned_to
+        None,  # created_by
+        float(payload.get("confidence_score", 0.85)),
+        bool(payload.get("qr_required", False)),
     )
 
-    # Persistir teléfono / nombre del huésped si existen las columnas
+    ticket_id = insert_and_get_id(sql, params)
+
+    # Actualizar opcionalmente teléfono/nombre del huésped si las columnas existen
     guest_phone = payload.get("huesped_phone") or payload.get("huesped_id")
     guest_name = payload.get("huesped_nombre")
+
     try:
-        sets, params = [], []
+        sets = []
+        upd_params = []
         if guest_phone and table_has_column("tickets", "huesped_phone"):
-            sets.append("huesped_phone=%s" if using_pg() else "huesped_phone=?")
-            params.append(guest_phone)
+            sets.append(f"huesped_phone={ph}")
+            upd_params.append(guest_phone)
         if guest_name and table_has_column("tickets", "huesped_nombre"):
-            sets.append("huesped_nombre=%s" if using_pg() else "huesped_nombre=?")
-            params.append(guest_name)
+            sets.append(f"huesped_nombre={ph}")
+            upd_params.append(guest_name)
+
         if sets:
-            params.append(new_id)
-            sql = (
-                f"UPDATE tickets SET {', '.join(sets)} WHERE id=%s"
-                if using_pg()
-                else f"UPDATE tickets SET {', '.join(sets)} WHERE id=?"
-            )
-            execute(sql, tuple(params))
+            upd_params.append(ticket_id)
+            update_sql = f"UPDATE tickets SET {', '.join(sets)} WHERE id={ph}"
+            execute(update_sql, upd_params, commit=True)
     except Exception as e:
         print(f"[WARN] could not persist guest phone/name: {e}", flush=True)
 
-    # Historial de creación
-    execute(
-        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
-        if using_pg() else
-        "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
-        (new_id, None, "CREADO", "via whatsapp", now.isoformat()),
+    # Historial inicial
+    hph = "%s" if is_pg else "?"
+    history_sql = (
+        f"INSERT INTO tickethistory("
+        f"ticket_id, actor_user_id, action, motivo, at"
+        f") VALUES ({hph}, {hph}, {hph}, {hph}, {hph})"
     )
+
+    execute(
+        history_sql,
+        (ticket_id, None, "CREADO", "via whatsapp", now.isoformat()),
+        commit=True,
+    )
+
     if initial_status == "PENDIENTE_APROBACION":
         execute(
-            "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (%s, %s, %s, %s, %s)"
-            if using_pg() else
-            "INSERT INTO tickethistory(ticket_id, actor_user_id, action, motivo, at) VALUES (?, ?, ?, ?, ?)",
-            (new_id, None, "PENDIENTE_APROBACION", "esperando aprobación de recepción", now.isoformat()),
+            history_sql,
+            (
+                ticket_id,
+                None,
+                "PENDIENTE_APROBACION",
+                "esperando aprobación de recepción",
+                now.isoformat(),
+            ),
+            commit=True,
         )
 
-    # Auto-asignar y notificar técnico según área / org / hotel
+    # Auto-asignación y notificación (best effort)
     try:
         _auto_assign_and_notify(
-            ticket_id=new_id,
-            area=payload["area"],
-            prioridad=payload["prioridad"],
+            ticket_id=ticket_id,
+            area=payload.get("area"),
+            prioridad=payload.get("prioridad"),
             detalle=payload.get("detalle"),
             ubicacion=payload.get("ubicacion"),
             org_id=org_id,
@@ -124,4 +144,4 @@ def create_ticket(
     except Exception as e:
         print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
 
-    return new_id
+    return ticket_id
