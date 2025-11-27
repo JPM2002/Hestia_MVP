@@ -30,7 +30,7 @@ def create_ticket(
     imitando el comportamiento del código monolítico original.
     """
     now = datetime.now()
-    due_dt = compute_due(now, payload["area"], payload["prioridad"])
+    due_dt = compute_due(payload["area"], payload["prioridad"])
     due_at = due_dt.isoformat() if due_dt else None
 
     # Normalizar org/hotel (usa defaults si no vienen en payload)
