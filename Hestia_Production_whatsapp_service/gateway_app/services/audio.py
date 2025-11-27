@@ -1,266 +1,183 @@
-# gateway_app/services/db.py
+# gateway_app/services/audio.py
 """
-Database helper layer with PostgreSQL + SQLite fallback.
+Audio helpers for the WhatsApp gateway.
 
-Goals:
-- Use DATABASE_URL from config.
-- If it's a PostgreSQL URL (postgres:// or postgresql://) and psycopg2 is installed,
-  use PostgreSQL.
-- Otherwise, fall back to SQLite using a local file.
-- Provide small helper functions:
-    - using_pg()
-    - execute(sql, params)
-    - fetchone(sql, params)
-    - fetchall(sql, params)
-    - insert_and_get_id(sql, params)
+Responsibilities:
+- Download voice notes from WhatsApp Cloud API given a media_id.
+- Transcribe them using OpenAI (Whisper / gpt-4o-mini-transcribe).
+- Expose `transcribe_whatsapp_audio(media_id, language="es")` for routes.py.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Iterable, Optional, Sequence
+import tempfile
+from typing import Optional
 
-import sqlite3 as sqlite
+import requests
+from openai import OpenAI
 
 from gateway_app.config import cfg
 
 logger = logging.getLogger(__name__)
 
-# Optional PostgreSQL support
-pg = None
-pg_extras = None
-try:
-    import psycopg2 as pg
-    import psycopg2.extras as pg_extras
-except Exception:  # psycopg2 is optional
-    pg = None
-    pg_extras = None
+# OpenAI client (uses OPENAI_API_KEY from env)
+_client = OpenAI()
+
+# WhatsApp Cloud API base (same version as whatsapp_api.py)
+WHATSAPP_API_BASE = "https://graph.facebook.com/v21.0"
+
+# Transcription provider (currently we only implement OpenAI)
+_TRANSCRIBE_PROVIDER = (cfg.TRANSCRIBE_PROVIDER or "openai").lower()
 
 
-_DB_URL = cfg.DATABASE_URL or ""
-_DEFAULT_SQLITE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "gateway.db",
-)
+# ---------------------------------------------------------------------------
+# WhatsApp media download helpers
+# ---------------------------------------------------------------------------
 
 
-def _is_pg_dsn(dsn: str) -> bool:
-    if not dsn:
-        return False
-    dsn_lower = dsn.lower()
-    return dsn_lower.startswith("postgres://") or dsn_lower.startswith("postgresql://")
-
-
-_USING_PG = _is_pg_dsn(_DB_URL) and pg is not None
-
-
-def using_pg() -> bool:
-    """Return True if we are using PostgreSQL, False if using SQLite."""
-    return _USING_PG
-
-
-def _sqlite_path_from_url(dsn: str) -> str:
+def _get_media_url(media_id: str) -> str:
     """
-    Convert a sqlite URL (like sqlite:///path/to/db.sqlite3) or bare path
-    into a filesystem path.
+    Given a WhatsApp media_id, ask the Graph API for the actual download URL.
+
+    GET /{media-id}
+    Docs:
+      https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
     """
-    if not dsn:
-        return _DEFAULT_SQLITE_PATH
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        raise RuntimeError("WHATSAPP_CLOUD_TOKEN is not configured; cannot download audio.")
 
-    if dsn.startswith("sqlite:///"):
-        return dsn.replace("sqlite:///", "", 1)
-    if dsn.startswith("sqlite://"):
-        # handle sqlite://relative/path.db
-        return dsn.replace("sqlite://", "", 1)
+    url = f"{WHATSAPP_API_BASE}/{media_id}"
+    logger.debug("Fetching WhatsApp media metadata from %s", url)
 
-    # If it doesn't look like a URL, treat as plain path.
-    return dsn
-
-
-_SQLITE_PATH = _sqlite_path_from_url(_DB_URL) if not _USING_PG else None
-
-
-def _pg_connect():
-    if not pg:
-        raise RuntimeError("psycopg2 is not installed but PostgreSQL DSN was provided.")
-    if not _DB_URL:
-        raise RuntimeError("DATABASE_URL is empty; cannot connect to PostgreSQL.")
-    return pg.connect(_DB_URL)
-
-
-def _sqlite_connect():
-    path = _SQLITE_PATH or _DEFAULT_SQLITE_PATH
-    conn = sqlite.connect(
-        path,
-        detect_types=sqlite.PARSE_DECLTYPES | sqlite.PARSE_COLNAMES,
-        check_same_thread=False,
+    resp = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=20,
     )
-    return conn
+    resp.raise_for_status()
+    data = resp.json()
+    media_url = data.get("url")
+    if not media_url:
+        raise RuntimeError(f"No 'url' field in WhatsApp media metadata for id={media_id!r}")
+    return media_url
 
 
-def _get_conn_and_cursor(dict_cursor: bool = False):
+def _download_media_to_temp(media_url: str) -> str:
     """
-    Internal helper returning (conn, cursor).
-
-    - For PostgreSQL + dict_cursor=True → RealDictCursor.
-    - For SQLite + dict_cursor=True → row_factory = sqlite.Row.
+    Download the media file to a temporary file and return its path.
     """
-    if using_pg():
-        conn = _pg_connect()
-        if dict_cursor and pg_extras:
-            cur = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
-        else:
-            cur = conn.cursor()
-        return conn, cur
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        raise RuntimeError("WHATSAPP_CLOUD_TOKEN is not configured; cannot download audio.")
 
-    # SQLite
-    conn = _sqlite_connect()
-    if dict_cursor:
-        conn.row_factory = sqlite.Row
-        cur = conn.cursor()
-    else:
-        cur = conn.cursor()
-    return conn, cur
+    logger.debug("Downloading WhatsApp media from %s", media_url)
 
+    resp = requests.get(
+        media_url,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=60,
+        stream=True,
+    )
+    resp.raise_for_status()
 
-# ------------------- Public helpers -------------------
-
-
-def execute(
-    sql: str,
-    params: Optional[Sequence[Any]] = None,
-    *,
-    commit: bool = True,
-) -> int:
-    """
-    Execute a statement (INSERT/UPDATE/DELETE/DDL). Returns rowcount.
-
-    For SELECT queries prefer fetchone/fetchall.
-    """
-    params = params or ()
-    logger.debug("DB execute", extra={"sql": sql, "params": params})
-
-    conn, cur = _get_conn_and_cursor(dict_cursor=False)
+    # We don't know the exact extension; ogg/opus is typical for voice notes.
+    fd, path = tempfile.mkstemp(suffix=".ogg")
     try:
-        cur.execute(sql, params)
-        if commit:
-            conn.commit()
-        return cur.rowcount
-    finally:
+        with os.fdopen(fd, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                f.write(chunk)
+    except Exception:
+        # If writing fails, make sure we don't leave an empty file lying around.
         try:
-            cur.close()
+            os.remove(path)
         except Exception:
             pass
-        try:
-            conn.close()
-        except Exception:
-            pass
+        raise
+
+    logger.debug("WhatsApp media downloaded to %s", path)
+    return path
 
 
-def fetchone(
-    sql: str,
-    params: Optional[Sequence[Any]] = None,
-) -> Optional[dict]:
+# ---------------------------------------------------------------------------
+# OpenAI transcription helper
+# ---------------------------------------------------------------------------
+
+
+def _transcribe_with_openai(file_path: str, language: Optional[str] = None) -> str:
     """
-    Execute a SELECT and return a single row as dict-like (or None).
+    Transcribe an audio file using OpenAI.
 
-    For SQLite, this will be a sqlite.Row (indexable by column name).
-    For PostgreSQL, a psycopg2 RealDictRow if psycopg2.extras is available.
+    Uses the newer audio transcription models. Adjust model name if needed.
     """
-    params = params or ()
-    logger.debug("DB fetchone", extra={"sql": sql, "params": params})
+    # Choose a default model suitable for speech recognition.
+    # If you prefer classic Whisper, you can use "whisper-1".
+    model_name = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 
-    conn, cur = _get_conn_and_cursor(dict_cursor=True)
+    logger.info(
+        "Transcribing audio with OpenAI",
+        extra={"model": model_name, "language": language},
+    )
+
+    with open(file_path, "rb") as f:
+        resp = _client.audio.transcriptions.create(
+            model=model_name,
+            file=f,
+            language=language or None,  # let model auto-detect if not provided
+        )
+
+    # For the 1.x OpenAI client, `resp.text` holds the transcript.
+    text = getattr(resp, "text", "") or ""
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Public API used by routes.py
+# ---------------------------------------------------------------------------
+
+
+def transcribe_whatsapp_audio(media_id: str, language: str = "es") -> str:
+    """
+    Main entrypoint used by the webhook:
+
+        text = audio_svc.transcribe_whatsapp_audio(media_id=audio_media_id, language="es")
+
+    Steps:
+    - Ask WhatsApp API for the media URL.
+    - Download the file to a temp path.
+    - Transcribe with the configured provider (OpenAI).
+    - Return the transcript text (may be empty string if something fails).
+    """
+    if not media_id:
+        logger.warning("transcribe_whatsapp_audio called with empty media_id")
+        return ""
+
+    logger.info("Starting transcription for media_id=%s", media_id)
+
+    tmp_path: Optional[str] = None
     try:
-        cur.execute(sql, params)
-        row = cur.fetchone()
-        if row is None:
-            return None
-        # Convert sqlite.Row / RealDictRow to plain dict to be safe:
-        return dict(row)
+        media_url = _get_media_url(media_id)
+        tmp_path = _download_media_to_temp(media_url)
+
+        if _TRANSCRIBE_PROVIDER in {"openai", "whisper", "whisper_openai", "gpt4o"}:
+            return _transcribe_with_openai(tmp_path, language=language)
+
+        # Unknown provider: log and return empty text, rather than crashing webhook.
+        logger.error(
+            "Unknown TRANSCRIBE_PROVIDER=%r; supported: 'openai'",
+            _TRANSCRIBE_PROVIDER,
+        )
+        return ""
+    except Exception:
+        logger.exception("Error while transcribing WhatsApp audio (media_id=%s)", media_id)
+        return ""
     finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-def fetchall(
-    sql: str,
-    params: Optional[Sequence[Any]] = None,
-) -> list[dict]:
-    """
-    Execute a SELECT and return all rows as list of dict.
-    """
-    params = params or ()
-    logger.debug("DB fetchall", extra={"sql": sql, "params": params})
-
-    conn, cur = _get_conn_and_cursor(dict_cursor=True)
-    try:
-        cur.execute(sql, params)
-        rows = cur.fetchall() or []
-        return [dict(r) for r in rows]
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-def insert_and_get_id(
-    sql: str,
-    params: Optional[Sequence[Any]] = None,
-) -> Any:
-    """
-    Execute an INSERT and return the new primary key.
-
-    PostgreSQL:
-        - Your SQL *may* contain 'RETURNING id' (or similar); if it does,
-          we will fetch that and return it.
-        - If not, we will use cursor.lastrowid (usually None in psycopg2),
-          so it's recommended to use RETURNING for PostgreSQL.
-
-    SQLite:
-        - Uses cursor.lastrowid.
-    """
-    params = params or ()
-    logger.debug("DB insert_and_get_id", extra={"sql": sql, "params": params})
-
-    conn, cur = _get_conn_and_cursor(dict_cursor=False)
-    try:
-        cur.execute(sql, params)
-
-        returned_id = None
-        try:
-            row = cur.fetchone()
-            if row is not None:
-                returned_id = row[0]
-        except Exception:
-            # No RETURNING clause
-            returned_id = None
-
-        conn.commit()
-
-        if returned_id is not None:
-            return returned_id
-
-        # Fallback for SQLite or non-RETURNING inserts
-        return getattr(cur, "lastrowid", None)
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        try:
-            conn.close()
-        except Exception:
-            pass
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                logger.warning("Could not remove temp audio file %s", tmp_path)

@@ -238,3 +238,29 @@ def send_whatsapp_typing(
         "typing": state,
     }
     return _post(payload)
+
+# ---------------------------------------------------------------------------
+# Backwards-compatible wrapper names used by routes.py
+# ---------------------------------------------------------------------------
+
+
+def send_text_message(
+    to: str,
+    text: str,
+    *,
+    preview_url: bool = False,
+) -> Dict[str, Any]:
+    """
+    Backwards-compatible alias for send_whatsapp_text, so older code that calls
+    whatsapp_api.send_text_message() keeps working.
+    """
+    return send_whatsapp_text(to=to, text=text, preview_url=preview_url)
+
+
+def mark_message_as_read(message_id: str) -> Dict[str, Any]:
+    """
+    Backwards-compatible alias for mark_whatsapp_message_read, so older code
+    that calls whatsapp_api.mark_message_as_read() keeps working.
+    """
+    return mark_whatsapp_message_read(message_id)
+
