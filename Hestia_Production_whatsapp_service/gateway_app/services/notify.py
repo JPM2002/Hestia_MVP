@@ -91,3 +91,34 @@ def notify_debug(message: str, extra: Optional[Dict[str, Any]] = None) -> None:
     if extra:
         payload["extra"] = extra
     notify_internal("debug", payload)
+
+def _auto_assign_and_notify(ticket_id, area, prioridad, detalle, ubicacion, org_id, hotel_id):
+    """
+    Compatibility helper used by gateway_app.services.tickets.create_ticket.
+
+    In the original monolith this would:
+      - auto-assign the ticket to a technician based on org/hotel/area
+      - send WhatsApp/Slack/email notifications
+
+    For the gateway, we implement a minimal version:
+      - just emit an internal notification so the rest of the system can react.
+
+    You can later expand this to real auto-assignment logic.
+    """
+    from gateway_app.services.notify import notify_internal  # local import to avoid cycles
+
+    payload = {
+        "ticket_id": ticket_id,
+        "area": area,
+        "prioridad": prioridad,
+        "detalle": detalle,
+        "ubicacion": ubicacion,
+        "org_id": org_id,
+        "hotel_id": hotel_id,
+    }
+
+    try:
+        # Event name is arbitrary; reuse or rename as you wish
+        notify_internal("ticket_auto_assigned", payload)
+    except Exception as e:
+        logger.warning("[WARN] _auto_assign_and_notify failed: %s", e)
