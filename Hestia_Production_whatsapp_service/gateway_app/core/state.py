@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 # IDs para tu backend de tickets (ajusta según tu setup)
-ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "1"))
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "2"))
 HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
 
 from gateway_app.services.tickets import create_ticket
