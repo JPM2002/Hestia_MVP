@@ -145,7 +145,8 @@ Always follow the schema exactly and output ONLY the JSON object.
 
 def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) -> Optional[Dict[str, Any]]:
     """
-    Helper that uses the Responses API with response_format=json_object and parses the result.
+    Helper that uses the Responses API in JSON mode (text.format = {"type": "json_object"})
+    and parses the result into a Python dict.
     """
     try:
         resp = _client.responses.create(
@@ -154,11 +155,19 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            extra_body={"response_format": {"type": "json_object"}},
+            # NEW: JSON mode is now configured via text.format, not response_format
+            text={
+                "format": {
+                    "type": "json_object"
+                }
+            },
             max_output_tokens=max_tokens,
         )
+
+        # Responses API: text is in output[0].content[0].text
         content = resp.output[0].content[0].text
         return json.loads(content)
+
     except Exception as e:
         logger.warning("[WARN] guest_llm json call failed: %s", e, exc_info=True)
         return None
