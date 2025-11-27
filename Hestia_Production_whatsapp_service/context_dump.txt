@@ -1,0 +1,2840 @@
+﻿Folder PATH listing for volume OS
+Volume serial number is BAA5-2F12
+C:.
+ª   context_dump.txt
+ª   gunicorn.conf.py
+ª   README.md
+ª   render.yaml
+ª   requirements.txt
+ª   run.py
+ª   wsgi.py
+ª   
++---gateway_app
+    ª   config.py
+    ª   filters.py
+    ª   logging_cfg.py
+    ª   wsgi.py
+    ª   __init__.py
+    ª   
+    +---blueprints
+    ª   +---webhook
+    ª       ª   routes.py
+    ª       ª   __init__.py
+    ª       ª   
+    ª       +---templates
+    ª           +---webhook
+    ª                   webhook_debug.html
+    ª                   
+    +---core
+    ª       errors.py
+    ª       models.py
+    ª       state.py
+    ª       status.py
+    ª       timefmt.py
+    ª       utils.py
+    ª       
+    +---services
+    ª       audio.py
+    ª       db.py
+    ª       dsn.py
+    ª       faq_llm.py
+    ª       guest_llm.py
+    ª       notify.py
+    ª       sla.py
+    ª       whatsapp_api.py
+    ª       
+    +---static
+    ª   +---css
+    ª   +---img
+    ª   +---js
+    +---templates
+    ª       base.html
+    ª       error.html
+    ª       
+    +---tests
+    ª       test_faq_llm.py
+    ª       test_guest_llm.py
+    ª       test_state_machine.py
+    ª       test_webhook_smoke.py
+    ª       
+    +---__pycache__
+            __init__.cpython-313.pyc
+            
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\blueprints\webhook\templates\webhook\webhook_debug.html =====
+{# gateway_app/blueprints/webhook/templates/webhook/webhook_debug.html #}
+{% extends "base.html" %}
+
+{% block title %}Webhook debug{% endblock %}
+
+{% block content %}
+  <h1>Webhook debug</h1>
+
+  <p>Vista de depuraciÃ³n para inspeccionar manualmente los webhooks de WhatsApp.</p>
+
+  {% if payload %}
+    <h2>Ãšltimo payload recibido</h2>
+    <pre style="white-space: pre-wrap; word-break: break-word;">
+{{ payload }}
+    </pre>
+  {% else %}
+    <p>No se ha proporcionado ningÃºn payload a esta plantilla.</p>
+  {% endif %}
+
+  {% if extra %}
+    <h2>Contexto adicional</h2>
+    <pre style="white-space: pre-wrap; word-break: break-word;">
+{{ extra }}
+    </pre>
+  {% endif %}
+{% endblock %}
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\blueprints\webhook\routes.py =====
+# gateway_app/blueprints/webhook/routes.py
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+
+from flask import (
+    current_app,
+    jsonify,
+    render_template,
+    request,
+)
+
+from . import bp  # <- use the shared blueprint
+
+from gateway_app.config import cfg
+from gateway_app.services import audio as audio_svc
+from gateway_app.services import whatsapp_api
+from gateway_app.core import state as state_machine
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\blueprints\webhook\__init__.py =====
+# gateway_app/blueprints/webhook/__init__.py
+from flask import Blueprint
+
+bp = Blueprint("webhook", __name__, url_prefix="/webhook")
+
+from . import routes  # noqa
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\errors.py =====
+# gateway_app/core/errors.py
+"""
+Error types and global error handlers for the WhatsApp gateway app.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict
+
+from flask import jsonify, render_template, request
+
+logger = logging.getLogger(__name__)
+
+
+class AppError(Exception):
+    """Base application error with an HTTP status code."""
+
+    status_code: int = 400
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        payload: Dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        if status_code is not None:
+            self.status_code = status_code
+        self.payload = payload or {}
+
+    @property
+    def message(self) -> str:
+        return str(self)
+
+
+class WebhookError(AppError):
+    """Raised when a WhatsApp webhook payload is invalid or cannot be processed."""
+
+    status_code = 400
+
+
+def _wants_json() -> bool:
+    """
+    Heuristic: return JSON if the request is JSON or clearly API-like.
+    """
+    if request.is_json:
+        return True
+    accept = (request.headers.get("Accept") or "").lower()
+    if "application/json" in accept:
+        return True
+    # Simple path-based heuristic for future API endpoints
+    if request.path.startswith("/api/"):
+        return True
+    return False
+
+
+def register_error_handlers(app) -> None:
+    """
+    Register global error handlers on the Flask app.
+
+    This uses:
+      - JSON responses for API-style requests.
+      - HTML error.html for normal browser visits.
+    """
+
+    @app.errorhandler(AppError)
+    def handle_app_error(exc: AppError):
+        logger.warning("AppError: %s", exc, exc_info=True)
+        status = getattr(exc, "status_code", 400) or 400
+        payload = dict(exc.payload)
+        payload.setdefault("error", exc.message)
+
+        if _wants_json():
+            return jsonify(payload), status
+
+        return (
+            render_template(
+                "error.html",
+                code=status,
+                message=exc.message,
+            ),
+            status,
+        )
+
+    @app.errorhandler(404)
+    def handle_404(exc):
+        logger.info("404 Not Found: %s %s", request.method, request.path)
+        if _wants_json():
+            return jsonify({"error": "Recurso no encontrado"}), 404
+        return (
+            render_template(
+                "error.html",
+                code=404,
+                message="Recurso no encontrado",
+            ),
+            404,
+        )
+
+    @app.errorhandler(500)
+    def handle_500(exc):
+        logger.exception("Unhandled server error")
+        if _wants_json():
+            return jsonify({"error": "Error interno del servidor"}), 500
+        return (
+            render_template(
+                "error.html",
+                code=500,
+                message="Error interno del servidor",
+            ),
+            500,
+        )
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\models.py =====
+# gateway_app/core/models.py
+"""
+Domain models and typed helpers for the WhatsApp gateway.
+
+These dataclasses are intentionally lightweight. They are used by:
+- The webhook layer to represent parsed WhatsApp messages.
+- The NLU layer (guest_llm / faq_llm) to structure results.
+- The state machine to track guest sessions and ticket drafts.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from typing import Any, Dict, Mapping, Optional
+
+
+# ---- NLU result -------------------------------------------------------------
+
+
+@dataclass
+class NLUResult:
+    """
+    Normalized output of the guest NLU.
+
+    This mirrors the JSON schema enforced in services.guest_llm:
+      {
+        "intent": "...",
+        "area": "...",
+        "priority": "...",
+        "room": "...",
+        "detail": "...",
+        "is_cancel": bool,
+        "is_help": bool,
+        "is_smalltalk": bool,
+        "wants_handoff": bool
+      }
+    """
+
+    intent: Optional[str] = None  # ticket_request | handoff_request | general_chat | cancel | help | not_understood
+    area: Optional[str] = None    # MANTENCION | HOUSEKEEPING | ROOMSERVICE | None
+    priority: Optional[str] = None  # URGENTE | ALTA | MEDIA | BAJA | None
+    room: Optional[str] = None
+    detail: Optional[str] = None
+
+    is_cancel: bool = False
+    is_help: bool = False
+    is_smalltalk: bool = False
+    wants_handoff: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "NLUResult":
+        """
+        Build an NLUResult from a raw dict, applying safe defaults.
+        Extra keys are ignored.
+        """
+        return cls(
+            intent=data.get("intent"),
+            area=data.get("area"),
+            priority=data.get("priority"),
+            room=data.get("room"),
+            detail=data.get("detail"),
+            is_cancel=bool(data.get("is_cancel", False)),
+            is_help=bool(data.get("is_help", False)),
+            is_smalltalk=bool(data.get("is_smalltalk", False)),
+            wants_handoff=bool(data.get("wants_handoff", False)),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+# ---- WhatsApp message representation ----------------------------------------
+
+
+@dataclass
+class IncomingMessage:
+    """
+    Parsed representation of a single WhatsApp message entry.
+
+    We keep only the fields we actually care about and stash the
+    full raw payload in `raw` for debugging or future use.
+    """
+
+    wa_id: str                     # WhatsApp message ID
+    from_number: str               # Sender phone / wa_id
+    timestamp: Optional[int]       # Unix timestamp (string in WA payload, normalized to int)
+    msg_type: str                  # "text", "audio", "image", etc.
+    text: Optional[str] = None     # For text messages
+    audio_media_id: Optional[str] = None  # For voice notes
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    def is_text(self) -> bool:
+        return self.msg_type == "text" and bool(self.text)
+
+    def is_audio(self) -> bool:
+        return self.msg_type == "audio" and bool(self.audio_media_id)
+
+
+# ---- Guest session + ticket draft -------------------------------------------
+
+
+@dataclass
+class GuestSession:
+    """
+    Minimal in-memory representation of a guest conversation.
+
+    Persistent storage (DB) is handled elsewhere; this model is for
+    state machine + routing logic.
+    """
+
+    wa_id: str                     # WhatsApp contact id (wa_id)
+    phone: str                     # Phone number
+    state: str                     # DFA state, e.g., "GH_S0"
+    guest_name: Optional[str] = None
+    room: Optional[str] = None
+    language: Optional[str] = None  # "es", "en", "de", etc.
+
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+    # Arbitrary extra data (e.g., current ticket draft id, flags, etc.)
+    data: Dict[str, Any] = field(default_factory=dict)
+
+    def touch(self) -> None:
+        """Update last activity timestamp."""
+        self.updated_at = datetime.utcnow()
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        # datetime is not JSON-serializable by default; cast to ISO.
+        d["created_at"] = self.created_at.isoformat()
+        d["updated_at"] = self.updated_at.isoformat()
+        return d
+
+
+@dataclass
+class TicketDraft:
+    """
+    Draft ticket before it is confirmed and sent to the main Hestia system.
+    """
+
+    area: Optional[str] = None         # MANTENCION | HOUSEKEEPING | ROOMSERVICE
+    priority: Optional[str] = None     # URGENTE | ALTA | MEDIA | BAJA
+    room: Optional[str] = None
+    detail: Optional[str] = None
+
+    # Optional references / metadata
+    guest_wa_id: Optional[str] = None
+    guest_phone: Optional[str] = None
+    guest_name: Optional[str] = None
+
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+    def apply_nlu(self, nlu: NLUResult) -> None:
+        """
+        Convenience helper to update fields from an NLUResult,
+        only when the NLU provides non-empty values.
+        """
+        if nlu.area:
+            self.area = nlu.area
+        if nlu.priority:
+            self.priority = nlu.priority
+        if nlu.room:
+            self.room = nlu.room
+        if nlu.detail:
+            self.detail = nlu.detail
+        self.updated_at = datetime.utcnow()
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["created_at"] = self.created_at.isoformat()
+        d["updated_at"] = self.updated_at.isoformat()
+        return d
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\state.py =====
+# gateway_app/core/state.py
+"""
+Simple conversation state machine for the Hestia WhatsApp gateway.
+
+This module is called from the webhook layer:
+
+    session = state.load_session(wa_contact_id)
+    actions, new_session = state.handle_incoming_text(...)
+    state.save_session(wa_contact_id, new_session)
+
+Design notes
+------------
+- For now, sessions are stored in an in-memory dict (_SESSIONS).
+  This keeps the code simple and works both locally and on Render.
+  Later you can swap this for a DB-backed implementation.
+- Outgoing actions are small dicts, currently only:
+      {"type": "text", "text": "...", "preview_url": False}
+- States used:
+    GH_S0            -> conversaciÃ³n "normal"
+    GH_S0i           -> inicio de conversaciÃ³n / saludo
+    GH_TICKET_DRAFT  -> editando borrador de ticket
+    GH_TICKET_CONFIRM-> esperando confirmaciÃ³n SI/NO
+    GH_FAQ           -> flujo de preguntas frecuentes
+    GH_HANDOFF       -> derivado a recepciÃ³n / humano
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+from gateway_app.core.models import NLUResult
+from gateway_app.core.timefmt import utcnow
+from gateway_app.services import faq_llm, guest_llm, notify
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Conversation state constants
+# ---------------------------------------------------------------------------
+
+STATE_NEW = "GH_S0"
+STATE_INIT = "GH_S0i"
+STATE_TICKET_DRAFT = "GH_TICKET_DRAFT"
+STATE_TICKET_CONFIRM = "GH_TICKET_CONFIRM"
+STATE_FAQ = "GH_FAQ"
+STATE_HANDOFF = "GH_HANDOFF"
+
+# In-memory session store: wa_id -> session dict
+_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+
+# ---------------------------------------------------------------------------
+# Public API used by webhook/routes.py
+# ---------------------------------------------------------------------------
+
+
+def load_session(wa_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve the session for a WhatsApp contact id (wa_id).
+
+    Returns:
+        dict with session data, or None if not found.
+    """
+    return _SESSIONS.get(wa_id)
+
+
+def save_session(wa_id: str, session: Optional[Dict[str, Any]]) -> None:
+    """
+    Persist the session in the in-memory store.
+
+    If session is None, the existing one (if any) is removed.
+    """
+    if session is None:
+        _SESSIONS.pop(wa_id, None)
+        return
+
+    session.setdefault("wa_id", wa_id)
+    session["updated_at"] = utcnow().isoformat()
+    _SESSIONS[wa_id] = session
+
+
+def handle_incoming_text(
+    *,
+    wa_id: str,
+    guest_phone: str,
+    guest_name: Optional[str],
+    text: str,
+    session: Optional[Dict[str, Any]],
+    timestamp,
+    raw_payload: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Main state machine entry point.
+
+    Args:
+        wa_id: WhatsApp contact id (value from 'contacts[0].wa_id').
+        guest_phone: NÃºmero de WhatsApp (messages[0].from).
+        guest_name: Nombre del contacto si estÃ¡ disponible.
+        text: Mensaje del huÃ©sped (ya transcrito si era audio).
+        session: SesiÃ³n previa (dict) o None.
+        timestamp: datetime de la recepciÃ³n (ya parseado en routes.py).
+        raw_payload: payload completo para debug / futuros usos.
+
+    Returns:
+        (outgoing_actions, new_session)
+    """
+    msg = (text or "").strip()
+    actions: List[Dict[str, Any]] = []
+
+    # ------------------------------------------------------------------
+    # Ensure we have a session object
+    # ------------------------------------------------------------------
+    if session is None:
+        session = _new_session(
+            wa_id=wa_id,
+            guest_phone=guest_phone,
+            guest_name=guest_name,
+            timestamp=timestamp,
+        )
+        new_conversation = True
+    else:
+        new_conversation = False
+        session.setdefault("wa_id", wa_id)
+        session.setdefault("phone", guest_phone)
+        session.setdefault("data", {})
+
+    session["guest_name"] = guest_name or session.get("guest_name")
+    session["last_message_at"] = utcnow().isoformat()
+    state = session.get("state") or STATE_INIT
+
+    logger.debug(
+        "[STATE] handle_incoming_text start",
+        extra={"wa_id": wa_id, "state": state, "text": msg},
+    )
+
+    # Optional greeting on very first message
+    if new_conversation:
+        actions.append(_text_action(_initial_greeting(session)))
+
+    # If no text after greeting (e.g., pure audio that failed), nothing else to do
+    if not msg:
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # Ticket confirmation: handle explicit SI / NO first
+    # ------------------------------------------------------------------
+    if state == STATE_TICKET_CONFIRM:
+        handled, extra_actions = _handle_ticket_confirmation_yes_no(msg, session)
+        if handled:
+            actions.extend(extra_actions)
+            logger.debug(
+                "[STATE] after ticket confirm",
+                extra={"wa_id": wa_id, "state": session.get("state")},
+            )
+            return actions, session
+        # If not handled as SI/NO, fall through and treat as a normal message
+
+    # ------------------------------------------------------------------
+    # Simple commands to reset / show menu
+    # ------------------------------------------------------------------
+    if msg.lower() in {"menu", "inicio", "start"}:
+        session["state"] = STATE_INIT
+        actions.append(_text_action(_menu_message(session)))
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # NLU analysis
+    # ------------------------------------------------------------------
+    nlu_raw = guest_llm.analyze_guest_message(msg, session=session, state=state)
+    nlu = NLUResult.from_dict(nlu_raw) if nlu_raw else NLUResult()
+
+    logger.debug(
+        "[STATE] NLU result",
+        extra={"wa_id": wa_id, "nlu": nlu.to_dict()},
+    )
+
+    # ------------------------------------------------------------------
+    # Route based on intent / flags
+    # ------------------------------------------------------------------
+
+    # Help / capabilities
+    if nlu.intent == "help" or nlu.is_help:
+        actions.append(_text_action(_help_message()))
+        session["state"] = STATE_INIT
+        return actions, session
+
+    # Explicit human handoff
+    if nlu.intent == "handoff_request" or nlu.wants_handoff:
+        session["state"] = STATE_HANDOFF
+        actions.append(
+            _text_action(
+                "De acuerdo, te pongo en contacto con recepciÃ³n humana. "
+                "Un momento por favor."
+            )
+        )
+        notify.notify_internal(
+            "handoff_request",
+            {
+                "wa_id": wa_id,
+                "phone": guest_phone,
+                "guest_name": session.get("guest_name"),
+                "last_message": msg,
+            },
+        )
+        return actions, session
+
+    # Cancel current request
+    if nlu.intent == "cancel" or nlu.is_cancel:
+        _clear_ticket_draft(session)
+        session["state"] = STATE_NEW
+        actions.append(
+            _text_action(
+                "He cancelado tu solicitud. Si necesitas algo mÃ¡s, "
+                "envÃ­ame un nuevo mensaje."
+            )
+        )
+        return actions, session
+
+    # Ticket / request for service
+    if nlu.intent == "ticket_request":
+        actions.extend(_handle_ticket_intent(nlu, session))
+        return actions, session
+
+    # Smalltalk / general chat (thank you, etc.)
+    if nlu.intent == "general_chat" or nlu.is_smalltalk:
+        actions.append(_text_action(_smalltalk_reply(msg)))
+        # Mantener estado, pero si estÃ¡bamos en inicio pasar a S0 "normal"
+        if state in {STATE_INIT, STATE_FAQ}:
+            session["state"] = STATE_NEW
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # Not understood or unclassified: try FAQ as fallback
+    # ------------------------------------------------------------------
+    if nlu.intent == "not_understood" or nlu.intent is None:
+        faq_answer = faq_llm.answer_faq(msg)
+        if faq_answer:
+            session["state"] = STATE_FAQ
+            actions.append(_text_action(faq_answer))
+            actions.append(
+                _text_action("Â¿Puedo ayudarte con algo mÃ¡s durante tu estadÃ­a?")
+            )
+            return actions, session
+
+        # Final fallback
+        actions.append(
+            _text_action(
+                "No estoy seguro de haber entendido bien. "
+                "Puedo ayudarte a reportar un problema en tu habitaciÃ³n, "
+                "pedir algo al hotel o responder dudas frecuentes "
+                "(desayuno, wifi, horarios). Â¿QuÃ© necesitas?"
+            )
+        )
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # Safety net (unexpected intent value)
+    # ------------------------------------------------------------------
+    actions.append(
+        _text_action(
+            "Gracias por tu mensaje. Si quieres, puedes contarme si "
+            "necesitas reportar un problema, pedir algo a la habitaciÃ³n "
+            "o hacer una pregunta sobre el hotel."
+        )
+    )
+    return actions, session
+
+
+# ---------------------------------------------------------------------------
+# Session helpers
+# ---------------------------------------------------------------------------
+
+
+def _new_session(
+    *,
+    wa_id: str,
+    guest_phone: str,
+    guest_name: Optional[str],
+    timestamp,
+) -> Dict[str, Any]:
+    now_iso = utcnow().isoformat()
+    session: Dict[str, Any] = {
+        "wa_id": wa_id,
+        "phone": guest_phone,
+        "guest_name": guest_name or None,
+        "state": STATE_INIT,
+        "language": None,
+        "room": None,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "last_message_at": now_iso,
+        "data": {},
+    }
+    logger.info(
+        "[STATE] New guest session created",
+        extra={"wa_id": wa_id, "phone": guest_phone},
+    )
+    return session
+
+
+def _get_ticket_draft(session: Dict[str, Any]) -> Dict[str, Any]:
+    data = session.setdefault("data", {})
+    draft = data.get("ticket_draft")
+    if draft is None:
+        draft = {
+            "area": None,
+            "priority": None,
+            "room": None,
+            "detail": None,
+        }
+        data["ticket_draft"] = draft
+    return draft
+
+
+def _clear_ticket_draft(session: Dict[str, Any]) -> None:
+    data = session.setdefault("data", {})
+    if "ticket_draft" in data:
+        del data["ticket_draft"]
+
+
+# ---------------------------------------------------------------------------
+# Conversation fragments
+# ---------------------------------------------------------------------------
+
+
+def _text_action(text: str, preview_url: bool = False) -> Dict[str, Any]:
+    return {
+        "type": "text",
+        "text": text,
+        "preview_url": preview_url,
+    }
+
+
+def _initial_greeting(session: Dict[str, Any]) -> str:
+    name = session.get("guest_name")
+    if name:
+        prefix = f"Hola {name}, "
+    else:
+        prefix = "Hola, "
+    return (
+        prefix
+        + "soy Hestia, tu asistente virtual del hotel. "
+          "Puedo ayudarte a reportar problemas en tu habitaciÃ³n, "
+          "pedir toallas, amenities o comida, y responder preguntas "
+          "como horarios de desayuno o wifi."
+    )
+
+
+def _menu_message(session: Dict[str, Any]) -> str:
+    return (
+        "MenÃº de ayuda Hestia:\n"
+        "1ï¸âƒ£ Reportar un problema en la habitaciÃ³n (ej: no funciona el aire, falta limpieza).\n"
+        "2ï¸âƒ£ Pedir algo al hotel (toallas, almohadas, amenities, room service).\n"
+        "3ï¸âƒ£ Preguntar informaciÃ³n (desayuno, wifi, horarios, etc.).\n\n"
+        "CuÃ©ntame brevemente quÃ© necesitas y yo te ayudo."
+    )
+
+
+def _help_message() -> str:
+    return (
+        "Puedo ayudarte con:\n"
+        "â€¢ Reportar problemas en tu habitaciÃ³n (aire, ducha, luz, limpieza, etc.).\n"
+        "â€¢ Pedir toallas, almohadas u otros artÃ­culos de housekeeping.\n"
+        "â€¢ Pedir comida o bebidas a la habitaciÃ³n.\n"
+        "â€¢ Responder dudas tÃ­picas: horario de desayuno, wifi, check-in / check-out.\n\n"
+        "EscrÃ­beme en una frase quÃ© necesitas y me encargo del resto."
+    )
+
+
+def _smalltalk_reply(original: str) -> str:
+    lower = original.lower()
+    if "gracia" in lower:
+        return "Con gusto, estoy aquÃ­ para ayudarte durante tu estadÃ­a. Â¿Algo mÃ¡s?"
+    if "todo bien" in lower or "todo ok" in lower or "estoy bien" in lower:
+        return "Perfecto, me alegra saberlo. Si necesitas algo mÃ¡s, solo escribe por aquÃ­."
+    return "Entendido. Cualquier cosa que necesites, solo escrÃ­beme por aquÃ­."
+
+
+# ---------------------------------------------------------------------------
+# Ticket handling helpers
+# ---------------------------------------------------------------------------
+
+
+def _handle_ticket_intent(nlu: NLUResult, session: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Apply NLU fields to the current ticket draft and send confirmation message.
+    """
+    draft = _get_ticket_draft(session)
+
+    # Update draft from NLU
+    if nlu.area:
+        draft["area"] = nlu.area
+    if nlu.priority:
+        draft["priority"] = nlu.priority
+    if nlu.room:
+        draft["room"] = nlu.room
+        session["room"] = nlu.room
+    if nlu.detail:
+        draft["detail"] = nlu.detail
+
+    session["state"] = STATE_TICKET_CONFIRM
+
+    summary = _format_ticket_summary(draft)
+    confirm_text = guest_llm.render_confirm_draft(summary, session)
+
+    logger.info(
+        "[STATE] ticket_request draft updated",
+        extra={"wa_id": session.get("wa_id"), "draft": draft},
+    )
+
+    return [_text_action(confirm_text)]
+
+
+def _format_ticket_summary(draft: Dict[str, Any]) -> str:
+    parts: List[str] = []
+
+    area = draft.get("area")
+    priority = draft.get("priority")
+    room = draft.get("room")
+    detail = draft.get("detail")
+
+    if area:
+        parts.append(f"- Ãrea: {area}")
+    if priority:
+        parts.append(f"- Prioridad: {priority}")
+    if room:
+        parts.append(f"- HabitaciÃ³n: {room}")
+    if detail:
+        parts.append(f"- Detalle: {detail}")
+
+    if not parts:
+        return "AÃºn no tengo detalles claros de tu solicitud."
+
+    return "\n".join(parts)
+
+
+def _handle_ticket_confirmation_yes_no(
+    msg: str,
+    session: Dict[str, Any],
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    """
+    Process SI / NO responses when in GH_TICKET_CONFIRM.
+
+    Returns:
+        (handled, actions)
+        handled = True  -> message was treated as a confirmation response.
+        handled = False -> caller should continue normal processing.
+    """
+    normalized = msg.strip().upper()
+
+    # Variants of "yes"
+    if normalized in {"SI", "SÃ", "SI.", "SÃ.", "OK", "OK."}:
+        draft = session.get("data", {}).get("ticket_draft") or {}
+        session["state"] = STATE_NEW
+
+        # Notify internal system (for now, just a generic event)
+        notify.notify_internal(
+            "ticket_created",
+            {
+                "draft": draft,
+                "wa_id": session.get("wa_id"),
+                "phone": session.get("phone"),
+                "guest_name": session.get("guest_name"),
+            },
+        )
+
+        actions = [
+            _text_action(
+                "Perfecto, he creado tu ticket y lo he enviado al equipo del hotel. "
+                "Te avisaremos cuando estÃ© resuelto."
+            )
+        ]
+        # Opcional: limpiar borrador
+        _clear_ticket_draft(session)
+        return True, actions
+
+    # Variants of "no"
+    if normalized in {"NO", "NO."}:
+        session["state"] = STATE_TICKET_DRAFT
+        actions = [
+            _text_action(
+                "Sin problema. Dime quÃ© parte quieres cambiar "
+                "(Ã¡rea, prioridad, habitaciÃ³n o detalle) y te enviarÃ© un nuevo resumen."
+            )
+        ]
+        return True, actions
+
+    # Anything else: not treated as YES/NO confirmation
+    return False, []
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\status.py =====
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\timefmt.py =====
+# gateway_app/core/timefmt.py
+"""
+Datetime helpers for the WhatsApp gateway.
+
+Goals:
+- Always store and log times in UTC.
+- Provide simple helpers for ISO-8601 and short human-readable formats.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Optional
+
+
+def utcnow() -> datetime:
+    """
+    Current time in UTC with tzinfo set.
+
+    Use this instead of datetime.utcnow() so that all datetimes are tz-aware.
+    """
+    return datetime.now(timezone.utc)
+
+
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    Normalize a datetime to UTC.
+
+    - If dt is None â†’ None.
+    - If dt is naive (no tzinfo) â†’ assume UTC and attach tzinfo.
+    - If dt has tzinfo â†’ convert to UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def to_iso(dt: Optional[datetime]) -> Optional[str]:
+    """
+    Convert a datetime to ISO-8601 string in UTC (seconds precision).
+
+    Returns None if dt is None.
+    """
+    if dt is None:
+        return None
+    dt_utc = ensure_utc(dt)
+    return dt_utc.isoformat(timespec="seconds")
+
+
+def parse_iso(value: Optional[str]) -> Optional[datetime]:
+    """
+    Parse an ISO-8601 datetime string into a tz-aware UTC datetime.
+
+    Returns None if value is falsy or parsing fails.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return ensure_utc(dt)
+
+
+def human_short(dt: Optional[datetime]) -> str:
+    """
+    Short human-readable representation in local style (UTC):
+
+        '2025-11-26 14:30 UTC'
+
+    If dt is None, returns '-'.
+    """
+    if dt is None:
+        return "-"
+    dt_utc = ensure_utc(dt)
+    return dt_utc.strftime("%Y-%m-%d %H:%M UTC")
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\core\utils.py =====
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\audio.py =====
+# gateway_app/services/audio.py
+"""
+Audio helpers for the WhatsApp gateway.
+
+Responsibilities:
+- Download voice notes from WhatsApp Cloud API given a media_id.
+- Transcribe them using OpenAI (Whisper / gpt-4o-mini-transcribe).
+- Expose `transcribe_whatsapp_audio(media_id, language="es")` for routes.py.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
+from typing import Optional
+
+import requests
+from openai import OpenAI
+
+from gateway_app.config import cfg
+
+logger = logging.getLogger(__name__)
+
+# OpenAI client (uses OPENAI_API_KEY from env)
+_client = OpenAI()
+
+# WhatsApp Cloud API base (same version as whatsapp_api.py)
+WHATSAPP_API_BASE = "https://graph.facebook.com/v21.0"
+
+# Transcription provider (currently we only implement OpenAI)
+_TRANSCRIBE_PROVIDER = (cfg.TRANSCRIBE_PROVIDER or "openai").lower()
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp media download helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_media_url(media_id: str) -> str:
+    """
+    Given a WhatsApp media_id, ask the Graph API for the actual download URL.
+
+    GET /{media-id}
+    Docs:
+      https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
+    """
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        raise RuntimeError("WHATSAPP_CLOUD_TOKEN is not configured; cannot download audio.")
+
+    url = f"{WHATSAPP_API_BASE}/{media_id}"
+    logger.debug("Fetching WhatsApp media metadata from %s", url)
+
+    resp = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    media_url = data.get("url")
+    if not media_url:
+        raise RuntimeError(f"No 'url' field in WhatsApp media metadata for id={media_id!r}")
+    return media_url
+
+
+def _download_media_to_temp(media_url: str) -> str:
+    """
+    Download the media file to a temporary file and return its path.
+    """
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        raise RuntimeError("WHATSAPP_CLOUD_TOKEN is not configured; cannot download audio.")
+
+    logger.debug("Downloading WhatsApp media from %s", media_url)
+
+    resp = requests.get(
+        media_url,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=60,
+        stream=True,
+    )
+    resp.raise_for_status()
+
+    # We don't know the exact extension; ogg/opus is typical for voice notes.
+    fd, path = tempfile.mkstemp(suffix=".ogg")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                f.write(chunk)
+    except Exception:
+        # If writing fails, make sure we don't leave an empty file lying around.
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        raise
+
+    logger.debug("WhatsApp media downloaded to %s", path)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# OpenAI transcription helper
+# ---------------------------------------------------------------------------
+
+
+def _transcribe_with_openai(file_path: str, language: Optional[str] = None) -> str:
+    """
+    Transcribe an audio file using OpenAI.
+
+    Uses the newer audio transcription models. Adjust model name if needed.
+    """
+    # Choose a default model suitable for speech recognition.
+    # If you prefer classic Whisper, you can use "whisper-1".
+    model_name = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+
+    logger.info(
+        "Transcribing audio with OpenAI",
+        extra={"model": model_name, "language": language},
+    )
+
+    with open(file_path, "rb") as f:
+        resp = _client.audio.transcriptions.create(
+            model=model_name,
+            file=f,
+            language=language or None,  # let model auto-detect if not provided
+        )
+
+    # For the 1.x OpenAI client, `resp.text` holds the transcript.
+    text = getattr(resp, "text", "") or ""
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Public API used by routes.py
+# ---------------------------------------------------------------------------
+
+
+def transcribe_whatsapp_audio(media_id: str, language: str = "es") -> str:
+    """
+    Main entrypoint used by the webhook:
+
+        text = audio_svc.transcribe_whatsapp_audio(media_id=audio_media_id, language="es")
+
+    Steps:
+    - Ask WhatsApp API for the media URL.
+    - Download the file to a temp path.
+    - Transcribe with the configured provider (OpenAI).
+    - Return the transcript text (may be empty string if something fails).
+    """
+    if not media_id:
+        logger.warning("transcribe_whatsapp_audio called with empty media_id")
+        return ""
+
+    logger.info("Starting transcription for media_id=%s", media_id)
+
+    tmp_path: Optional[str] = None
+    try:
+        media_url = _get_media_url(media_id)
+        tmp_path = _download_media_to_temp(media_url)
+
+        if _TRANSCRIBE_PROVIDER in {"openai", "whisper", "whisper_openai", "gpt4o"}:
+            return _transcribe_with_openai(tmp_path, language=language)
+
+        # Unknown provider: log and return empty text, rather than crashing webhook.
+        logger.error(
+            "Unknown TRANSCRIBE_PROVIDER=%r; supported: 'openai'",
+            _TRANSCRIBE_PROVIDER,
+        )
+        return ""
+    except Exception:
+        logger.exception("Error while transcribing WhatsApp audio (media_id=%s)", media_id)
+        return ""
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                logger.warning("Could not remove temp audio file %s", tmp_path)
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\db.py =====
+# gateway_app/services/db.py
+"""
+Simple DB helper with Postgres primary + SQLite fallback.
+
+Usage pattern (synchronous, small gateway service):
+
+    from gateway_app.services.db import execute, fetchone, fetchall, insert_and_get_id
+
+This module expects:
+
+    cfg.DATABASE_URL  (from gateway_app.config)
+
+Typical values:
+
+    - Postgres on Render:
+        DATABASE_URL=postgres://user:pass@host:5432/dbname
+      or
+        DATABASE_URL=postgresql://user:pass@host:5432/dbname
+
+    - SQLite (local dev):
+        DATABASE_URL=sqlite:///./gateway.db
+      or
+        DATABASE_URL=./gateway.db  (path -> treated as SQLite file)
+
+Design goals:
+
+    - Prefer Postgres if URL scheme starts with "postgres".
+    - If psycopg2 is unavailable or URL doesn't look Postgresy, use SQLite.
+    - Keep API small and explicit: execute / fetchone / fetchall / insert_and_get_id.
+
+This gateway is not high-throughput, so a simple connect-per-call design is fine.
+If you ever need more throughput, you can add connection pooling for Postgres.
+"""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
+from contextlib import contextmanager
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from gateway_app.config import cfg
+
+logger = logging.getLogger(__name__)
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except Exception:  # psycopg2 is optional
+    psycopg2 = None  # type: ignore[assignment]
+
+
+# ---------- URL helpers ----------
+
+
+def _is_postgres_url(url: str) -> bool:
+    if not url:
+        return False
+    lower = url.lower()
+    return lower.startswith("postgres://") or lower.startswith("postgresql://")
+
+
+def _sqlite_path_from_url(url: str) -> str:
+    """
+    Convert DATABASE_URL into a filesystem path for SQLite.
+
+    Accepts:
+        - "sqlite:///./gateway.db" â†’ "./gateway.db"
+        - "sqlite:////tmp/gateway.db" â†’ "/tmp/gateway.db"
+        - "./gateway.db" â†’ "./gateway.db" (no scheme, treat as raw path)
+    """
+    if not url:
+        return "./gateway.db"
+
+    lower = url.lower()
+    if lower.startswith("sqlite:///"):
+        # relative or local path
+        return url[10:]
+    if lower.startswith("sqlite:////"):
+        # absolute path
+        return url[11:]
+    # no explicit sqlite scheme â†’ treat as path
+    return url
+
+
+# ---------- Connection handling ----------
+
+
+def _connect_postgres(dsn: str):
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 is not installed; cannot use Postgres.")
+    # Using DictCursor for ergonomic row access
+    return psycopg2.connect(dsn, cursor_factory=psycopg2.extras.DictCursor)
+
+
+def _connect_sqlite(path: str):
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _get_connection():
+    """
+    Decide whether to connect to Postgres or SQLite based on DATABASE_URL.
+    """
+    url = cfg.DATABASE_URL or ""
+    if _is_postgres_url(url):
+        logger.debug("Using Postgres connection for DATABASE_URL.")
+        return _connect_postgres(url)
+
+    # Fallback to SQLite
+    sqlite_path = _sqlite_path_from_url(url or "./gateway.db")
+    logger.debug("Using SQLite connection at %s", sqlite_path)
+    return _connect_sqlite(sqlite_path)
+
+
+@contextmanager
+def _cursor(commit: bool = False):
+    """
+    Context manager yielding a DB cursor.
+
+    Args:
+        commit: Whether to commit the transaction on successful exit.
+
+    Yields:
+        (conn, cursor) pair.
+    """
+    conn = _get_connection()
+    cur = conn.cursor()
+    try:
+        yield conn, cur
+        if commit:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# ---------- Public helpers ----------
+
+
+def execute(sql: str, params: Optional[Iterable[Any]] = None, *, commit: bool = False) -> None:
+    """
+    Execute a statement that does not need to return rows.
+
+    Example:
+        execute("UPDATE sessions SET state=%s WHERE wa_id=%s", [state, wa_id], commit=True)
+    """
+    logger.debug("DB execute: %s | params=%s", sql, params)
+    with _cursor(commit=commit) as (_conn, cur):
+        cur.execute(sql, tuple(params or []))
+
+
+def fetchone(sql: str, params: Optional[Iterable[Any]] = None) -> Optional[Dict[str, Any]]:
+    """
+    Execute a SELECT and return a single row or None.
+
+    Row is returned as a dict-like object (for both Postgres and SQLite).
+    """
+    logger.debug("DB fetchone: %s | params=%s", sql, params)
+    with _cursor(commit=False) as (_conn, cur):
+        cur.execute(sql, tuple(params or []))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        # psycopg2.extras.DictRow or sqlite3.Row both behave like mappings
+        return dict(row)
+
+
+def fetchall(sql: str, params: Optional[Iterable[Any]] = None) -> List[Dict[str, Any]]:
+    """
+    Execute a SELECT and return all rows as a list of dicts.
+    """
+    logger.debug("DB fetchall: %s | params=%s", sql, params)
+    with _cursor(commit=False) as (_conn, cur):
+        cur.execute(sql, tuple(params or []))
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+
+def insert_and_get_id(sql: str, params: Optional[Iterable[Any]] = None) -> Any:
+    """
+    Insert a row and return its primary key.
+
+    For Postgres:
+        - Uses "RETURNING id" pattern; caller must include it in the SQL.
+
+    For SQLite:
+        - Uses lastrowid and ignores RETURNING in SQL (if present, you should
+          structure the statement appropriately).
+
+    Example (Postgres style):
+
+        ticket_id = insert_and_get_id(
+            \"\"\"
+            INSERT INTO tickets (wa_id, room, area, priority, detail)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            \"\"\",
+            [wa_id, room, area, priority, detail],
+        )
+    """
+    logger.debug("DB insert_and_get_id: %s | params=%s", sql, params)
+    url = cfg.DATABASE_URL or ""
+    use_postgres = _is_postgres_url(url)
+
+    with _cursor(commit=True) as (conn, cur):
+        cur.execute(sql, tuple(params or []))
+        if use_postgres:
+            row = cur.fetchone()
+            if not row:
+                return None
+            # Using DictCursor, so row["id"] is available
+            if isinstance(row, dict):
+                return row.get("id")
+            try:
+                # DictRow or similar mapping
+                return row["id"]
+            except Exception:
+                return row[0]
+        else:
+            # SQLite
+            return getattr(cur, "lastrowid", None)
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\dsn.py =====
+# gateway_app/services/dsn.py
+"""
+Small helpers for manipulating DSN / URL query parameters.
+
+Typical use:
+- Ensure required parameters (e.g. sslmode=require) are present in a DB URL.
+- Add or override arbitrary query parameters in a URL.
+
+These utilities are generic and can be reused for DATABASE_URL or any other URL.
+"""
+
+from __future__ import annotations
+
+from typing import Mapping
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
+
+def _merge_query(original_query: str, extra: Mapping[str, str]) -> str:
+    """
+    Merge `extra` parameters into an existing query string.
+
+    - Existing keys are overridden by values from `extra`.
+    - Keys with None values in `extra` are ignored.
+    """
+    params = dict(parse_qsl(original_query, keep_blank_values=True))
+
+    for k, v in extra.items():
+        if v is None:
+            continue
+        params[str(k)] = str(v)
+
+    return urlencode(params)
+
+
+def add_query_params(url: str, extra: Mapping[str, str]) -> str:
+    """
+    Return `url` with the query parameters in `extra` added/overridden.
+
+    Example:
+        add_query_params(
+            "postgres://user:pass@host/db?sslmode=require",
+            {"connect_timeout": "5"},
+        )
+    """
+    if not url:
+        return url
+
+    parts = urlsplit(url)
+    new_query = _merge_query(parts.query, extra)
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+    )
+
+
+def with_db_defaults(dsn: str) -> str:
+    """
+    Ensure sensible default parameters for database URLs.
+
+    Currently:
+    - For postgres:// / postgresql:// URLs, ensure sslmode=require if not set.
+
+    You can call this before using the DSN in your DB layer, e.g.:
+
+        from gateway_app.services.dsn import with_db_defaults
+        normalized = with_db_defaults(cfg.DATABASE_URL)
+    """
+    if not dsn:
+        return dsn
+
+    lower = dsn.lower()
+    if not (lower.startswith("postgres://") or lower.startswith("postgresql://")):
+        return dsn
+
+    parts = urlsplit(dsn)
+    params = dict(parse_qsl(parts.query, keep_blank_values=True))
+
+    # Only set defaults if not already present
+    params.setdefault("sslmode", "require")
+
+    new_query = urlencode(params)
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+    )
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\faq_llm.py =====
+# gateway_app/services/faq_llm.py
+"""
+FAQ helper module for the WhatsApp guest assistant.
+
+Responsibilities:
+- Define a simple FAQ data structure (key, question, answer).
+- Provide a best-effort matcher from a user's short message to an FAQ entry.
+- Optionally use an LLM to answer based on the FAQ list when lexical matching fails.
+
+Typical usage from the state machine / webhook:
+
+    from gateway_app.services import faq_llm
+
+    answer = faq_llm.answer_faq(inbound_text)
+    if answer:
+        # send FAQ answer and optionally keep conversation in FAQ state
+        ...
+
+You can later:
+- Replace FAQ_ITEMS with hotel-specific items loaded from a DB.
+- Tune thresholds or completely replace matching logic.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import unicodedata
+from dataclasses import dataclass
+from typing import Iterable, List, Mapping, Optional
+
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+
+_client = OpenAI()
+FAQ_LLM_MODEL = os.getenv("FAQ_LLM_MODEL", "gpt-4.1-mini")
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FAQItem:
+    key: str
+    q: str
+    a: str
+
+
+#: Default, generic FAQ set. Replace/extend per hotel as needed.
+FAQ_ITEMS: List[FAQItem] = [
+    FAQItem(
+        key="checkin_time",
+        q="Â¿A quÃ© hora es el check-in?",
+        a="El check-in es a partir de las 15:00.",
+    ),
+    FAQItem(
+        key="checkout_time",
+        q="Â¿A quÃ© hora es el check-out?",
+        a="El check-out es hasta las 12:00.",
+    ),
+    FAQItem(
+        key="breakfast_time",
+        q="Â¿En quÃ© horario se sirve el desayuno?",
+        a="El desayuno se sirve de 7:00 a 10:30 en el restaurante principal.",
+    ),
+    FAQItem(
+        key="wifi",
+        q="Â¿CÃ³mo funciona el wifi del hotel?",
+        a="La red Wi-Fi es gratuita; el nombre y la clave se encuentran en la tarjeta de la habitaciÃ³n.",
+    ),
+    # AÃ±ade aquÃ­ FAQs genÃ©ricas; para producciÃ³n, carga desde DB o configuraciÃ³n.
+]
+
+
+# ---------------------------------------------------------------------------
+# Normalization helpers
+# ---------------------------------------------------------------------------
+
+
+def _normalize(text: str) -> str:
+    """
+    Normalize text for rough matching:
+    - Lowercase
+    - Strip accents
+    - Remove punctuation except spaces
+    - Collapse whitespace
+    """
+    if not text:
+        return ""
+
+    text = text.strip().lower()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9Ã±Ã¡Ã©Ã­Ã³ÃºÃ¼ ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Static matching (no LLM)
+# ---------------------------------------------------------------------------
+
+
+def _best_static_match(
+    user_text: str,
+    faq_items: Iterable[FAQItem],
+    min_overlap: float = 0.5,
+) -> Optional[FAQItem]:
+    """
+    Very simple token-overlap matcher between the normalized user text and each FAQ question.
+
+    - Computes overlap = |tokens_user âˆ© tokens_question| / |tokens_question|.
+    - Returns the FAQ with highest overlap, if >= min_overlap.
+    """
+    norm_user = _normalize(user_text)
+    if not norm_user:
+        return None
+
+    user_tokens = set(norm_user.split())
+    if not user_tokens:
+        return None
+
+    best_item: Optional[FAQItem] = None
+    best_score = 0.0
+
+    for item in faq_items:
+        norm_q = _normalize(item.q)
+        q_tokens = set(norm_q.split())
+        if not q_tokens:
+            continue
+
+        overlap = len(user_tokens & q_tokens) / float(len(q_tokens))
+        if overlap > best_score:
+            best_score = overlap
+            best_item = item
+
+    if best_item and best_score >= min_overlap:
+        logger.debug(
+            "FAQ static match",
+            extra={"key": best_item.key, "score": best_score, "user": user_text},
+        )
+        return best_item
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# LLM-based matching as fallback
+# ---------------------------------------------------------------------------
+
+_FAQ_SYSTEM_PROMPT = """
+You are an FAQ assistant for a hotel WhatsApp bot (Hestia).
+
+You receive:
+- A list of FAQs (question + answer).
+- A short guest message.
+
+Your job:
+1) Decide if the guest message matches one of the existing FAQs.
+2) If it matches, answer using ONLY the information in the FAQ list.
+3) If it does NOT match any FAQ, answer with exactly: NO_MATCH
+
+Constraints:
+- Always answer in the same language as the guest (mostly Spanish).
+- Be concise and friendly when answering.
+"""
+
+
+def _call_faq_llm(user_text: str, faq_items: Iterable[FAQItem]) -> Optional[str]:
+    """
+    Ask the LLM to pick or synthesize an answer from the FAQ list.
+
+    Returns:
+        - A short answer as string, or
+        - None if the LLM decides there is no relevant FAQ (NO_MATCH or error).
+    """
+    faq_block_lines = []
+    for item in faq_items:
+        faq_block_lines.append(f"- [{item.key}] Q: {item.q}\n  A: {item.a}")
+    faq_block = "\n".join(faq_block_lines)
+
+    try:
+        resp = _client.responses.create(
+            model=FAQ_LLM_MODEL,
+            input=[
+                {"role": "system", "content": _FAQ_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"FAQs:\n{faq_block}\n\n"
+                        f"Mensaje del huÃ©sped:\n{user_text}\n\n"
+                        "Responde solo con la respuesta final o NO_MATCH."
+                    ),
+                },
+            ],
+            max_output_tokens=256,
+        )
+        text = resp.output[0].content[0].text.strip()
+    except Exception:
+        logger.exception("FAQ LLM call failed")
+        return None
+
+    if not text or text.upper().startswith("NO_MATCH"):
+        return None
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def answer_faq(
+    user_text: str,
+    faq_items: Optional[Iterable[FAQItem]] = None,
+    use_llm_fallback: bool = True,
+) -> Optional[str]:
+    """
+    Try to answer `user_text` using the FAQ list.
+
+    Strategy:
+    1) Try static token-overlap matching (fast, deterministic).
+    2) If no static match and use_llm_fallback=True, ask the LLM to reason over the FAQ list.
+
+    Returns:
+        - The answer text (string) if a relevant FAQ was found.
+        - None if no FAQ applies.
+    """
+    items = list(faq_items) if faq_items is not None else FAQ_ITEMS
+
+    # 1) Static match first
+    static_item = _best_static_match(user_text, items)
+    if static_item:
+        return static_item.a
+
+    # 2) Optional LLM fallback
+    if use_llm_fallback:
+        llm_answer = _call_faq_llm(user_text, items)
+        return llm_answer
+
+    return None
+
+
+def has_faq_match(user_text: str, faq_items: Optional[Iterable[FAQItem]] = None) -> bool:
+    """
+    Convenience helper: returns True if `answer_faq` finds any match.
+    """
+    return answer_faq(user_text, faq_items=faq_items, use_llm_fallback=False) is not None
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\guest_llm.py =====
+# gateway_app/services/guest_llm.py
+"""
+Guest NLU module for the WhatsApp assistant (Hestia).
+
+Responsibilities:
+- Call OpenAI to interpret short WhatsApp messages.
+- Return a normalized dict with intent, area, priority, room, detail and flags.
+- Provide a helper to render the confirmation draft message.
+
+The LLM is instructed to ALWAYS output a strict JSON object with this shape:
+
+{
+  "intent": "ticket_request" | "general_chat" | "handoff_request" | "cancel" | "help" | "not_understood",
+  "area": "MANTENCION" | "HOUSEKEEPING" | "ROOMSERVICE" | null,
+  "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null,
+  "room": string | null,
+  "detail": string | null,
+  "is_smalltalk": boolean,
+  "wants_handoff": boolean,
+  "is_cancel": boolean,
+  "is_help": boolean
+}
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from typing import Any, Dict, Optional
+
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+
+_client = OpenAI()
+LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4.1-mini")
+
+
+_BASE_SYSTEM_PROMPT = """
+You are the NLU module for Hestia, a WhatsApp assistant for hotel guests.
+Messages are mostly in Spanish, sometimes English or German.
+Your job is to interpret SHORT WhatsApp messages and return a JSON object with this exact shape:
+
+{
+  "intent": "ticket_request" | "general_chat" | "handoff_request" | "cancel" | "help" | "not_understood",
+  "area": "MANTENCION" | "HOUSEKEEPING" | "ROOMSERVICE" | null,
+  "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null,
+  "room": string | null,
+  "detail": string | null,
+  "is_smalltalk": boolean,
+  "wants_handoff": boolean,
+  "is_cancel": boolean,
+  "is_help": boolean
+}
+
+You MUST return valid JSON only. No explanations, no extra keys, no trailing commas.
+
+INTENT RULES AND FLAGS
+
+1) ticket_request
+- The guest is reporting a problem or asking for something related to the hotel stay.
+- Example: "necesito toallas", "no funciona el aire", "quiero pedir cena", "faltan almohadas".
+- intent = "ticket_request".
+- Fill area / priority / room / detail when you can infer them.
+
+2) general_chat / smalltalk / closing
+Use intent = "general_chat" and is_smalltalk = true when the message is mainly:
+- greeting,
+- thanking,
+- friendly chit-chat,
+- or a polite way of saying they do NOT need more help right now.
+
+Typical examples of general_chat / closing (and close variations, even with typos, emojis or extra letters):
+- "gracias", "muchas gracias",
+- "no gracias", "no muchas gracias", "no, muchas gracias",
+- "todo bien", "todo bien gracias", "todo ok", "todo bn gracias",
+- "estoy bien", "estoy bien, gracias",
+- "listo, muchas gracias", "perfecto, gracias", "gracias por la ayuda",
+- "no por ahora, gracias", "por ahora estoy bien".
+
+For ALL these cases:
+- intent = "general_chat"
+- is_smalltalk = true
+- is_cancel = false   â† IMPORTANT: do NOT treat them as cancellation.
+
+3) handoff_request (wants human / reception)
+- The guest clearly wants to talk to a person (reception, staff, human agent).
+- Examples: "quiero hablar con alguien", "pÃ¡same con recepciÃ³n", "human please", "can I talk to a real person?".
+- intent = "handoff_request"
+- wants_handoff = true
+- is_cancel = false (unless they also explicitly say they want to cancel a ticket).
+
+4) cancel
+Use intent = "cancel" and is_cancel = true ONLY when the guest clearly wants to cancel
+a previous request / ticket / order, for example:
+- "cancela el ticket",
+- "cancela la solicitud",
+- "quiero cancelar el pedido",
+- "olvÃ­dalo, ya no lo necesito",
+- "anula ese pedido",
+- "ya no quiero eso / ya no hace falta, cancela".
+
+Important:
+- Polite closing phrases like "no gracias", "no muchas gracias", "todo bien, gracias"
+  are NOT cancellations. For them: intent = "general_chat", is_smalltalk = true, is_cancel = false.
+
+5) help
+- The guest asks what the assistant can do, or explicitly asks for help with the bot.
+- Examples: "ayuda", "help", "quÃ© puedes hacer", "como funcionas", "no entiendo cÃ³mo usar esto".
+- intent = "help"
+- is_help = true
+
+6) not_understood
+- The message is unclear, random, or you cannot classify it.
+- Example: a long unrelated story, or just random characters.
+- intent = "not_understood"
+- All other flags should be false unless clearly indicated.
+
+AREA HINTS
+
+Infer area when possible (otherwise use null):
+- HOUSEKEEPING â†’ towels, sheets, pillows, cleaning, trash, amenities, soap, shampoo.
+- MANTENCION â†’ shower, bathroom, toilet, sink, AC, heating, lights, power, plugs, TV, doors, windows, leaks.
+- ROOMSERVICE â†’ food, drinks, breakfast, dinner, snacks, orders to the room, beverages.
+
+PRIORITY HINTS
+
+Infer priority when possible (otherwise null):
+- URGENTE â†’ emergency, flooding, fire, strong leak, dangerous electrical issue, guest cannot stay in room.
+- ALTA â†’ important problem that should be fixed soon.
+- MEDIA â†’ normal request, "cuando puedan".
+- BAJA â†’ low-impact, minor issues, nice-to-have.
+
+ROOM AND DETAIL
+
+- room: extract a clear room number if present (e.g., from "312", "hab 312", "cuarto 127").
+- detail: short natural-language description of the issue or request.
+  If the message is only smalltalk / greeting, use null for detail.
+
+If something is not clearly present, use null for that field.
+Always follow the schema exactly and output ONLY the JSON object.
+"""
+
+
+def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) -> Optional[Dict[str, Any]]:
+    """
+    Helper that uses the Responses API with response_format=json_object and parses the result.
+    """
+    try:
+        resp = _client.responses.create(
+            model=LLM_MODEL,
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            max_output_tokens=max_tokens,
+        )
+        content = resp.output[0].content[0].text
+        return json.loads(content)
+    except Exception as e:
+        logger.warning("[WARN] guest_llm json call failed: %s", e, exc_info=True)
+        return None
+
+
+def analyze_guest_message(text: str, session: dict, state: str) -> dict:
+    """
+    Main NLU entry point.
+
+    Args:
+        text: Inbound guest message (plain text).
+        session: Per-guest session dict (for future personalization, currently unused).
+        state: Current DFA/state machine label (string), passed as context to the LLM.
+
+    Returns:
+        A dict with the normalized fields as described in _BASE_SYSTEM_PROMPT.
+        If parsing fails, returns {}.
+    """
+    if not text or not text.strip():
+        return {}
+
+    prompt = (
+        f"Estado DFA actual: {state}\n\n"
+        f"Mensaje del huÃ©sped:\n{text}"
+    )
+
+    data = _call_json_llm(_BASE_SYSTEM_PROMPT, prompt)
+    if not data or not isinstance(data, dict):
+        return {}
+
+    # Normalize / guard rails
+    intent = data.get("intent")
+    # Map `unknown` to `not_understood` just in case the model uses the old label.
+    if intent == "unknown":
+        intent = "not_understood"
+
+    return {
+        "intent": intent,
+        "area": data.get("area"),
+        "priority": data.get("priority"),
+        "room": data.get("room"),
+        "detail": data.get("detail"),
+        "is_smalltalk": bool(data.get("is_smalltalk")),
+        "wants_handoff": bool(data.get("wants_handoff")),
+        "is_cancel": bool(data.get("is_cancel")),
+        "is_help": bool(data.get("is_help")),
+    }
+
+
+_CONFIRM_SYSTEM_PROMPT = """
+You help write short, friendly WhatsApp replies for a hotel guest assistant (Hestia).
+Always answer in Spanish, using a warm but concise tone.
+You will receive the context and must return a single string (no JSON).
+"""
+
+
+def render_confirm_draft(summary: str, session: dict) -> str:
+    """
+    Render the confirmation message sent to the guest before creating a ticket.
+
+    Currently this is a template-based function (no LLM call), but it is kept
+    here so you can later swap to an LLM-based variant using _CONFIRM_SYSTEM_PROMPT
+    if desired.
+    """
+    name = (session.get("guest_name") or "HuÃ©sped").strip()
+    return (
+        f"ðŸ“ {name}, este es el resumen de tu solicitud:\n\n"
+        f"{summary}\n\n"
+        "Si todo estÃ¡ correcto responde *SI* para crear el ticket.\n"
+        "Si quieres cambiar algo responde *NO* y podrÃ¡s editar Ã¡rea, prioridad, "
+        "habitaciÃ³n o detalle."
+    )
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\notify.py =====
+# gateway_app/services/notify.py
+"""
+Internal notification helpers for the WhatsApp gateway.
+
+Responsibilities:
+- Provide a unified way to send internal notifications (errors, debug, events)
+  to another service (Slack bridge, core Hestia app, etc.).
+- If INTERNAL_NOTIFY_URL is not configured, notifications are logged only.
+
+Environment:
+- INTERNAL_NOTIFY_TOKEN: bearer token for auth (optional but recommended).
+- INTERNAL_NOTIFY_URL: HTTP endpoint to receive notifications (optional).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any, Dict, Optional
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+INTERNAL_NOTIFY_URL = os.getenv("INTERNAL_NOTIFY_URL")
+INTERNAL_NOTIFY_TOKEN = os.getenv("INTERNAL_NOTIFY_TOKEN")
+DEFAULT_TIMEOUT = 5
+
+
+def _headers() -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if INTERNAL_NOTIFY_TOKEN:
+        headers["Authorization"] = f"Bearer {INTERNAL_NOTIFY_TOKEN}"
+    return headers
+
+
+def notify_internal(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Generic internal notification.
+
+    Args:
+        event: Short event type label (e.g., "whatsapp_inbound", "ticket_created", "error").
+        payload: Optional structured payload (dict) with extra data.
+
+    Behavior:
+    - If INTERNAL_NOTIFY_URL is set, POSTs JSON to that endpoint.
+    - Otherwise, logs the event at INFO level.
+    """
+    data = {
+        "event": event,
+        "payload": payload or {},
+    }
+
+    if not INTERNAL_NOTIFY_URL:
+        # Fallback: just log
+        logger.info("Internal notify (no URL configured): %s", data)
+        return
+
+    try:
+        resp = requests.post(
+            INTERNAL_NOTIFY_URL,
+            headers=_headers(),
+            json=data,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        if not resp.ok:
+            logger.warning(
+                "Internal notify failed %s: %s",
+                resp.status_code,
+                resp.text[:500],
+            )
+    except Exception:
+        logger.exception("Internal notify request error")
+
+
+def notify_error(message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Convenience helper for error notifications.
+    """
+    payload = {"message": message}
+    if extra:
+        payload["extra"] = extra
+    notify_internal("error", payload)
+
+
+def notify_debug(message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Convenience helper for debug / trace notifications.
+    """
+    payload = {"message": message}
+    if extra:
+        payload["extra"] = extra
+    notify_internal("debug", payload)
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\sla.py =====
+# gateway_app/services/sla.py
+"""
+SLA helpers for Hestia tickets.
+
+Responsibility:
+- Provide simple, centralized logic to compute due times for tickets
+  based on their priority.
+- Offer small utilities to check if something is overdue.
+
+This module is intentionally small and independent so it can be reused
+by the WhatsApp gateway or the core Hestia app.
+
+Priorities we handle (case-insensitive):
+- "URGENTE"
+- "ALTA"
+- "MEDIA"
+- "BAJA"
+
+You can adjust the SLA minutes in PRIORITY_SLA_MINUTES as needed.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional
+
+# Default SLA durations in minutes per priority.
+# Adjust these to match the rules you actually use in production.
+PRIORITY_SLA_MINUTES: Dict[str, int] = {
+    "URGENTE": 15,    # 15 minutes
+    "ALTA": 60,       # 1 hour
+    "MEDIA": 180,     # 3 hours
+    "BAJA": 720,      # 12 hours
+}
+
+# Fallback SLA if priority is missing or unknown
+DEFAULT_SLA_MINUTES: int = 240  # 4 hours
+
+
+def get_sla_delta(priority: Optional[str]) -> timedelta:
+    """
+    Return a timedelta representing the SLA for the given priority.
+
+    Args:
+        priority: Priority string ("URGENTE", "ALTA", "MEDIA", "BAJA", etc.)
+
+    Returns:
+        timedelta for the SLA window.
+    """
+    if not priority:
+        minutes = DEFAULT_SLA_MINUTES
+    else:
+        key = priority.strip().upper()
+        minutes = PRIORITY_SLA_MINUTES.get(key, DEFAULT_SLA_MINUTES)
+    return timedelta(minutes=minutes)
+
+
+def compute_due(
+    priority: Optional[str],
+    created_at: datetime,
+    *,
+    tz: Optional[timezone] = timezone.utc,
+) -> datetime:
+    """
+    Compute the due datetime for a ticket given its priority and creation time.
+
+    Args:
+        priority: Priority string ("URGENTE", "ALTA", "MEDIA", "BAJA", etc.)
+        created_at: Datetime when the ticket/request was created.
+                    Can be naive or timezone-aware.
+        tz: Timezone to enforce if created_at is naive. Default: UTC.
+
+    Returns:
+        Datetime when the ticket is due.
+    """
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=tz or timezone.utc)
+
+    delta = get_sla_delta(priority)
+    return created_at + delta
+
+
+def is_overdue(due_at: datetime, *, now: Optional[datetime] = None) -> bool:
+    """
+    Check if a due datetime is in the past.
+
+    Args:
+        due_at: Deadline.
+        now: Current time. If None, uses datetime.now(due_at.tzinfo or UTC).
+
+    Returns:
+        True if due_at < now, False otherwise.
+    """
+    if now is None:
+        tzinfo = due_at.tzinfo or timezone.utc
+        now = datetime.now(tz=tzinfo)
+    return due_at < now
+
+
+def remaining_time(due_at: datetime, *, now: Optional[datetime] = None) -> timedelta:
+    """
+    Get the remaining time until due_at (can be negative if already overdue).
+
+    Args:
+        due_at: Deadline.
+        now: Current time. If None, uses datetime.now(due_at.tzinfo or UTC).
+
+    Returns:
+        A timedelta that may be negative if overdue.
+    """
+    if now is None:
+        tzinfo = due_at.tzinfo or timezone.utc
+        now = datetime.now(tz=tzinfo)
+    return due_at - now
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\services\whatsapp_api.py =====
+# gateway_app/services/whatsapp_api.py
+"""
+Wrapper para la WhatsApp Cloud API.
+
+Responsabilidades principales:
+- Construir el endpoint correcto usando WHATSAPP_CLOUD_PHONE_ID.
+- Adjuntar el token de acceso WHATSAPP_CLOUD_TOKEN.
+- Proveer funciones sencillas para:
+  - Enviar mensajes de texto.
+  - Enviar plantillas.
+  - Marcar mensajes como leÃ­dos.
+  - Enviar reacciones.
+  - (Opcional) enviar 'typing' / acciÃ³n de escritura.
+
+Este mÃ³dulo NO sabe nada del negocio de Hestia; solo de hablar con la API.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
+
+import requests
+
+from gateway_app.config import cfg
+
+logger = logging.getLogger(__name__)
+
+WHATSAPP_API_BASE = "https://graph.facebook.com/v21.0"
+
+
+class WhatsAppAPIError(RuntimeError):
+    """Errores de llamada a la WhatsApp Cloud API."""
+
+
+def _messages_url() -> str:
+    """
+    Construye la URL base para POST /{phone-number-id}/messages.
+    """
+    phone_id = (cfg.WHATSAPP_CLOUD_PHONE_ID or "").strip()
+    if not phone_id:
+        logger.error("WHATSAPP_CLOUD_PHONE_ID no estÃ¡ configurado.")
+        raise WhatsAppAPIError("WHATSAPP_CLOUD_PHONE_ID is missing.")
+    return f"{WHATSAPP_API_BASE}/{phone_id}/messages"
+
+
+def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """
+    Cabeceras comunes para todas las llamadas a la Cloud API.
+    """
+    token = (cfg.WHATSAPP_CLOUD_TOKEN or "").strip()
+    if not token:
+        logger.error("WHATSAPP_CLOUD_TOKEN no estÃ¡ configurado.")
+        raise WhatsAppAPIError("WHATSAPP_CLOUD_TOKEN is missing.")
+
+    headers: Dict[str, str] = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper para enviar un POST a /{phone-number-id}/messages con manejo de errores.
+    """
+    url = _messages_url()
+    logger.info("Enviando mensaje a WhatsApp Cloud API", extra={"payload": payload})
+
+    resp = requests.post(url, headers=_headers(), json=payload, timeout=15)
+
+    try:
+        data = resp.json()
+    except Exception:
+        logger.exception("No se pudo decodificar la respuesta de WhatsApp como JSON")
+        # Si no es JSON pero el status es OK, aÃºn asÃ­ fallamos controladamente
+        if resp.ok:
+            raise WhatsAppAPIError("WhatsApp response is not valid JSON.")
+        resp.raise_for_status()
+        raise WhatsAppAPIError("WhatsApp request failed and response is not JSON.")
+
+    if not resp.ok:
+        logger.error(
+            "Error en WhatsApp API %s: %s", resp.status_code, data
+        )
+        raise WhatsAppAPIError(f"WhatsApp API error {resp.status_code}: {data}")
+
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Funciones pÃºblicas de envÃ­o
+# ---------------------------------------------------------------------------
+
+
+def send_whatsapp_text(
+    to: str,
+    text: str,
+    *,
+    preview_url: bool = False,
+) -> Dict[str, Any]:
+    """
+    Enviar un mensaje de texto sencillo a un nÃºmero de WhatsApp.
+
+    Args:
+        to: wa_id del destinatario (ej. '56998765432').
+        text: cuerpo del mensaje.
+        preview_url: si es True, permite previsualizaciÃ³n de enlaces (si los hay).
+
+    Returns:
+        dict con el JSON de respuesta de la API.
+    """
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {
+            "body": text,
+            "preview_url": preview_url,
+        },
+    }
+    return _post(payload)
+
+
+def send_whatsapp_template(
+    to: str,
+    template_name: str,
+    *,
+    lang: str = "es",
+    components: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Enviar una plantilla de WhatsApp previamente aprobada.
+
+    Args:
+        to: wa_id del destinatario.
+        template_name: nombre EXACTO de la plantilla en Meta.
+        lang: cÃ³digo de idioma, por ejemplo 'es', 'es_CL', 'en_US'.
+        components: lista opcional de 'components' para variables de la plantilla.
+
+    Ejemplo components:
+        [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": "HuÃ©sped"},
+                    {"type": "text", "text": "123"},
+                ],
+            }
+        ]
+    """
+    template: Dict[str, Any] = {
+        "name": template_name,
+        "language": {"code": lang},
+    }
+    if components:
+        template["components"] = components
+
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": template,
+    }
+    return _post(payload)
+
+
+def mark_whatsapp_message_read(message_id: str) -> Dict[str, Any]:
+    """
+    Marcar un mensaje entrante como 'read' en la Cloud API.
+
+    Args:
+        message_id: id del mensaje recibido (wamid...)
+
+    Returns:
+        dict con el JSON de respuesta.
+    """
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+    }
+    return _post(payload)
+
+
+def send_whatsapp_reaction(
+    to: str,
+    message_id: str,
+    emoji: str,
+) -> Dict[str, Any]:
+    """
+    Enviar una reacciÃ³n (emoji) a un mensaje.
+
+    Args:
+        to: wa_id del destinatario.
+        message_id: id del mensaje al que reaccionamos.
+        emoji: carÃ¡cter emoji, por ejemplo "ðŸ‘" o "âœ…".
+    """
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "reaction",
+        "reaction": {
+            "message_id": message_id,
+            "emoji": emoji,
+        },
+    }
+    return _post(payload)
+
+
+def send_whatsapp_typing(
+    to: str,
+    *,
+    typing_on: bool = True,
+) -> Dict[str, Any]:
+    """
+    Enviar seÃ±al de 'escribiendo' (typing).
+
+    Nota: La estructura exacta puede variar segÃºn la versiÃ³n de la API.
+    Ajusta si Meta cambia el formato.
+
+    Args:
+        to: wa_id del destinatario.
+        typing_on: True para "escribiendo", False para detener.
+
+    Returns:
+        dict con la respuesta de la API.
+    """
+    # Algunos ejemplos de documentaciÃ³n usan "typing" con valores "typing" / "stopped".
+    state = "typing" if typing_on else "stopped"
+
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "typing",
+        "typing": state,
+    }
+    return _post(payload)
+
+# ---------------------------------------------------------------------------
+# Backwards-compatible wrapper names used by routes.py
+# ---------------------------------------------------------------------------
+
+
+def send_text_message(
+    to: str,
+    text: str,
+    *,
+    preview_url: bool = False,
+) -> Dict[str, Any]:
+    """
+    Backwards-compatible alias for send_whatsapp_text, so older code that calls
+    whatsapp_api.send_text_message() keeps working.
+    """
+    return send_whatsapp_text(to=to, text=text, preview_url=preview_url)
+
+
+def mark_message_as_read(message_id: str) -> Dict[str, Any]:
+    """
+    Backwards-compatible alias for mark_whatsapp_message_read, so older code
+    that calls whatsapp_api.mark_message_as_read() keeps working.
+    """
+    return mark_whatsapp_message_read(message_id)
+
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\templates\base.html =====
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\templates\error.html =====
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\tests\test_faq_llm.py =====
+# gateway_app/tests/test_faq_llm.py
+
+def test_faq_items_structure():
+    from gateway_app.services import faq_llm
+
+    assert isinstance(faq_llm.FAQ_ITEMS, list)
+    assert faq_llm.FAQ_ITEMS, "FAQ_ITEMS no deberÃ­a estar vacÃ­o"
+
+    for item in faq_llm.FAQ_ITEMS:
+        assert isinstance(item, dict)
+        assert "q" in item, "Cada FAQ debe tener clave 'q'"
+        assert "a" in item, "Cada FAQ debe tener clave 'a'"
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\tests\test_guest_llm.py =====
+# gateway_app/tests/test_guest_llm.py
+
+from gateway_app.services.guest_llm import render_confirm_draft
+
+
+def test_render_confirm_draft_uses_guest_name_and_summary():
+    session = {"guest_name": "Javier"}
+    summary = "Se cambiarÃ¡n las toallas de la habitaciÃ³n 101."
+    text = render_confirm_draft(summary, session)
+
+    assert "Javier" in text
+    assert summary in text
+    assert "SI" in text.upper()  # deberÃ­a invitar a responder SI
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\tests\test_state_machine.py =====
+# gateway_app/tests/test_state_machine.py
+
+def test_state_module_importable():
+    """
+    Smoke test muy simple: el mÃ³dulo de estado se debe poder importar.
+    No toca la BD ni el LLM.
+    """
+    import gateway_app.core.state as state_module  # noqa: F401
+
+    # Si llegamos aquÃ­ sin excepciÃ³n, el test pasa
+    assert True
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\tests\test_webhook_smoke.py =====
+# gateway_app/tests/test_webhook_smoke.py
+
+from gateway_app import create_app
+
+
+def test_webhook_blueprint_registered():
+    """
+    Comprueba que la app se crea y que el blueprint 'webhook'
+    estÃ¡ registrado en el mapa de URLs.
+    """
+    app = create_app()
+    endpoints = {rule.endpoint for rule in app.url_map.iter_rules()}
+
+    assert any(
+        ep.startswith("webhook.") for ep in endpoints
+    ), "No se encontrÃ³ ningÃºn endpoint del blueprint 'webhook'"
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\__pycache__\__init__.cpython-313.pyc =====
+ó
+
+    ØD'i›  ã                  óh   • S r SSKJr  SSKrSSKJr  SSKJr  SSKJ	r	  SSK
+Jr  SSKJr  SS	 jr
+S
+/rg)z>
+Application factory for the Hestia WhatsApp gateway service.
+é    )ÚannotationsN)ÚFlask)Úcfg)Úregister_filters)Úconfigure_loggingé   c                 óf  • [        5         [        R                  " [        5      n U R	                  S5        [        [        SSS9n[        R                  UR                  S'   [        R                  UR                  S'   [        R                  UR                  S'   [        R                  UR                  S'   [        R                  UR                  S	'   [        R                  UR                  S
+'   [        R                  UR                  S'   [        R                  (       d  SOS
+UR                  S'   [        R                  UR                  S'   [        R                   UR                  S'   [#        U5        SSKJn  UR)                  U5        SSKJn  U" U5        U R	                  S5        U$ )z‚
+Create and configure the Flask application.
+
+This is used by:
+  - run.py (for local dev)
+  - wsgi.py / gunicorn (for production)
+z$Creating Hestia WhatsApp gateway appÚ	templatesÚstatic)Útemplate_folderÚ
+static_folderÚDATABASE_URLÚOPENAI_API_KEYÚTRANSCRIBE_PROVIDERÚWHATSAPP_CLOUD_PHONE_IDÚWHATSAPP_CLOUD_TOKENÚWHATSAPP_VERIFY_TOKENÚINTERNAL_NOTIFY_TOKENÚ
+productionÚdevelopmentÚENVÚDEBUGÚTESTINGr   )Úbp)Úregister_error_handlersz#Hestia WhatsApp gateway app created)r   ÚloggingÚ	getLoggerÚ__name__Úinfor   r   r   Úconfigr   r   r   r   r   r   r   r   r   Úgateway_app.blueprints.webhookr   Úregister_blueprintÚgateway_app.core.errorsr   )ÚloggerÚappÚ
+webhook_bpr   s       ÚeC:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\__init__.pyÚ
+create_appr(      sF  € ô ÔÜ
+×
+Ò
+œxÓ
+(€FØ
+‡KKÐ6Ô7ä
+ÜØ#Øñ€Cô "%×!1Ñ!1€C‡JJˆ~ÑÜ#&×#5Ñ#5€C‡JJÐÑ Ü(+×(?Ñ(?€C‡JJÐ$Ñ%Ü,/×,GÑ,G€C‡JJÐ(Ñ)Ü),×)AÑ)A€C‡JJÐ%Ñ&Ü*-×*CÑ*C€C‡JJÐ&Ñ'Ü*-×*CÑ*C€C‡JJÐ&Ñ'Ü,/¯I¯I™¸=€C‡JJˆuÑÜŸ)™)€C‡JJˆwÑÜŸK™K€C‡JJˆyÑô SÔõ @à×Ñ˜:Ô&õ @á˜CÔ à
+‡KKÐ5Ô6Ø€Jó    r(   )Úreturnr   )Ú__doc__Ú
+__future__r   r   Úflaskr   Úgateway_app.configr   Úgateway_app.filtersr   Úgateway_app.logging_cfgr   r    r(   Ú__all__© r)   r'   Ú<module>r3      s0   ðñõ #ã å å "Ý 0Ý 5å ô-ð` ˆ.r)   
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\config.py =====
+# gateway_app/config.py
+import os
+from dataclasses import dataclass
+
+
+def _get_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.lower() in {"1", "true", "yes", "y", "on"}
+
+
+@dataclass(frozen=True)
+class Config:
+    # Core envs from Render
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    INTERNAL_NOTIFY_TOKEN: str = os.getenv("INTERNAL_NOTIFY_TOKEN", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    TRANSCRIBE_PROVIDER: str = os.getenv("TRANSCRIBE_PROVIDER", "openai")
+
+    WHATSAPP_CLOUD_PHONE_ID: str = os.getenv("WHATSAPP_CLOUD_PHONE_ID", "")
+    WHATSAPP_CLOUD_TOKEN: str = os.getenv("WHATSAPP_CLOUD_TOKEN", "")
+    WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
+
+    # Runtime / logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    ENV: str = os.getenv("ENV", "production")
+
+    # Flags used by create_app()
+    TESTING: bool = _get_bool("TESTING", False)
+    DEBUG: bool = _get_bool("DEBUG", False)
+
+
+cfg = Config()
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\filters.py =====
+# gateway_app/filters.py
+"""
+Jinja2 template filters for the WhatsApp gateway service.
+
+Right now this is very small, but having a separate module keeps
+things organized and easier to extend later.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from flask import Flask
+
+
+def format_datetime(value: Any, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """
+    Format a datetime or ISO8601 string for display.
+
+    If parsing fails, returns the original value as string.
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        # Try to parse string-like values
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except Exception:
+            return str(value)
+
+    return dt.strftime(fmt)
+
+
+def nl2br(value: str | None) -> str:
+    """
+    Replace newlines with <br> tags for HTML rendering.
+    """
+    if not value:
+        return ""
+    return value.replace("\n", "<br>")
+
+
+def register_filters(app: Flask) -> None:
+    """
+    Register all custom filters on the given Flask app.
+    """
+    app.jinja_env.filters["datetime"] = format_datetime
+    app.jinja_env.filters["nl2br"] = nl2br
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\logging_cfg.py =====
+# gateway_app/logging_cfg.py
+"""
+Central logging configuration for the WhatsApp gateway service.
+
+Use configure_logging() early in app startup (e.g., in gateway_app/__init__.py)
+so that all modules share a consistent logging setup.
+"""
+
+from __future__ import annotations
+
+import logging
+from logging.config import dictConfig
+
+from gateway_app.config import cfg
+
+
+def configure_logging() -> None:
+    """
+    Configure Python logging using dictConfig.
+
+    - Log level is INFO by default, DEBUG when cfg.DEBUG is True.
+    - All logs go to stdout (compatible with Render / container logs).
+    """
+    level = "DEBUG" if cfg.DEBUG else "INFO"
+
+    dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                },
+            },
+            "handlers": {
+                "wsgi": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "stream": "ext://sys.stdout",
+                },
+            },
+            "root": {
+                "level": level,
+                "handlers": ["wsgi"],
+            },
+            # Optionally tweak noisy libraries here
+            "loggers": {
+                "urllib3": {"level": "WARNING"},
+                "requests": {"level": "WARNING"},
+                "openai": {"level": "WARNING"},
+            },
+        }
+    )
+
+    logging.getLogger(__name__).info("Logging configured (level=%s)", level)
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\wsgi.py =====
+# gateway_app/wsgi.py
+"""
+WSGI entrypoint for the WhatsApp gateway app package.
+
+This is what gunicorn will import as `gateway_app.wsgi:app`.
+"""
+
+from __future__ import annotations
+
+from gateway_app import create_app
+
+# WSGI application object
+app = create_app()
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gateway_app\__init__.py =====
+# gateway_app/__init__.py
+"""
+Application factory for the Hestia WhatsApp gateway service.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from flask import Flask
+
+from gateway_app.config import cfg
+from gateway_app.filters import register_filters
+from gateway_app.logging_cfg import configure_logging
+
+from .config import cfg
+
+
+def create_app() -> Flask:
+    """
+    Create and configure the Flask application.
+
+    This is used by:
+      - run.py (for local dev)
+      - wsgi.py / gunicorn (for production)
+    """
+    # Configure Python logging first
+    configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Creating Hestia WhatsApp gateway app")
+
+    app = Flask(
+        __name__,
+        template_folder="templates",
+        static_folder="static",
+    )
+
+    # Basic config surface (so you can inspect from `app.config`)
+    app.config["DATABASE_URL"] = cfg.DATABASE_URL
+    app.config["OPENAI_API_KEY"] = cfg.OPENAI_API_KEY
+    app.config["TRANSCRIBE_PROVIDER"] = cfg.TRANSCRIBE_PROVIDER
+    app.config["WHATSAPP_CLOUD_PHONE_ID"] = cfg.WHATSAPP_CLOUD_PHONE_ID
+    app.config["WHATSAPP_CLOUD_TOKEN"] = cfg.WHATSAPP_CLOUD_TOKEN
+    app.config["WHATSAPP_VERIFY_TOKEN"] = cfg.WHATSAPP_VERIFY_TOKEN
+    app.config["INTERNAL_NOTIFY_TOKEN"] = cfg.INTERNAL_NOTIFY_TOKEN
+    app.config["ENV"] = "production" if not cfg.DEBUG else "development"
+    app.config["DEBUG"] = cfg.DEBUG
+    app.config["TESTING"] = cfg.TESTING
+
+    # Register Jinja filters
+    register_filters(app)
+
+    # Register blueprints
+    from gateway_app.blueprints.webhook import bp as webhook_bp
+
+    app.register_blueprint(webhook_bp)
+
+    # Error handlers (404/500 JSON + HTML)
+    from gateway_app.core.errors import register_error_handlers
+
+    register_error_handlers(app)
+
+    logger.info("Hestia WhatsApp gateway app created")
+    return app
+
+
+__all__ = ["create_app"]
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\gunicorn.conf.py =====
+# gunicorn.conf.py
+import multiprocessing
+import os
+
+# Render establece $PORT automÃ¡ticamente
+bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
+
+# Workers: 2 * CPU + 1 por defecto, pero configurable
+workers = int(os.getenv("WEB_CONCURRENCY", str(multiprocessing.cpu_count() * 2 + 1)))
+
+timeout = int(os.getenv("GUNICORN_TIMEOUT", "60"))
+accesslog = "-"
+errorlog = "-"
+loglevel = os.getenv("LOGLEVEL", "info")
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\README.md =====
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\render.yaml =====
+# render.yaml
+services:
+  - type: web
+    name: hestia-whatsapp-gateway
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -c gunicorn.conf.py wsgi:app
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\requirements.txt =====
+Flask==3.0.3 
+requests>=2.31 
+psycopg2-binary>=2.9
+python-dotenv
+openai
+gunicorn==21.2.0
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\run.py =====
+# run.py
+import os
+
+from gateway_app import create_app
+
+app = create_app()
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=True)
+
+===== C:\Users\Javie\Documents\GitHub\Hestia_MVP\Hestia_Production_whatsapp_service\wsgi.py =====
+# wsgi.py
+from gateway_app import create_app
+
+# Objeto WSGI que usarÃ¡ gunicorn / Render
+app = create_app()
+
