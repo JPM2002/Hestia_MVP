@@ -41,7 +41,11 @@ from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from gateway_app.config import cfg
-from gateway_app.services import with_db_defaults
+
+# NEW: local no-op decorator
+def with_db_defaults(fn):
+    return fn
+
 
 
 logger = logging.getLogger(__name__)
