@@ -38,18 +38,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 from contextlib import contextmanager
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 from gateway_app.config import cfg
 
-# NEW: local no-op decorator
-def with_db_defaults(fn):
-    return fn
-
-
-
 logger = logging.getLogger(__name__)
 
+# psycopg2 is optional; if missing we fall back to SQLite even for postgres-like URLs.
 try:
     import psycopg2
     import psycopg2.extras
@@ -72,9 +67,9 @@ def _sqlite_path_from_url(url: str) -> str:
     Convert DATABASE_URL into a filesystem path for SQLite.
 
     Accepts:
-        - "sqlite:///./gateway.db" → "./gateway.db"
-        - "sqlite:////tmp/gateway.db" → "/tmp/gateway.db"
-        - "./gateway.db" → "./gateway.db" (no scheme, treat as raw path)
+        - "sqlite:///./gateway.db" -> "./gateway.db"
+        - "sqlite:////tmp/gateway.db" -> "/tmp/gateway.db"
+        - "./gateway.db" -> "./gateway.db" (no scheme, treat as raw path)
     """
     if not url:
         return "./gateway.db"
@@ -86,7 +81,7 @@ def _sqlite_path_from_url(url: str) -> str:
     if lower.startswith("sqlite:////"):
         # absolute path
         return url[11:]
-    # no explicit sqlite scheme → treat as path
+    # no explicit sqlite scheme -> treat as path
     return url
 
 
@@ -111,17 +106,14 @@ def _get_connection():
     Decide whether to connect to Postgres or SQLite based on DATABASE_URL.
     """
     url = cfg.DATABASE_URL or ""
-    if _is_postgres_url(url):
-        # Normalize DSN (e.g. ensure sslmode=require) without breaking existing URLs
-        dsn = with_db_defaults(url)
-        logger.debug("Using Postgres connection for DATABASE_URL.", extra={"dsn": dsn})
-        return _connect_postgres(dsn)
+    if _is_postgres_url(url) and psycopg2 is not None:
+        logger.debug("Using Postgres connection for DATABASE_URL.")
+        return _connect_postgres(url)
 
     # Fallback to SQLite
     sqlite_path = _sqlite_path_from_url(url or "./gateway.db")
     logger.debug("Using SQLite connection at %s", sqlite_path)
     return _connect_sqlite(sqlite_path)
-
 
 
 @contextmanager
@@ -153,6 +145,65 @@ def _cursor(commit: bool = False):
             conn.close()
         except Exception:
             pass
+
+
+# ---------- Compatibility helpers for tickets.py / monolithic code ----------
+
+
+def using_pg() -> bool:
+    """
+    Return True if we are configured to use Postgres (and psycopg2 is available),
+    False if we are using SQLite.
+    """
+    url = cfg.DATABASE_URL or ""
+    return psycopg2 is not None and _is_postgres_url(url)
+
+
+def table_has_column(table_name: str, column_name: str) -> bool:
+    """
+    Check whether a given table has a given column.
+
+    Used by create_ticket to decide whether optional guest_phone / guest_name
+    columns exist. If this fails for any reason, we return False so the caller
+    simply skips the optional UPDATE.
+    """
+    try:
+        url = cfg.DATABASE_URL or ""
+        use_postgres = _is_postgres_url(url) and psycopg2 is not None
+
+        with _cursor(commit=False) as (_conn, cur):
+            if use_postgres:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = %s
+                    """,
+                    (table_name, column_name),
+                )
+                return cur.fetchone() is not None
+            else:
+                # SQLite PRAGMA schema inspection
+                cur.execute(f"PRAGMA table_info({table_name})")
+                rows = cur.fetchall()
+                for r in rows:
+                    # sqlite3.Row -> mapping-like; "name" holds the column name
+                    if dict(r).get("name") == column_name:
+                        return True
+                return False
+    except Exception as e:
+        logger.warning(
+            "table_has_column(%s, %s) failed: %s", table_name, column_name, e
+        )
+        return False
+
+
+def with_db_defaults(fn):
+    """
+    No-op decorator kept for compatibility with older monolithic code.
+    Some legacy functions might be annotated with @with_db_defaults.
+    """
+    return fn
 
 
 # ---------- Public helpers ----------
@@ -201,39 +252,40 @@ def insert_and_get_id(sql: str, params: Optional[Iterable[Any]] = None) -> Any:
     """
     Insert a row and return its primary key.
 
-    For Postgres:
-        - Uses "RETURNING id" pattern; caller must include it in the SQL.
+    Behavior:
 
-    For SQLite:
-        - Uses lastrowid and ignores RETURNING in SQL (if present, you should
-          structure the statement appropriately).
+    - For Postgres:
+        If the SQL already contains a RETURNING clause, it is used as-is.
+        If not, we append "RETURNING id" automatically.
 
-    Example (Postgres style):
+    - For SQLite:
+        We rely on cursor.lastrowid and ignore any RETURNING clause.
 
-        ticket_id = insert_and_get_id(
-            \"\"\"
-            INSERT INTO tickets (wa_id, room, area, priority, detail)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-            \"\"\",
-            [wa_id, room, area, priority, detail],
-        )
+    This makes it compatible with older monolithic code that called
+    insert_and_get_id() with plain INSERT statements (no RETURNING) on Postgres.
     """
     logger.debug("DB insert_and_get_id: %s | params=%s", sql, params)
     url = cfg.DATABASE_URL or ""
-    use_postgres = _is_postgres_url(url)
+    use_postgres = _is_postgres_url(url) and psycopg2 is not None
 
-    with _cursor(commit=True) as (conn, cur):
-        cur.execute(sql, tuple(params or []))
+    effective_sql = sql
+    if use_postgres:
+        # If the caller didn't include RETURNING, add it.
+        if "returning" not in sql.lower():
+            effective_sql = sql.rstrip().rstrip(";") + " RETURNING id"
+
+    with _cursor(commit=True) as (_conn, cur):
+        cur.execute(effective_sql, tuple(params or []))
+
         if use_postgres:
             row = cur.fetchone()
             if not row:
                 return None
-            # Using DictCursor, so row["id"] is available
+
+            # Dict-like row
             if isinstance(row, dict):
                 return row.get("id")
             try:
-                # DictRow or similar mapping
                 return row["id"]
             except Exception:
                 return row[0]
