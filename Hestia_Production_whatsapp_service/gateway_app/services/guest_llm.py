@@ -154,7 +154,7 @@ def _call_json_llm(system_prompt: str, user_prompt: str, max_tokens: int = 256) 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            response_format={"type": "json_object"},
+            extra_body={"response_format": {"type": "json_object"}},
             max_output_tokens=max_tokens,
         )
         content = resp.output[0].content[0].text
