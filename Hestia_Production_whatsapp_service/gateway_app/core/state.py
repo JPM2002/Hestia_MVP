@@ -35,6 +35,8 @@ from gateway_app.core.models import NLUResult
 from gateway_app.core.timefmt import utcnow
 from gateway_app.services import faq_llm, guest_llm, notify
 
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +47,7 @@ HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
 from gateway_app.services.tickets import create_ticket
 
 try:
-    from app.services.tickets import create_ticket  # AJUSTA EL MÓDULO A TU PROYECTO
+    from gateway_app.services.tickets import create_ticket 
 except Exception:
     def create_ticket(payload, initial_status="PENDIENTE_APROBACION"):
         logger.error(
@@ -244,8 +246,15 @@ def handle_incoming_text(
 
     # Smalltalk / general chat (thank you, etc.)
     if nlu.intent == "general_chat" or nlu.is_smalltalk:
+        # Si es la primera vez que hablamos en esta sesión y ya mandamos
+        # el saludo inicial, NO mandamos otro mensaje para evitar el doble texto.
+        if new_conversation:
+            if state in {STATE_INIT, STATE_FAQ}:
+                session["state"] = STATE_NEW
+            return actions, session
+
+        # En conversaciones ya iniciadas, sí respondemos smalltalk normalmente.
         actions.append(_text_action(_smalltalk_reply(msg)))
-        # Mantener estado, pero si estábamos en inicio pasar a S0 "normal"
         if state in {STATE_INIT, STATE_FAQ}:
             session["state"] = STATE_NEW
         return actions, session
