@@ -28,7 +28,8 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Iterable, List, Mapping, Optional
+from typing import Iterable, List, Mapping, Optional, Any
+
 
 from openai import OpenAI
 
@@ -257,6 +258,17 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _get_field(item: Any, field: str, default: str = "") -> str:
+    """
+    Safely read a field ('key', 'q', 'a') from either:
+    - a dict with that key, or
+    - a dataclass/obj with that attribute.
+    """
+    if isinstance(item, Mapping):
+        return str(item.get(field, default) or "")
+    return str(getattr(item, field, default) or "")
+
+
 # ---------------------------------------------------------------------------
 # Static matching (no LLM)
 # ---------------------------------------------------------------------------
@@ -264,9 +276,9 @@ def _normalize(text: str) -> str:
 
 def _best_static_match(
     user_text: str,
-    faq_items: Iterable[FAQItem],
+    faq_items: Iterable[Any],
     min_overlap: float = 0.5,
-) -> Optional[FAQItem]:
+) -> Optional[Any]:
     """
     Very simple token-overlap matcher between the normalized user text and each FAQ question.
 
@@ -281,11 +293,15 @@ def _best_static_match(
     if not user_tokens:
         return None
 
-    best_item: Optional[FAQItem] = None
+    best_item: Optional[Any] = None
     best_score = 0.0
 
     for item in faq_items:
-        norm_q = _normalize(item.q)
+        q_text = _get_field(item, "q")
+        if not q_text:
+            continue
+
+        norm_q = _normalize(q_text)
         q_tokens = set(norm_q.split())
         if not q_tokens:
             continue
@@ -298,11 +314,12 @@ def _best_static_match(
     if best_item and best_score >= min_overlap:
         logger.debug(
             "FAQ static match",
-            extra={"key": best_item.key, "score": best_score, "user": user_text},
+            extra={"key": _get_field(best_item, "key"), "score": best_score, "user": user_text},
         )
         return best_item
 
     return None
+
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +344,7 @@ Constraints:
 """
 
 
-def _call_faq_llm(user_text: str, faq_items: Iterable[FAQItem]) -> Optional[str]:
+def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
     """
     Ask the LLM to pick or synthesize an answer from the FAQ list.
 
@@ -337,8 +354,16 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[FAQItem]) -> Optional[str]
     """
     faq_block_lines = []
     for item in faq_items:
-        faq_block_lines.append(f"- [{item.key}] Q: {item.q}\n  A: {item.a}")
+        key = _get_field(item, "key")
+        q = _get_field(item, "q")
+        a = _get_field(item, "a")
+        if not q or not a:
+            continue
+        faq_block_lines.append(f"- [{key}] Q: {q}\n  A: {a}")
     faq_block = "\n".join(faq_block_lines)
+
+    if not faq_block:
+        return None
 
     try:
         resp = _client.responses.create(
@@ -392,7 +417,11 @@ def answer_faq(
     # 1) Static match first
     static_item = _best_static_match(user_text, items)
     if static_item:
-        return static_item.a
+        # Works for both dicts and FAQItem dataclasses
+        if isinstance(static_item, dict):
+            return static_item.get("a")
+        return getattr(static_item, "a", None)
+
 
     # 2) Optional LLM fallback
     if use_llm_fallback:

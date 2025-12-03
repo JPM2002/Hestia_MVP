@@ -202,23 +202,52 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     if not data or not isinstance(data, dict):
         return {}
 
-    # Normalize / guard rails
+    # --------- Guardrails / clamping ---------
+    allowed_intents = {
+        "ticket_request",
+        "general_chat",
+        "handoff_request",
+        "cancel",
+        "help",
+        "not_understood",
+    }
+    allowed_areas = {"MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"}
+    allowed_priorities = {"URGENTE", "ALTA", "MEDIA", "BAJA"}
+
     intent = data.get("intent")
-    # Map `unknown` to `not_understood` just in case the model uses an old label.
     if intent == "unknown":
         intent = "not_understood"
+    if intent not in allowed_intents:
+        intent = "not_understood"
+
+    area = data.get("area")
+    if area not in allowed_areas:
+        area = None
+
+    priority = data.get("priority")
+    if priority not in allowed_priorities:
+        priority = None
+
+    room = data.get("room")
+    if room is not None:
+        room = str(room).strip() or None
+
+    detail = data.get("detail")
+    if detail is not None:
+        detail = str(detail).strip() or None
 
     return {
         "intent": intent,
-        "area": data.get("area"),
-        "priority": data.get("priority"),
-        "room": data.get("room"),
-        "detail": data.get("detail"),
+        "area": area,
+        "priority": priority,
+        "room": room,
+        "detail": detail,
         "is_smalltalk": bool(data.get("is_smalltalk")),
         "wants_handoff": bool(data.get("wants_handoff")),
         "is_cancel": bool(data.get("is_cancel")),
         "is_help": bool(data.get("is_help")),
     }
+
 
 
 _CONFIRM_SYSTEM_PROMPT = """

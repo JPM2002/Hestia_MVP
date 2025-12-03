@@ -5,6 +5,8 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from gateway_app.core import message_handler
+
 
 from flask import (
     jsonify,
@@ -143,18 +145,21 @@ def whatsapp_webhook():
         },
     )
 
-    # Load session and run state machine
-    session = state_machine.load_session(wa_id or from_number)
-    actions, new_session = state_machine.handle_incoming_text(
+        # Run high-level message handler (DFA + replies)
+    media_id = None
+    if msg_type == "audio":
+        media_id = (msg.get("audio") or {}).get("id")
+
+    message_handler.handle_guest_message(
         wa_id=wa_id or from_number,
-        guest_phone=from_number,
+        from_phone=from_number,
         guest_name=guest_name,
+        msg_type=msg_type,
         text=text,
-        session=session,
+        media_id=media_id,
         timestamp=ts,
         raw_payload=data,
     )
-    state_machine.save_session(wa_id or from_number, new_session)
 
     # Mark as read (optional)
     if msg_id:
@@ -162,18 +167,6 @@ def whatsapp_webhook():
             whatsapp_api.mark_message_as_read(msg_id)
         except Exception:
             logger.exception("Failed to mark WhatsApp message as read")
-
-    # Send outgoing actions
-    for act in actions:
-        if act.get("type") == "text":
-            try:
-                whatsapp_api.send_text_message(
-                    to=from_number,
-                    text=act.get("text", ""),
-                    preview_url=bool(act.get("preview_url", False)),
-                )
-            except Exception:
-                logger.exception("Failed to send WhatsApp text message")
 
     return jsonify({"status": "ok"}), 200
 

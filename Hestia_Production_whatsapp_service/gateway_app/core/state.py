@@ -44,18 +44,18 @@ logger = logging.getLogger(__name__)
 ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "2"))
 HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
 
-from gateway_app.services.tickets import create_ticket
-
+# Import real ticket creator if available; otherwise fall back to a stub.
 try:
-    from gateway_app.services.tickets import create_ticket 
+    from gateway_app.services.tickets import create_ticket
 except Exception:
-    def create_ticket(payload, initial_status="PENDIENTE_APROBACION"):
+    def create_ticket(payload, initial_status: str = "PENDIENTE_APROBACION"):
         logger.error(
             "create_ticket() stub called. Debes importar aquí tu función real "
             "de creación de tickets para que se escriban en la BD.",
             extra={"payload": payload, "initial_status": initial_status},
         )
         return None
+
 
 # ---------------------------------------------------------------------------
 # Conversation state constants
@@ -163,6 +163,25 @@ def handle_incoming_text(
     # If no text after greeting (e.g., pure audio that failed), nothing else to do
     if not msg:
         return actions, session
+    
+    # ------------------------------------------------------------------
+    # Global cancellation guardrail (independent of NLU)
+    # ------------------------------------------------------------------
+    if _looks_like_global_cancel(msg):
+        _clear_ticket_draft(session)
+        session["state"] = STATE_NEW
+        actions.append(
+            _text_action(
+                "He cancelado la solicitud actual. Si necesitas algo más para tu habitación, "
+                "solo dime por aquí."
+            )
+        )
+        logger.debug(
+            "[STATE] global cancel",
+            extra={"wa_id": wa_id, "state": session.get("state"), "text": msg},
+        )
+        return actions, session
+
 
     # ------------------------------------------------------------------
     # Ticket confirmation: handle explicit SI / NO first
@@ -416,6 +435,36 @@ _NO_TOKENS = {
     "no", "n", "nop", "nope", "para nada",
     "no gracias", "no, gracias",
 }
+
+_CANCEL_PATTERNS = [
+    r"\bcancela\b",
+    r"\bcancelar\b",
+    r"\banula\b",
+    r"\banular\b",
+    r"\bolvídalo\b",
+    r"\bolvida eso\b",
+    r"\bya no lo necesito\b",
+    r"\bya no hace falta\b",
+    r"\bya no quiero eso\b",
+]
+
+
+def _looks_like_global_cancel(msg: str) -> bool:
+    """
+    Best-effort, LLM-independent check for cancellation messages.
+    This mirrors the spirit of _gh_is_cancel(..., state='GLOBAL')
+    from your old DFA.
+
+    It does NOT look at previous state; it only checks the raw text.
+    """
+    if not msg:
+        return False
+    lower = msg.lower()
+    for pat in _CANCEL_PATTERNS:
+        if re.search(pat, lower):
+            return True
+    return False
+
 
 
 def _normalize_yes_no_token(text: str) -> str:
