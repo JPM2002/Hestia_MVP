@@ -417,7 +417,7 @@ def _initial_greeting(session: Dict[str, Any]) -> str:
         prefix
         + "soy Hestia, tu asistente virtual del hotel. "
           "Puedo ayudarte a reportar problemas en tu habitación, "
-          "pedir toallas, amenities o comida, y responder preguntas "
+          "pedir toallas, o amenities, y responder preguntas "
           "como horarios de desayuno o wifi."
     )
 
