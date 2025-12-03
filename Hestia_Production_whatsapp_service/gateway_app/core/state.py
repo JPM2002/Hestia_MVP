@@ -527,8 +527,8 @@ def _format_ticket_summary(draft: Dict[str, Any]) -> str:
 
     if area:
         parts.append(f"- Área: {area}")
-    if priority:
-        parts.append(f"- Prioridad: {priority}")
+    #if priority:
+    #    parts.append(f"- Prioridad: {priority}")
     if room:
         parts.append(f"- Habitación: {room}")
     if detail:
