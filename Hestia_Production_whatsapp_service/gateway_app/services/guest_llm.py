@@ -38,6 +38,9 @@ LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4.1-mini")
 
 
 _BASE_SYSTEM_PROMPT = """
+
+
+
 You are the NLU module for Hestia, a WhatsApp assistant for hotel guests.
 Messages are mostly in Spanish, sometimes English or German.
 Your job is to interpret SHORT WhatsApp messages and return a JSON object with this exact shape:

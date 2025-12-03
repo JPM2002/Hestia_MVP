@@ -68,6 +68,10 @@ STATE_TICKET_CONFIRM = "GH_TICKET_CONFIRM"
 STATE_FAQ = "GH_FAQ"
 STATE_HANDOFF = "GH_HANDOFF"
 
+# States where we allow an early FAQ pass (before NLU / tickets)
+FAQ_ELIGIBLE_STATES = {STATE_NEW, STATE_INIT, STATE_FAQ}
+
+
 # In-memory session store: wa_id -> session dict
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
 
@@ -181,6 +185,29 @@ def handle_incoming_text(
             extra={"wa_id": wa_id, "state": session.get("state"), "text": msg},
         )
         return actions, session
+    
+
+    # ------------------------------------------------------------------
+    # Early FAQ layer (before NLU / tickets)
+    #
+    # For fresh / neutral states, we first try to answer as FAQ. This
+    # prevents pure info questions like "¿a qué hora es el desayuno?"
+    # from becoming tickets.
+    # ------------------------------------------------------------------
+    if msg and state in FAQ_ELIGIBLE_STATES:
+        faq_answer = faq_llm.answer_faq(msg)
+        logger.debug(
+            "[STATE] early FAQ check",
+            extra={"wa_id": wa_id, "state": state, "msg": msg, "faq_hit": bool(faq_answer)},
+        )
+        if faq_answer:
+            session["state"] = STATE_FAQ
+            actions.append(_text_action(faq_answer))
+            actions.append(
+                _text_action("¿Puedo ayudarte con algo más durante tu estadía?")
+            )
+            return actions, session
+
 
 
     # ------------------------------------------------------------------
