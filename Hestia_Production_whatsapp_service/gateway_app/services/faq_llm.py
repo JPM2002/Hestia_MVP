@@ -276,25 +276,23 @@ def _get_field(item: Any, field: str, default: str = "") -> str:
 # Static matching (no LLM)
 # ---------------------------------------------------------------------------
 
-
 def _best_static_match(
     user_text: str,
     faq_items: Iterable[Any],
-    min_overlap: float = 0.5,
-) -> Optional[Any]:
+) -> tuple[Optional[Any], float]:
     """
     Very simple token-overlap matcher between the normalized user text and each FAQ question.
 
     - Computes overlap = |tokens_user ∩ tokens_question| / |tokens_question|.
-    - Returns the FAQ with highest overlap, if >= min_overlap.
+    - Returns (best_item, best_score).
     """
     norm_user = _normalize(user_text)
     if not norm_user:
-        return None
+        return None, 0.0
 
     user_tokens = set(norm_user.split())
     if not user_tokens:
-        return None
+        return None, 0.0
 
     best_item: Optional[Any] = None
     best_score = 0.0
@@ -314,15 +312,17 @@ def _best_static_match(
             best_score = overlap
             best_item = item
 
-    if best_item and best_score >= min_overlap:
+    if best_item:
         logger.debug(
-            "FAQ static match",
-            extra={"key": _get_field(best_item, "key"), "score": best_score, "user": user_text},
+            "FAQ static match candidate",
+            extra={
+                "key": _get_field(best_item, "key"),
+                "score": best_score,
+                "user": user_text,
+            },
         )
-        return best_item
 
-    return None
-
+    return best_item, best_score
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +398,6 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
 # Public API
 # ---------------------------------------------------------------------------
 
-
 def answer_faq(
     user_text: str,
     faq_items: Optional[Iterable[FAQItem]] = None,
@@ -408,8 +407,8 @@ def answer_faq(
     Try to answer `user_text` using the FAQ list.
 
     Strategy:
-    1) Try static token-overlap matching (fast, deterministic).
-    2) If no static match and use_llm_fallback=True, ask the LLM to reason over the FAQ list.
+    1) Try a very strict static token-overlap matching (only for near-identical questions).
+    2) If no strong static match and use_llm_fallback=True, ask the LLM to reason over the FAQ list.
 
     Returns:
         - The answer text (string) if a relevant FAQ was found.
@@ -417,16 +416,34 @@ def answer_faq(
     """
     items = list(faq_items) if faq_items is not None else FAQ_ITEMS
 
-    # 1) Static match first
-    static_item = _best_static_match(user_text, items)
-    if static_item:
-        # Works for both dicts and FAQItem dataclasses
+    # 1) Static match (ONLY if almost identical).
+    static_item, static_score = _best_static_match(user_text, items)
+
+    # threshold can be tuned; 0.85–0.9 means "very similar"
+    STATIC_STRONG_THRESHOLD = 0.85
+
+    if static_item and static_score >= STATIC_STRONG_THRESHOLD:
+        logger.debug(
+            "FAQ static match accepted",
+            extra={
+                "key": _get_field(static_item, "key"),
+                "score": static_score,
+                "user": user_text,
+            },
+        )
         if isinstance(static_item, dict):
             return static_item.get("a")
         return getattr(static_item, "a", None)
 
+    logger.debug(
+        "FAQ static match rejected or weak; falling back to LLM",
+        extra={
+            "static_score": static_score,
+            "user": user_text,
+        },
+    )
 
-    # 2) Optional LLM fallback
+    # 2) LLM fallback for all fuzzy / paraphrased / misspelled cases.
     if use_llm_fallback:
         llm_answer = _call_faq_llm(user_text, items)
         return llm_answer
