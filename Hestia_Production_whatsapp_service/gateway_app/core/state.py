@@ -204,7 +204,7 @@ def handle_incoming_text(
             session["state"] = STATE_FAQ
             actions.append(_text_action(faq_answer))
             actions.append(
-                _text_action("¿Puedo ayudarte con algo más durante tu estadía?")
+                _text_action("¡Gracias por utilizar nuestro servicio de asistente virtual! \n Si necesitas algo más, no dudes en escribirme. ¡Que sigas disfrutando tu estadía!")
             )
             return actions, session
 
@@ -415,10 +415,8 @@ def _initial_greeting(session: Dict[str, Any]) -> str:
         prefix = "Hola, "
     return (
         prefix
-        + "soy Hestia, tu asistente virtual del hotel. "
-          "Puedo ayudarte a reportar problemas en tu habitación, "
-          "pedir toallas, o amenities, y responder preguntas "
-          "como horarios de desayuno o wifi."
+        + "¡Hola! Te damos la bienvenida a nuestro servicio de asistencia digital.\n"
+          "Para poder ayudarte rápidamente, por favor indícanos tu nombre, número de habitación y cuál es tu consulta o solicitud."
     )
 
 

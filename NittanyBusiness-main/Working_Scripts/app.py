@@ -86,8 +86,7 @@ DEMO_HK_CONFIRM_KEYWORD = os.getenv("DEMO_HK_CONFIRM_KEYWORD", "confirmar ticket
 # ----------------------------- Copy (5-star tone) -----------------------------
 COPY = {
     "greet":
-        "¡Hola! 👋 Soy tu asistente. Puedo ayudarte con mantención, housekeeping o room service.\n"
-        "Para empezar, ¿me dices *tu nombre*? 🙂",
+        "¡Hola! Te damos la bienvenida a nuestro servicio de asistencia digital. Para poder ayudarte rápidamente, por favor indícanos tu nombre, número de habitación y cuál es tu consulta o solicitud.🙂",
     "ask_room":
         "Gracias, *{name}*. ¿Cuál es tu *número de habitación*? 🏨",
     "ask_detail":
