@@ -171,6 +171,77 @@ def whatsapp_webhook():
     return jsonify({"status": "ok"}), 200
 
 
+@bp.route("/test", methods=["POST"])
+def test_webhook():
+    """
+    Simplified test endpoint for simulating WhatsApp messages without real WhatsApp integration.
+
+    Expected JSON payload:
+    {
+        "phone": "56998765432",
+        "text": "Hola, necesito ayuda",
+        "name": "Guest Name",  # Optional
+        "type": "text"  # Optional: "text" or "audio"
+    }
+
+    Returns the bot's responses in the JSON response instead of sending via WhatsApp API.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    phone = data.get("phone")
+    text = data.get("text", "")
+    guest_name = data.get("name")
+    msg_type = data.get("type", "text")
+
+    if not phone:
+        return jsonify({"error": "phone is required"}), 400
+    if not text and msg_type == "text":
+        return jsonify({"error": "text is required for text messages"}), 400
+
+    logger.info(
+        "[TEST WEBHOOK] Simulated message",
+        extra={
+            "phone": phone,
+            "type": msg_type,
+            "text": text,
+        },
+    )
+
+    # Load session and process message through state machine
+    session = state_machine.load_session(phone)
+
+    actions, new_session = state_machine.handle_incoming_text(
+        wa_id=phone,
+        guest_phone=phone,
+        guest_name=guest_name,
+        text=text,
+        session=session,
+        timestamp=datetime.now(timezone.utc),
+        raw_payload=data,
+    )
+
+    # Save the new session
+    state_machine.save_session(phone, new_session)
+
+    # Extract bot responses from actions
+    bot_responses = []
+    for act in actions:
+        if act.get("type") == "text":
+            bot_responses.append(act.get("text", ""))
+
+    # Return the conversation in the response
+    return jsonify({
+        "status": "ok",
+        "message": "Test message processed",
+        "conversation": {
+            "user_message": text,
+            "bot_responses": bot_responses,
+            "session_state": new_session.get("state"),
+            "session_data": new_session.get("data", {})
+        }
+    }), 200
+
+
 @bp.route("/debug", methods=["GET"])
 def webhook_debug_view():
     """

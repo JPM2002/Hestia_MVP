@@ -68,9 +68,6 @@ STATE_TICKET_CONFIRM = "GH_TICKET_CONFIRM"
 STATE_FAQ = "GH_FAQ"
 STATE_HANDOFF = "GH_HANDOFF"
 
-# States where we allow an early FAQ pass (before NLU / tickets)
-FAQ_ELIGIBLE_STATES = {STATE_NEW, STATE_INIT, STATE_FAQ}
-
 
 # In-memory session store: wa_id -> session dict
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
@@ -188,29 +185,6 @@ def handle_incoming_text(
     
 
     # ------------------------------------------------------------------
-    # Early FAQ layer (before NLU / tickets)
-    #
-    # For fresh / neutral states, we first try to answer as FAQ. This
-    # prevents pure info questions like "¿a qué hora es el desayuno?"
-    # from becoming tickets.
-    # ------------------------------------------------------------------
-    if msg and state in FAQ_ELIGIBLE_STATES:
-        faq_answer = faq_llm.answer_faq(msg)
-        logger.debug(
-            "[STATE] early FAQ check",
-            extra={"wa_id": wa_id, "state": state, "msg": msg, "faq_hit": bool(faq_answer)},
-        )
-        if faq_answer:
-            session["state"] = STATE_FAQ
-            actions.append(_text_action(faq_answer))
-            actions.append(
-                _text_action("¡Gracias por utilizar nuestro servicio de asistente virtual! \n Si necesitas algo más, no dudes en escribirme. ¡Que sigas disfrutando tu estadía!")
-            )
-            return actions, session
-
-
-
-    # ------------------------------------------------------------------
     # Ticket confirmation: handle explicit SI / NO first
     # ------------------------------------------------------------------
     if state == STATE_TICKET_CONFIRM:
@@ -235,12 +209,26 @@ def handle_incoming_text(
     # ------------------------------------------------------------------
     # NLU analysis
     # ------------------------------------------------------------------
+    logger.info(
+        "[FLOW] 🔄 STEP 2: Running NLU analysis",
+        extra={
+            "wa_id": wa_id,
+            "state": state,
+            "user_message": msg,
+            "location": "gateway_app/core/state.py"
+        }
+    )
     nlu_raw = guest_llm.analyze_guest_message(msg, session=session, state=state)
     nlu = NLUResult.from_dict(nlu_raw) if nlu_raw else NLUResult()
 
-    logger.debug(
-        "[STATE] NLU result",
-        extra={"wa_id": wa_id, "nlu": nlu.to_dict()},
+    logger.info(
+        "[FLOW] 📊 NLU result received",
+        extra={
+            "wa_id": wa_id,
+            "nlu": nlu.to_dict(),
+            "intent": nlu.intent,
+            "location": "gateway_app/core/state.py"
+        },
     )
 
     # ------------------------------------------------------------------
@@ -249,12 +237,30 @@ def handle_incoming_text(
 
     # Help / capabilities
     if nlu.intent == "help" or nlu.is_help:
+        logger.info(
+            "[FLOW] ✅ DECISION: Intent=HELP → Show help message",
+            extra={
+                "decision": "INTENT_HELP",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         actions.append(_text_action(_help_message()))
         session["state"] = STATE_INIT
         return actions, session
 
     # Explicit human handoff
     if nlu.intent == "handoff_request" or nlu.wants_handoff:
+        logger.info(
+            "[FLOW] ✅ DECISION: Intent=HANDOFF → Transfer to human",
+            extra={
+                "decision": "INTENT_HANDOFF",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         session["state"] = STATE_HANDOFF
         actions.append(
             _text_action(
@@ -275,6 +281,15 @@ def handle_incoming_text(
 
     # Cancel current request
     if nlu.intent == "cancel" or nlu.is_cancel:
+        logger.info(
+            "[FLOW] ✅ DECISION: Intent=CANCEL → Clear ticket draft",
+            extra={
+                "decision": "INTENT_CANCEL",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         _clear_ticket_draft(session)
         session["state"] = STATE_NEW
         actions.append(
@@ -287,11 +302,33 @@ def handle_incoming_text(
 
     # Ticket / request for service
     if nlu.intent == "ticket_request":
+        logger.info(
+            "[FLOW] ✅ DECISION: Intent=TICKET_REQUEST → Create ticket draft",
+            extra={
+                "decision": "INTENT_TICKET_REQUEST",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "area": nlu.area,
+                "room": nlu.room,
+                "detail": nlu.detail,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         actions.extend(_handle_ticket_intent(nlu, session))
         return actions, session
 
     # Smalltalk / general chat (thank you, etc.)
     if nlu.intent == "general_chat" or nlu.is_smalltalk:
+        logger.info(
+            "[FLOW] ✅ DECISION: Intent=GENERAL_CHAT → Respond with smalltalk",
+            extra={
+                "decision": "INTENT_GENERAL_CHAT",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "new_conversation": new_conversation,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         # Si es la primera vez que hablamos en esta sesión y ya mandamos
         # el saludo inicial, NO mandamos otro mensaje para evitar el doble texto.
         if new_conversation:
@@ -306,11 +343,33 @@ def handle_incoming_text(
         return actions, session
 
     # ------------------------------------------------------------------
-    # Not understood or unclassified: try FAQ as fallback
+    # Not understood or unclassified: try FAQ as FALLBACK (LAST RESORT)
     # ------------------------------------------------------------------
     if nlu.intent == "not_understood" or nlu.intent is None:
+        logger.info(
+            "[FLOW] 🔄 STEP 3: Intent=NOT_UNDERSTOOD → Try FAQ as fallback",
+            extra={
+                "decision": "INTENT_NOT_UNDERSTOOD_FAQ_FALLBACK",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
+
+        # Intenta FAQ antes del mensaje genérico de "no entendí"
         faq_answer = faq_llm.answer_faq(msg)
+
         if faq_answer:
+            logger.info(
+                "[FLOW] ✅ DECISION: FAQ fallback found answer → TERMINATE",
+                extra={
+                    "decision": "FAQ_FALLBACK_HIT",
+                    "wa_id": wa_id,
+                    "user_message": msg,
+                    "answer_preview": faq_answer[:100],
+                    "location": "gateway_app/core/state.py"
+                }
+            )
             session["state"] = STATE_FAQ
             actions.append(_text_action(faq_answer))
             actions.append(
@@ -318,15 +377,26 @@ def handle_incoming_text(
             )
             return actions, session
 
-        # Final fallback
+        # Si ni siquiera FAQ funciona, mensaje genérico de ayuda
+        logger.info(
+            "[FLOW] ⚠️ DECISION: FAQ fallback missed → Show help message",
+            extra={
+                "decision": "FAQ_FALLBACK_MISS_DEFAULT",
+                "wa_id": wa_id,
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         actions.append(
             _text_action(
-                "No estoy seguro de haber entendido bien. "
-                "Puedo ayudarte a reportar un problema en tu habitación, "
-                "pedir algo al hotel o responder dudas frecuentes "
-                "(desayuno, wifi, horarios). ¿Qué necesitas?"
+                "No estoy seguro de haber entendido bien. Puedo ayudarte a:\n\n"
+                "• Crear solicitudes de mantenimiento, housekeeping o room service.\n"
+                "• Responder preguntas frecuentes sobre el hotel.\n"
+                "• Ponerte en contacto con recepción.\n\n"
+                "¿Qué necesitas?"
             )
         )
+        session["state"] = STATE_INIT
         return actions, session
 
     # ------------------------------------------------------------------
@@ -516,6 +586,17 @@ def _handle_ticket_intent(nlu: NLUResult, session: Dict[str, Any]) -> List[Dict[
     """
     Apply NLU fields to the current ticket draft and send confirmation message.
     """
+    logger.info(
+        "[TICKET] 🎫 Creating ticket draft from NLU",
+        extra={
+            "wa_id": session.get("wa_id"),
+            "nlu_area": nlu.area,
+            "nlu_room": nlu.room,
+            "nlu_detail": nlu.detail,
+            "location": "gateway_app/core/state.py"
+        }
+    )
+
     draft = _get_ticket_draft(session)
 
     # Update draft from NLU
@@ -535,8 +616,14 @@ def _handle_ticket_intent(nlu: NLUResult, session: Dict[str, Any]) -> List[Dict[
     confirm_text = guest_llm.render_confirm_draft(summary, session)
 
     logger.info(
-        "[STATE] ticket_request draft updated",
-        extra={"wa_id": session.get("wa_id"), "draft": draft},
+        "[TICKET] ✅ Ticket draft created → Waiting for user confirmation",
+        extra={
+            "decision": "TICKET_DRAFT_CREATED",
+            "wa_id": session.get("wa_id"),
+            "draft": draft,
+            "new_state": STATE_TICKET_CONFIRM,
+            "location": "gateway_app/core/state.py"
+        },
     )
 
     return [_text_action(confirm_text)]
@@ -581,6 +668,16 @@ def _handle_ticket_confirmation_yes_no(
 
     # ---------- YES = crear ticket ----------
     if _is_yes(msg):
+        logger.info(
+            "[TICKET] ✅ User confirmed YES → Creating ticket in database",
+            extra={
+                "decision": "USER_CONFIRMED_YES",
+                "wa_id": session.get("wa_id"),
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
+
         draft = session.get("data", {}).get("ticket_draft") or {}
 
         # Construir payload equivalente al código monolítico antiguo
@@ -597,8 +694,39 @@ def _handle_ticket_confirmation_yes_no(
             "huesped_nombre": session.get("guest_name") or "",
         }
 
+        logger.info(
+            "[TICKET] 💾 Calling create_ticket() with payload",
+            extra={
+                "wa_id": session.get("wa_id"),
+                "payload": payload,
+                "location": "gateway_app/core/state.py"
+            }
+        )
+
         # Crear ticket en tu backend (usa tu create_ticket real)
         ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+
+        if ticket_id:
+            logger.info(
+                "[TICKET] ✅ Ticket created successfully in database",
+                extra={
+                    "decision": "TICKET_CREATED_SUCCESS",
+                    "wa_id": session.get("wa_id"),
+                    "ticket_id": ticket_id,
+                    "payload": payload,
+                    "location": "gateway_app/core/state.py"
+                }
+            )
+        else:
+            logger.error(
+                "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
+                extra={
+                    "decision": "TICKET_CREATED_FAILED",
+                    "wa_id": session.get("wa_id"),
+                    "payload": payload,
+                    "location": "gateway_app/core/state.py"
+                }
+            )
 
         # Opcional: seguir notificando al sistema central, si lo usas
         notify.notify_internal(
@@ -634,6 +762,15 @@ def _handle_ticket_confirmation_yes_no(
 
     # ---------- NO = volver a modo edición ----------
     if _is_no(msg):
+        logger.info(
+            "[TICKET] ⚠️ User said NO → Return to draft editing mode",
+            extra={
+                "decision": "USER_SAID_NO",
+                "wa_id": session.get("wa_id"),
+                "user_message": msg,
+                "location": "gateway_app/core/state.py"
+            }
+        )
         session["state"] = STATE_TICKET_DRAFT
         actions.append(
             _text_action(
@@ -644,4 +781,13 @@ def _handle_ticket_confirmation_yes_no(
         return True, actions
 
     # Cualquier otra cosa no se interpreta como confirmación
+    logger.info(
+        "[TICKET] ℹ️ Message not recognized as YES/NO → Continue normal processing",
+        extra={
+            "decision": "NOT_YES_NO_CONTINUE",
+            "wa_id": session.get("wa_id"),
+            "user_message": msg,
+            "location": "gateway_app/core/state.py"
+        }
+    )
     return False, []

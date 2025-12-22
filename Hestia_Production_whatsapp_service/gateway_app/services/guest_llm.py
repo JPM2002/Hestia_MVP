@@ -61,9 +61,41 @@ You MUST return valid JSON only. No explanations, no extra keys, no trailing com
 
 INTENT RULES AND FLAGS
 
-1) ticket_request
-- The guest is reporting a problem or asking for something related to the hotel stay.
-- Example: "necesito toallas", "no funciona el aire", "quiero pedir cena", "faltan almohadas".
+1) ticket_request (HIGHEST PRIORITY - This is the MAIN function of the bot)
+- The guest is reporting ANY problem, malfunction, or service request related to their hotel stay.
+- This includes BOTH explicit requests AND problem reports, even if phrased as questions.
+
+Examples of ticket_request:
+• Problems/Malfunctions (area=MANTENCION):
+  - "no funciona el aire acondicionado" → ticket_request
+  - "no tengo agua caliente" → ticket_request
+  - "el wifi no anda" / "se cayó el wifi" → ticket_request
+  - "la televisión no funciona" → ticket_request
+  - "el control remoto está roto" → ticket_request
+  - "no hay luz en mi habitación" → ticket_request
+  - "hay una fuga de agua en el baño" → ticket_request
+
+• Service Requests (area=HOUSEKEEPING):
+  - "necesito toallas" → ticket_request
+  - "faltan almohadas" → ticket_request
+  - "pueden limpiar mi habitación" → ticket_request
+  - "quiero más jabón" → ticket_request
+  - "hay mal olor en la habitación" → ticket_request
+  - "hay ruido" / "mucho ruido" → ticket_request
+
+• Food/Beverage Requests (area=ROOMSERVICE):
+  - "quiero pedir desayuno" → ticket_request
+  - "pueden traer comida" → ticket_request
+
+CRITICAL RULES:
+✅ Even if phrased as a QUESTION, if it describes a PROBLEM or REQUEST, it's ticket_request:
+   - "¿pueden revisar el aire acondicionado?" → ticket_request (not a question, it's a request)
+   - "¿por qué no funciona el wifi?" → ticket_request (describes a problem)
+
+✅ Mixed messages (greeting + problem):
+   - "hola, no funciona el aire" → ticket_request (ignore greeting, focus on problem)
+   - "gracias, pero necesito toallas" → ticket_request (ignore thanks, focus on request)
+
 - intent = "ticket_request".
 - Fill area / priority / room / detail when you can infer them.
 
@@ -114,11 +146,27 @@ Important:
 - intent = "help"
 - is_help = true
 
-6) not_understood
-- The message is unclear, random, or you cannot classify it.
-- Example: a long unrelated story, or just random characters.
+6) not_understood (for PURELY INFORMATIONAL questions)
+- The message is unclear, random, or it's a PURE INFORMATION question (FAQ territory).
+- Examples:
+  • "¿a qué hora es el desayuno?" → not_understood (FAQ will handle this)
+  • "¿tienen piscina?" → not_understood (FAQ)
+  • "¿cuál es la clave del wifi?" → not_understood (FAQ)
+  • "horario del restaurante" → not_understood (FAQ)
+  • Random text / unclear message → not_understood
+
 - intent = "not_understood"
 - All other flags should be false unless clearly indicated.
+
+GOLDEN RULE (CRITICAL):
+🔴 Problem or Need → ticket_request
+🔵 Pure Info Question → not_understood (FAQ handles it later)
+
+Edge Cases to Handle Carefully:
+- "hola, no funciona el aire" → ticket_request (ignore greeting, focus on problem)
+- "gracias, pero necesito toallas" → ticket_request (ignore thanks, focus on request)
+- "¿pueden revisar el AC?" → ticket_request (it's a request, not a question)
+- "a qué hora desayunan" → not_understood (pure info, FAQ territory)
 
 AREA HINTS
 
@@ -155,6 +203,17 @@ def _call_json_llm(
     Helper that uses the Responses API in JSON mode (text.format = {"type": "json_object"})
     and parses the result into a Python dict.
     """
+    logger.info(
+        "[NLU LLM] 🤖 Sending request to LLM",
+        extra={
+            "model": LLM_MODEL,
+            "user_prompt": user_prompt,
+            "prompt_length": len(user_prompt),
+            "max_tokens": max_tokens,
+            "location": "gateway_app/services/guest_llm.py::_call_json_llm"
+        }
+    )
+
     try:
         resp = _client.responses.create(
             model=LLM_MODEL,
@@ -173,10 +232,53 @@ def _call_json_llm(
 
         # Responses API: JSON text is in output[0].content[0].text
         content = resp.output[0].content[0].text
-        return json.loads(content)
 
+        logger.info(
+            "[NLU LLM] 📥 LLM response received (raw JSON)",
+            extra={
+                "model": LLM_MODEL,
+                "raw_json": content,
+                "response_length": len(content),
+                "location": "gateway_app/services/guest_llm.py::_call_json_llm"
+            }
+        )
+
+        parsed = json.loads(content)
+
+        logger.info(
+            "[NLU LLM] ✅ JSON parsed successfully",
+            extra={
+                "model": LLM_MODEL,
+                "parsed_data": parsed,
+                "location": "gateway_app/services/guest_llm.py::_call_json_llm"
+            }
+        )
+
+        return parsed
+
+    except json.JSONDecodeError as e:
+        logger.error(
+            "[NLU LLM] ❌ JSON parsing failed",
+            extra={
+                "model": LLM_MODEL,
+                "error": str(e),
+                "raw_content": content if 'content' in locals() else None,
+                "location": "gateway_app/services/guest_llm.py::_call_json_llm"
+            },
+            exc_info=True
+        )
+        return None
     except Exception as e:
-        logger.warning("[WARN] guest_llm json call failed: %s", e, exc_info=True)
+        logger.error(
+            "[NLU LLM] ❌ LLM call failed",
+            extra={
+                "model": LLM_MODEL,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "location": "gateway_app/services/guest_llm.py::_call_json_llm"
+            },
+            exc_info=True
+        )
         return None
 
 
@@ -193,7 +295,20 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         A dict with the normalized fields as described in _BASE_SYSTEM_PROMPT.
         If parsing fails, returns {}.
     """
+    logger.info(
+        "[NLU] 🧠 Starting NLU analysis",
+        extra={
+            "text": text,
+            "state": state,
+            "location": "gateway_app/services/guest_llm.py"
+        }
+    )
+
     if not text or not text.strip():
+        logger.warning(
+            "[NLU] ⚠️ Empty text received",
+            extra={"location": "gateway_app/services/guest_llm.py"}
+        )
         return {}
 
     prompt = (
@@ -203,6 +318,14 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
 
     data = _call_json_llm(_BASE_SYSTEM_PROMPT, prompt)
     if not data or not isinstance(data, dict):
+        logger.error(
+            "[NLU] ❌ LLM returned invalid data",
+            extra={
+                "text": text,
+                "raw_response": data,
+                "location": "gateway_app/services/guest_llm.py"
+            }
+        )
         return {}
 
     # --------- Guardrails / clamping ---------
@@ -239,7 +362,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     if detail is not None:
         detail = str(detail).strip() or None
 
-    return {
+    result = {
         "intent": intent,
         "area": area,
         "priority": priority,
@@ -250,6 +373,21 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         "is_cancel": bool(data.get("is_cancel")),
         "is_help": bool(data.get("is_help")),
     }
+
+    logger.info(
+        "[NLU] ✅ NLU analysis completed",
+        extra={
+            "text": text,
+            "intent": intent,
+            "area": area,
+            "room": room,
+            "detail": detail,
+            "result": result,
+            "location": "gateway_app/services/guest_llm.py"
+        }
+    )
+
+    return result
 
 
 

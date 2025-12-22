@@ -217,23 +217,21 @@ FAQ_ITEMS: List[Dict[str, str]] = [
     {"key": "loyalty_program", "q": "¿Existe algún programa de beneficios/Fidelización dentro del hotel?", "a": "De momento, no contamos con programa de beneficios o fidelización. Estamos visualizando esta opción"},
     {"key": "reserve_with_points", "q": "¿Puedo reservar con puntos o beneficios?", "a": "No contamos con sistema de reservas con puntos o beneficios. Estamos visualizando esta opción."},
 
-    # 13. Problemas o incidencias
-    {"key": "ac_not_working", "q": "No funciona el aire acondicionado, ¿pueden revisarlo?", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para que podamos revisarlo."},
-    {"key": "no_hot_water", "q": "No tengo agua caliente, ¿qué hago?", "a": "Por favor llame a recepción para que podamos asistirle."},
-    {"key": "tv_not_working", "q": "No funciona la televisión.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para reportar el problema con la televisión."},
-    {"key": "no_power_in_room", "q": "No hay luz en mi habitación.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
-    {"key": "light", "q": "No hay luz en mi habitación.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
-    {"key": "power_room", "q": "¿Cómo prendo la luz de la habitación?.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
-    {"key": "remote_not_working", "q": "El control remoto no funciona.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para solicitar asistencia o un control de reemplazo."},
-    {"key": "noise_problem", "q": "Tengo un problema con el ruido.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para que podamos ayudarle con el problema de ruido."},
-    {"key": "wifi_down", "q": "Se cayó la conexión del wifi.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para reportar el problema de conexión."},
-    {"key": "bad_smell", "q": "Hay mal olor en la habitación.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para que podamos revisar su habitación."},
-    {"key": "key_not_working", "q": "La llave no abre la puerta.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK o acérquese para revisar su tarjeta y entregarle una nueva."},
-    {"key": "bathroom_leak", "q": "Hay una fuga de agua en el baño.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para reportar la fuga de agua."},
-    {"key": "insect_in_room", "q": "Encontré un insecto o algo extraño en la habitación.", "a": "Por favor llame a recepción al 100 o 101+ OK para que podamos asistirle."},
-    {"key": "minibar_not_cooling", "q": "El minibar no enfría.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para reportar el problema del minibar."},
-    {"key": "cleaning_not_arrived", "q": "No llega la limpieza que pedí.", "a": "Lamentamos el inconveniente. Por favor llame a recepción al 100 o 101+ OK para que podamos coordinar el servicio de limpieza."},
-    {"key": "lost_and_found", "q": "Dejé algo olvidado en el hotel, ¿pueden ayudarme?", "a": "Guardamos todos los objetos perdidos. Por favor llame al 233486200 para consultas por objetos olvidados y poder ayudarle."},
+    # 13. Lost and Found (objetos olvidados)
+    # NOTA IMPORTANTE: Los reportes de problemas (AC roto, wifi caído, TV no funciona, etc.)
+    #                  NO son FAQs, son solicitudes operativas que deben generar tickets.
+    #                  El NLU (guest_llm) los detectará como intent="ticket_request".
+    #
+    # Se eliminaron 15 FAQs operativas (líneas antiguas 221-235) porque:
+    # - "No funciona el aire acondicionado" → ticket_request (MANTENCION)
+    # - "No tengo agua caliente" → ticket_request (MANTENCION)
+    # - "El wifi no anda" → ticket_request (MANTENCION)
+    # - etc.
+    #
+    # Solo mantenemos FAQs puramente informativas (preguntas sobre políticas,
+    # horarios, servicios disponibles, información del hotel).
+
+    {"key": "lost_and_found_info", "q": "¿Tienen objetos perdidos?", "a": "Sí, guardamos todos los objetos perdidos. Por favor llame al 233486200 para consultas por objetos olvidados."},
 ]
 
 
@@ -288,14 +286,41 @@ def _best_static_match(
     """
     norm_user = _normalize(user_text)
     if not norm_user:
+        logger.debug(
+            "[FAQ STATIC] 🔍 Empty user text after normalization",
+            extra={
+                "user_text": user_text,
+                "location": "gateway_app/services/faq_llm.py::_best_static_match"
+            }
+        )
         return None, 0.0
 
     user_tokens = set(norm_user.split())
     if not user_tokens:
+        logger.debug(
+            "[FAQ STATIC] 🔍 No tokens after splitting",
+            extra={
+                "user_text": user_text,
+                "normalized": norm_user,
+                "location": "gateway_app/services/faq_llm.py::_best_static_match"
+            }
+        )
         return None, 0.0
+
+    logger.info(
+        "[FAQ STATIC] 🔍 Starting static matching",
+        extra={
+            "user_text": user_text,
+            "normalized": norm_user,
+            "user_tokens": list(user_tokens),
+            "token_count": len(user_tokens),
+            "location": "gateway_app/services/faq_llm.py::_best_static_match"
+        }
+    )
 
     best_item: Optional[Any] = None
     best_score = 0.0
+    matches_found = []
 
     for item in faq_items:
         q_text = _get_field(item, "q")
@@ -308,18 +333,53 @@ def _best_static_match(
             continue
 
         overlap = len(user_tokens & q_tokens) / float(len(q_tokens))
+
+        # Track top matches for logging
+        if overlap > 0.3:  # Only log matches above 30%
+            matches_found.append({
+                "key": _get_field(item, "key"),
+                "question": q_text,
+                "score": overlap,
+                "overlapping_tokens": list(user_tokens & q_tokens)
+            })
+
         if overlap > best_score:
             best_score = overlap
             best_item = item
 
+    # Log all significant matches
+    if matches_found:
+        matches_found.sort(key=lambda x: x["score"], reverse=True)
+        logger.info(
+            "[FAQ STATIC] 📊 Found potential matches",
+            extra={
+                "user_text": user_text,
+                "top_3_matches": matches_found[:3],
+                "total_matches": len(matches_found),
+                "location": "gateway_app/services/faq_llm.py::_best_static_match"
+            }
+        )
+
     if best_item:
-        logger.debug(
-            "FAQ static match candidate",
+        logger.info(
+            "[FAQ STATIC] ✅ Best static match found",
             extra={
                 "key": _get_field(best_item, "key"),
+                "question": _get_field(best_item, "q"),
+                "answer_preview": _get_field(best_item, "a")[:100],
                 "score": best_score,
-                "user": user_text,
+                "user_text": user_text,
+                "location": "gateway_app/services/faq_llm.py::_best_static_match"
             },
+        )
+    else:
+        logger.info(
+            "[FAQ STATIC] ❌ No static match found",
+            extra={
+                "user_text": user_text,
+                "best_score": best_score,
+                "location": "gateway_app/services/faq_llm.py::_best_static_match"
+            }
         )
 
     return best_item, best_score
@@ -366,31 +426,84 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
     faq_block = "\n".join(faq_block_lines)
 
     if not faq_block:
+        logger.warning(
+            "[FAQ LLM] ⚠️ No FAQ items to process",
+            extra={
+                "user_text": user_text,
+                "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+            }
+        )
         return None
+
+    user_prompt = (
+        f"FAQs:\n{faq_block}\n\n"
+        f"Mensaje del huésped:\n{user_text}\n\n"
+        "Responde solo con la respuesta final o NO_MATCH."
+    )
+
+    logger.info(
+        "[FAQ LLM] 🤖 Sending request to LLM",
+        extra={
+            "model": FAQ_LLM_MODEL,
+            "user_text": user_text,
+            "faq_count": len(faq_block_lines),
+            "prompt_length": len(user_prompt),
+            "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+        }
+    )
 
     try:
         resp = _client.responses.create(
             model=FAQ_LLM_MODEL,
             input=[
                 {"role": "system", "content": _FAQ_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"FAQs:\n{faq_block}\n\n"
-                        f"Mensaje del huésped:\n{user_text}\n\n"
-                        "Responde solo con la respuesta final o NO_MATCH."
-                    ),
-                },
+                {"role": "user", "content": user_prompt},
             ],
             max_output_tokens=256,
         )
         text = resp.output[0].content[0].text.strip()
-    except Exception:
-        logger.exception("FAQ LLM call failed")
+
+        logger.info(
+            "[FAQ LLM] 📥 LLM response received",
+            extra={
+                "model": FAQ_LLM_MODEL,
+                "user_text": user_text,
+                "llm_response": text,
+                "response_length": len(text),
+                "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+            }
+        )
+    except Exception as e:
+        logger.exception(
+            "[FAQ LLM] ❌ LLM call failed with exception",
+            extra={
+                "model": FAQ_LLM_MODEL,
+                "user_text": user_text,
+                "error": str(e),
+                "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+            }
+        )
         return None
 
     if not text or text.upper().startswith("NO_MATCH"):
+        logger.info(
+            "[FAQ LLM] 🚫 LLM returned NO_MATCH",
+            extra={
+                "user_text": user_text,
+                "llm_response": text,
+                "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+            }
+        )
         return None
+
+    logger.info(
+        "[FAQ LLM] ✅ LLM found valid answer",
+        extra={
+            "user_text": user_text,
+            "llm_response": text,
+            "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+        }
+    )
     return text
 
 
@@ -414,6 +527,15 @@ def answer_faq(
         - The answer text (string) if a relevant FAQ was found.
         - None if no FAQ applies.
     """
+    logger.info(
+        "[FAQ] 🔍 Starting FAQ search",
+        extra={
+            "user_text": user_text,
+            "use_llm_fallback": use_llm_fallback,
+            "location": "gateway_app/services/faq_llm.py"
+        }
+    )
+
     items = list(faq_items) if faq_items is not None else FAQ_ITEMS
 
     # 1) Static match (ONLY if almost identical).
@@ -423,31 +545,62 @@ def answer_faq(
     STATIC_STRONG_THRESHOLD = 0.85
 
     if static_item and static_score >= STATIC_STRONG_THRESHOLD:
-        logger.debug(
-            "FAQ static match accepted",
+        logger.info(
+            "[FAQ] ✅ Static match ACCEPTED (high similarity)",
             extra={
+                "decision": "FAQ_STATIC_MATCH",
                 "key": _get_field(static_item, "key"),
                 "score": static_score,
                 "user": user_text,
+                "location": "gateway_app/services/faq_llm.py"
             },
         )
         if isinstance(static_item, dict):
             return static_item.get("a")
         return getattr(static_item, "a", None)
 
-    logger.debug(
-        "FAQ static match rejected or weak; falling back to LLM",
+    logger.info(
+        "[FAQ] ⚠️ Static match REJECTED (low similarity), trying LLM fallback",
         extra={
+            "decision": "FAQ_STATIC_REJECTED",
             "static_score": static_score,
             "user": user_text,
+            "location": "gateway_app/services/faq_llm.py"
         },
     )
 
     # 2) LLM fallback for all fuzzy / paraphrased / misspelled cases.
     if use_llm_fallback:
         llm_answer = _call_faq_llm(user_text, items)
+        if llm_answer:
+            logger.info(
+                "[FAQ] ✅ LLM fallback FOUND answer",
+                extra={
+                    "decision": "FAQ_LLM_MATCH",
+                    "user": user_text,
+                    "answer_preview": llm_answer[:100] if llm_answer else None,
+                    "location": "gateway_app/services/faq_llm.py"
+                }
+            )
+        else:
+            logger.info(
+                "[FAQ] ❌ LLM fallback found NO answer",
+                extra={
+                    "decision": "FAQ_NO_MATCH",
+                    "user": user_text,
+                    "location": "gateway_app/services/faq_llm.py"
+                }
+            )
         return llm_answer
 
+    logger.info(
+        "[FAQ] ❌ NO FAQ match (LLM fallback disabled)",
+        extra={
+            "decision": "FAQ_NO_MATCH_NO_LLM",
+            "user": user_text,
+            "location": "gateway_app/services/faq_llm.py"
+        }
+    )
     return None
 
 
