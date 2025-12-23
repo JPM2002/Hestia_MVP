@@ -53,6 +53,10 @@ class FAQItem:
 
 #: Default, generic FAQ set. Replace/extend per hotel as needed.
 FAQ_ITEMS: List[Dict[str, str]] = [
+    # 0. Electricidad / Luz en la habitación
+    {"key": "no_power_in_room", "q": "No hay luz en mi habitación.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
+    {"key": "light", "q": "No hay luz en mi habitación.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
+    {"key": "power_room", "q": "¿Cómo prendo la luz de la habitación?.", "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."},
     # 1. Check-in / Check-out
     {"key": "checkin_time", "q": "¿A qué hora es el check-in?", "a": "El check-in es a partir de las 14:00 hrs, te esperamos."},
     {"key": "early_checkin", "q": "¿Puedo hacer check-in antes de la hora?", "a": "Sí, siempre sujeto a la disponibilidad del momento; de lo contrario puede aplicar un cargo adicional."},
