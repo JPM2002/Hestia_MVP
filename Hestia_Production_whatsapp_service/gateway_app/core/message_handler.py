@@ -45,6 +45,9 @@ def handle_guest_message(
     # 2) Cargar sesión actual
     session = state_machine.load_session(wa_id)
 
+    logger.info("[INBOUND] wa_id=%s from=%s msg_type=%s text=%r state=%s",
+            wa_id, from_phone, msg_type, msg_text, session.get("state"))
+
     # 3) Ejecutar un paso del autómata
     actions, new_session = state_machine.handle_incoming_text(
         wa_id=wa_id,
