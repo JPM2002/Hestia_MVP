@@ -62,11 +62,15 @@ except Exception:
 # ---------------------------------------------------------------------------
 
 STATE_NEW = "GH_S0"
-STATE_INIT = "GH_S0i"
+STATE_INIT = "GH_S0_INIT"  # Renamed from GH_S0i to avoid conflict
+STATE_GUEST_IDENTIFY = "GH_IDENTIFY"  # NEW: Request name + room
 STATE_TICKET_DRAFT = "GH_TICKET_DRAFT"
 STATE_TICKET_CONFIRM = "GH_TICKET_CONFIRM"
 STATE_FAQ = "GH_FAQ"
 STATE_HANDOFF = "GH_HANDOFF"
+
+# Session TTL configuration
+SESSION_TTL_SECONDS = 15 * 60  # 15 minutes
 
 
 # In-memory session store: wa_id -> session dict
@@ -81,11 +85,43 @@ _SESSIONS: Dict[str, Dict[str, Any]] = {}
 def load_session(wa_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve the session for a WhatsApp contact id (wa_id).
+    Validates TTL and returns None if session expired.
 
     Returns:
-        dict with session data, or None if not found.
+        dict with session data, or None if not found/expired.
     """
-    return _SESSIONS.get(wa_id)
+    session = _SESSIONS.get(wa_id)
+
+    if not session:
+        return None
+
+    # Validate TTL (15 minutes)
+    last_message = session.get("last_message_at")
+    if last_message:
+        try:
+            from datetime import datetime
+            last_dt = datetime.fromisoformat(last_message)
+            elapsed = (utcnow() - last_dt).total_seconds()
+
+            if elapsed > SESSION_TTL_SECONDS:
+                # Session expired, delete it
+                _SESSIONS.pop(wa_id, None)
+                logger.info(
+                    "[SESSION] Session expired due to TTL",
+                    extra={
+                        "wa_id": wa_id,
+                        "elapsed_seconds": int(elapsed),
+                        "ttl_seconds": SESSION_TTL_SECONDS
+                    }
+                )
+                return None
+        except Exception as e:
+            logger.warning(
+                "[SESSION] TTL validation failed",
+                extra={"wa_id": wa_id, "error": str(e)}
+            )
+
+    return session
 
 
 def save_session(wa_id: str, session: Optional[Dict[str, Any]]) -> None:
@@ -157,12 +193,11 @@ def handle_incoming_text(
         extra={"wa_id": wa_id, "state": state, "text": msg},
     )
 
-    # Optional greeting on very first message
-    if new_conversation:
-        actions.append(_text_action(_initial_greeting(session)))
-
     # If no text after greeting (e.g., pure audio that failed), nothing else to do
     if not msg:
+        # Only show greeting if there's no message
+        if new_conversation:
+            actions.append(_text_action(_initial_greeting(session)))
         return actions, session
     
     # ------------------------------------------------------------------
@@ -230,6 +265,19 @@ def handle_incoming_text(
             "location": "gateway_app/core/state.py"
         },
     )
+
+    # ------------------------------------------------------------------
+    # Handle identity validation state BEFORE normal intent routing
+    # ------------------------------------------------------------------
+    if state == STATE_GUEST_IDENTIFY:
+        handled, extra_actions = _handle_guest_identify(msg, nlu, session)
+        if handled:
+            actions.extend(extra_actions)
+            logger.debug(
+                "[STATE] after guest identify",
+                extra={"wa_id": wa_id, "state": session.get("state")},
+            )
+            return actions, session
 
     # ------------------------------------------------------------------
     # Route based on intent / flags
@@ -303,7 +351,7 @@ def handle_incoming_text(
     # Ticket / request for service
     if nlu.intent == "ticket_request":
         logger.info(
-            "[FLOW] ✅ DECISION: Intent=TICKET_REQUEST → Create ticket draft",
+            "[FLOW] ✅ DECISION: Intent=TICKET_REQUEST → Validate identity first",
             extra={
                 "decision": "INTENT_TICKET_REQUEST",
                 "wa_id": wa_id,
@@ -314,7 +362,14 @@ def handle_incoming_text(
                 "location": "gateway_app/core/state.py"
             }
         )
-        actions.extend(_handle_ticket_intent(nlu, session))
+
+        # ⭐ Validate identity BEFORE creating ticket
+        if not _has_guest_identity(session, nlu):
+            actions.extend(_request_guest_identity(nlu, session))
+            return actions, session
+
+        # If we have identity, create combined confirmation
+        actions.extend(_create_combined_confirmation_direct(nlu, session))
         return actions, session
 
     # Smalltalk / general chat (thank you, etc.)
@@ -678,7 +733,20 @@ def _handle_ticket_confirmation_yes_no(
             }
         )
 
-        draft = session.get("data", {}).get("ticket_draft") or {}
+        # ⭐ Move temporary identity to permanent session fields
+        temp_name = session.pop("temp_guest_name", None)
+        temp_room = session.pop("temp_room", None)
+
+        if temp_name:
+            session["guest_name"] = temp_name
+            logger.debug(f"[IDENTITY] Moved temp_guest_name to guest_name: {temp_name}")
+
+        if temp_room:
+            session["room"] = temp_room
+            logger.debug(f"[IDENTITY] Moved temp_room to room: {temp_room}")
+
+        # Read from the correct location where _create_combined_confirmation_direct() stores it
+        draft = session.get("ticket_draft") or {}
 
         # Construir payload equivalente al código monolítico antiguo
         payload = {
@@ -743,10 +811,21 @@ def _handle_ticket_confirmation_yes_no(
         # Volvemos al estado "normal" después de crear el ticket
         session["state"] = STATE_NEW
 
+        # ⭐ Get area name for user-friendly message
+        area = payload.get("area", "MANTENCION")
+        area_map = {
+            "MANTENCION": "Mantenimiento",
+            "HOUSEKEEPING": "Housekeeping",
+            "ROOMSERVICE": "Room Service",
+        }
+        area_name = area_map.get(area, area)
+        room = payload.get("ubicacion", "")
+
         if ticket_id:
+            # ⭐ NO mostrar ticket ID al huésped
             text = (
-                f"Perfecto, he creado tu ticket #{ticket_id} y lo he enviado al equipo del hotel. "
-                "Te avisaremos cuando esté resuelto."
+                f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
+                f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
             )
         else:
             # Si por cualquier motivo create_ticket devolvió None,
@@ -763,7 +842,7 @@ def _handle_ticket_confirmation_yes_no(
     # ---------- NO = volver a modo edición ----------
     if _is_no(msg):
         logger.info(
-            "[TICKET] ⚠️ User said NO → Return to draft editing mode",
+            "[TICKET] ⚠️ User said NO → Restart identity collection",
             extra={
                 "decision": "USER_SAID_NO",
                 "wa_id": session.get("wa_id"),
@@ -771,11 +850,19 @@ def _handle_ticket_confirmation_yes_no(
                 "location": "gateway_app/core/state.py"
             }
         )
-        session["state"] = STATE_TICKET_DRAFT
+
+        # ⭐ Clear temporary identity fields and restart collection
+        session.pop("temp_guest_name", None)
+        session.pop("temp_room", None)
+        session.pop("temp_ticket_draft", None)
+
+        session["state"] = STATE_GUEST_IDENTIFY
+
         actions.append(
             _text_action(
-                "Sin problema. Dime qué parte quieres cambiar "
-                "(área, prioridad, habitación o detalle) y te enviaré un nuevo resumen."
+                "Sin problema. Volvamos a empezar:\n\n"
+                "📝 ¿Cuál es tu nombre completo?\n"
+                "🏨 ¿En qué número de habitación te encuentras?"
             )
         )
         return True, actions
@@ -791,3 +878,350 @@ def _handle_ticket_confirmation_yes_no(
         }
     )
     return False, []
+
+
+# ==============================================================================
+# IDENTITY VALIDATION HELPERS
+# ==============================================================================
+
+def _has_guest_identity(session: Dict[str, Any], nlu: NLUResult) -> bool:
+    """
+    Check if we have both guest_name and room in session OR in NLU.
+
+    Returns:
+        True if both name and room are available, False otherwise.
+    """
+    # Check session first
+    session_name = session.get("guest_name")
+    session_room = session.get("room")
+
+    # Check NLU
+    nlu_name = getattr(nlu, "name", None)
+    nlu_room = nlu.room
+
+    has_name = bool(session_name or nlu_name)
+    has_room = bool(session_room or nlu_room)
+
+    logger.debug(
+        "[IDENTITY] Checking guest identity",
+        extra={
+            "wa_id": session.get("wa_id"),
+            "has_name": has_name,
+            "has_room": has_room,
+            "session_name": session_name,
+            "session_room": session_room,
+            "nlu_name": nlu_name,
+            "nlu_room": nlu_room,
+        }
+    )
+
+    return has_name and has_room
+
+
+def _request_guest_identity(nlu: NLUResult, session: Dict[str, Any]) -> list:
+    """
+    Request guest name and room number.
+
+    Transitions to STATE_GUEST_IDENTIFY state.
+
+    Returns:
+        List of actions (WhatsApp messages) to send.
+    """
+    session["state"] = STATE_GUEST_IDENTIFY
+
+    # Store partial ticket info in temp_ticket_draft
+    session["temp_ticket_draft"] = {
+        "area": nlu.area,
+        "priority": nlu.priority,
+        "detail": nlu.detail,
+        "room": nlu.room,  # May be None
+    }
+
+    logger.info(
+        "[IDENTITY] Requesting guest identity",
+        extra={
+            "wa_id": session.get("wa_id"),
+            "state": STATE_GUEST_IDENTIFY,
+            "area": nlu.area,
+            "detail": nlu.detail,
+        }
+    )
+
+    text = (
+        "Para poder ayudarte mejor, necesito confirmar algunos datos:\n\n"
+        "📝 ¿Cuál es tu nombre completo?\n"
+        "🏨 ¿En qué número de habitación te encuentras?"
+    )
+
+    return [_text_action(text)]
+
+
+def _handle_guest_identify(
+    msg: str,
+    nlu: NLUResult,
+    session: Dict[str, Any]
+) -> tuple[bool, list]:
+    """
+    Handle messages in STATE_GUEST_IDENTIFY state.
+
+    Attempts to extract name and room from:
+    1. NLU result (name field)
+    2. Simple regex patterns
+
+    Once both are extracted, creates combined confirmation.
+
+    Returns:
+        (handled: bool, actions: list)
+    """
+    wa_id = session.get("wa_id")
+
+    # Try to extract from NLU first
+    nlu_name = getattr(nlu, "name", None)
+    nlu_room = nlu.room
+
+    # Fallback to simple extraction if NLU didn't get them
+    extracted_name = nlu_name or _extract_name_simple(msg)
+    extracted_room = nlu_room or _extract_room_simple(msg)
+
+    logger.debug(
+        "[IDENTITY] Extracting identity from message",
+        extra={
+            "wa_id": wa_id,
+            "msg": msg,
+            "nlu_name": nlu_name,
+            "nlu_room": nlu_room,
+            "extracted_name": extracted_name,
+            "extracted_room": extracted_room,
+        }
+    )
+
+    # Store in temporary fields
+    if extracted_name:
+        session["temp_guest_name"] = extracted_name
+    if extracted_room:
+        session["temp_room"] = extracted_room
+
+    # Check if we have both
+    temp_name = session.get("temp_guest_name")
+    temp_room = session.get("temp_room")
+
+    if temp_name and temp_room:
+        # We have both! Create combined confirmation
+        logger.info(
+            "[IDENTITY] ✅ Both name and room extracted → Creating combined confirmation",
+            extra={
+                "wa_id": wa_id,
+                "temp_name": temp_name,
+                "temp_room": temp_room,
+            }
+        )
+
+        actions = _create_combined_confirmation(session)
+        return True, actions
+
+    # Still missing something, ask again
+    missing = []
+    if not temp_name:
+        missing.append("nombre")
+    if not temp_room:
+        missing.append("número de habitación")
+
+    logger.info(
+        "[IDENTITY] ⚠️ Missing identity fields → Asking again",
+        extra={
+            "wa_id": wa_id,
+            "missing": missing,
+            "temp_name": temp_name,
+            "temp_room": temp_room,
+        }
+    )
+
+    text = f"Gracias, pero aún necesito tu {' y '.join(missing)}. ¿Puedes proporcionarlo?"
+
+    return True, [_text_action(text)]
+
+
+def _create_combined_confirmation(session: Dict[str, Any]) -> list:
+    """
+    Create a single combined confirmation message with identity + ticket details.
+
+    Uses temp_guest_name, temp_room, and temp_ticket_draft from session.
+
+    Returns:
+        List of actions (WhatsApp messages).
+    """
+    temp_name = session.get("temp_guest_name", "")
+    temp_room = session.get("temp_room", "")
+    temp_draft = session.get("temp_ticket_draft", {})
+
+    area = temp_draft.get("area", "MANTENCION")
+    priority = temp_draft.get("priority", "MEDIA")
+    detail = temp_draft.get("detail", "Sin detalles")
+
+    # Map area to friendly name
+    area_map = {
+        "MANTENCION": "Mantenimiento",
+        "HOUSEKEEPING": "Housekeeping",
+        "ROOMSERVICE": "Room Service",
+    }
+    area_name = area_map.get(area, area)
+
+    # Build confirmation message - simplified version
+    text = (
+        f"Perfecto, {temp_name}. Voy a notificar al equipo de {area_name} sobre:\n\n"
+        f"📝 {detail}\n"
+        f"🏨 Habitación {temp_room}\n\n"
+        "¿Confirmas? (Sí/No)"
+    )
+
+    # Transition to TICKET_CONFIRM state
+    session["state"] = STATE_TICKET_CONFIRM
+
+    logger.info(
+        "[IDENTITY] Creating combined confirmation",
+        extra={
+            "wa_id": session.get("wa_id"),
+            "temp_name": temp_name,
+            "temp_room": temp_room,
+            "area": area,
+            "priority": priority,
+            "state": STATE_TICKET_CONFIRM,
+        }
+    )
+
+    return [_text_action(text)]
+
+
+def _create_combined_confirmation_direct(nlu: NLUResult, session: Dict[str, Any]) -> list:
+    """
+    Create combined confirmation when identity is already in session OR in NLU.
+
+    This is used when guest already has guest_name + room in session or NLU extracted them.
+
+    Returns:
+        List of actions (WhatsApp messages).
+    """
+    # Use NLU data if available, otherwise fall back to session
+    nlu_name = getattr(nlu, "name", None)
+    nlu_room = nlu.room
+
+    guest_name = nlu_name or session.get("guest_name", "")
+    room = nlu_room or session.get("room", "")
+
+    area = nlu.area or "MANTENCION"
+    priority = nlu.priority or "MEDIA"
+    detail = nlu.detail or "Sin detalles"
+
+    # Map area to friendly name
+    area_map = {
+        "MANTENCION": "Mantenimiento",
+        "HOUSEKEEPING": "Housekeeping",
+        "ROOMSERVICE": "Room Service",
+    }
+    area_name = area_map.get(area, area)
+
+    # Build confirmation message - simplified version
+    text = (
+        f"Perfecto, {guest_name}. Voy a notificar al equipo de {area_name} sobre:\n\n"
+        f"📝 {detail}\n"
+        f"🏨 Habitación {room}\n\n"
+        "¿Confirmas? (Sí/No)"
+    )
+
+    # Create ticket draft in session
+    session["ticket_draft"] = {
+        "area": area,
+        "priority": priority,
+        "room": room,
+        "detail": detail,
+        "guest_name": guest_name,
+    }
+
+    # Transition to TICKET_CONFIRM state
+    session["state"] = STATE_TICKET_CONFIRM
+
+    logger.info(
+        "[IDENTITY] Creating combined confirmation (direct)",
+        extra={
+            "wa_id": session.get("wa_id"),
+            "guest_name": guest_name,
+            "room": room,
+            "area": area,
+            "priority": priority,
+            "state": STATE_TICKET_CONFIRM,
+        }
+    )
+
+    return [_text_action(text)]
+
+
+def _extract_name_simple(msg: str) -> Optional[str]:
+    """
+    Simple regex-based name extraction fallback.
+
+    Looks for patterns like:
+    - "mi nombre es Juan Pérez"
+    - "soy María González"
+    - "Juan Pérez, habitación 205"
+
+    Returns:
+        Extracted name or None.
+    """
+    import re
+
+    msg_lower = msg.lower()
+
+    # Pattern 1: "mi nombre es X" - Stop at common room indicators
+    match = re.search(r"(?:mi nombre es|me llamo|soy)\s+([a-záéíóúñ\s]+?)(?:\s+(?:de la|en la|habitaci[oó]n|room|hab|y\s+|,|\.)|$)", msg_lower, re.IGNORECASE)
+    if match:
+        name = match.group(1).strip().title()
+        if len(name) > 2:
+            logger.debug(f"[EXTRACT] Name extracted (pattern 1): {name}")
+            return name
+
+    # Pattern 2: Look for capitalized words (likely a name)
+    # e.g., "Juan Pérez habitación 205"
+    words = msg.split()
+    capitalized = [w for w in words if w and w[0].isupper() and not w.lower() in ["habitación", "habitacion", "room"]]
+    if len(capitalized) >= 2:
+        name = " ".join(capitalized[:3])  # Max 3 words for name
+        logger.debug(f"[EXTRACT] Name extracted (pattern 2): {name}")
+        return name
+
+    logger.debug("[EXTRACT] No name pattern matched")
+    return None
+
+
+def _extract_room_simple(msg: str) -> Optional[str]:
+    """
+    Simple regex-based room number extraction fallback.
+
+    Looks for patterns like:
+    - "habitación 205"
+    - "room 305"
+    - "hab 123"
+    - Just a number like "205"
+
+    Returns:
+        Extracted room number or None.
+    """
+    import re
+
+    msg_lower = msg.lower()
+
+    # Pattern 1: "habitación 205", "room 305", "hab 123"
+    match = re.search(r"(?:habitaci[oó]n|room|hab\.?)\s*(\d{2,4})", msg_lower, re.IGNORECASE)
+    if match:
+        room = match.group(1)
+        logger.debug(f"[EXTRACT] Room extracted (pattern 1): {room}")
+        return room
+
+    # Pattern 2: Just a standalone number (2-4 digits)
+    match = re.search(r"\b(\d{2,4})\b", msg)
+    if match:
+        room = match.group(1)
+        logger.debug(f"[EXTRACT] Room extracted (pattern 2): {room}")
+        return room
+
+    logger.debug("[EXTRACT] No room pattern matched")
+    return None

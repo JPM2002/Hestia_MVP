@@ -30,6 +30,7 @@ class NLUResult:
         "priority": "...",
         "room": "...",
         "detail": "...",
+        "name": "...",
         "is_cancel": bool,
         "is_help": bool,
         "is_smalltalk": bool,
@@ -42,6 +43,7 @@ class NLUResult:
     priority: Optional[str] = None  # URGENTE | ALTA | MEDIA | BAJA | None
     room: Optional[str] = None
     detail: Optional[str] = None
+    name: Optional[str] = None     # Guest name (for identity validation)
 
     is_cancel: bool = False
     is_help: bool = False
@@ -60,6 +62,7 @@ class NLUResult:
             priority=data.get("priority"),
             room=data.get("room"),
             detail=data.get("detail"),
+            name=data.get("name"),
             is_cancel=bool(data.get("is_cancel", False)),
             is_help=bool(data.get("is_help", False)),
             is_smalltalk=bool(data.get("is_smalltalk", False)),

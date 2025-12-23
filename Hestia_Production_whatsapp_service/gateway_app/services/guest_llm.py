@@ -15,6 +15,7 @@ The LLM is instructed to ALWAYS output a strict JSON object with this shape:
   "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null,
   "room": string | null,
   "detail": string | null,
+  "name": string | null,
   "is_smalltalk": boolean,
   "wants_handoff": boolean,
   "is_cancel": boolean,
@@ -51,6 +52,7 @@ Your job is to interpret SHORT WhatsApp messages and return a JSON object with t
   "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null,
   "room": string | null,
   "detail": string | null,
+  "name": string | null,
   "is_smalltalk": boolean,
   "wants_handoff": boolean,
   "is_cancel": boolean,
@@ -183,9 +185,11 @@ Infer priority when possible (otherwise null):
 - MEDIA → normal request, "cuando puedan".
 - BAJA → low-impact, minor issues, nice-to-have.
 
-ROOM AND DETAIL
+ROOM, NAME, AND DETAIL
 
 - room: extract a clear room number if present (e.g., from "312", "hab 312", "cuarto 127").
+- name: extract the guest's full name if they provide it (e.g., from "soy Juan Pérez", "mi nombre es María González").
+  Only extract if clearly stated by the guest. Otherwise use null.
 - detail: short natural-language description of the issue or request.
   If the message is only smalltalk / greeting, use null for detail.
 
@@ -362,12 +366,17 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     if detail is not None:
         detail = str(detail).strip() or None
 
+    name = data.get("name")
+    if name is not None:
+        name = str(name).strip() or None
+
     result = {
         "intent": intent,
         "area": area,
         "priority": priority,
         "room": room,
         "detail": detail,
+        "name": name,
         "is_smalltalk": bool(data.get("is_smalltalk")),
         "wants_handoff": bool(data.get("wants_handoff")),
         "is_cancel": bool(data.get("is_cancel")),
@@ -382,6 +391,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
             "area": area,
             "room": room,
             "detail": detail,
+            "guest_name_extracted": name,
             "result": result,
             "location": "gateway_app/services/guest_llm.py"
         }
