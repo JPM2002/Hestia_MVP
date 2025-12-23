@@ -43,10 +43,14 @@ def handle_guest_message(
         msg_text = (transcript or "").strip()
 
     # 2) Cargar sesión actual
-    session = state_machine.load_session(wa_id)
+    # HARDEN: ensure session is always a dict
+    if session is None:
+        session = {"state": "START", "data": {}}
 
-    logger.info("[INBOUND] wa_id=%s from=%s msg_type=%s text=%r state=%s",
-            wa_id, from_phone, msg_type, msg_text, session.get("state"))
+    logger.info(
+        "[INBOUND] wa_id=%s from=%s type=%s text=%r state=%s",
+        wa_id, from_phone, msg_type, msg_text, session.get("state")
+    )
 
     # 3) Ejecutar un paso del autómata
     actions, new_session = state_machine.handle_incoming_text(
