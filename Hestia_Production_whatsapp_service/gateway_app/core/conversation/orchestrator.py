@@ -300,8 +300,12 @@ def handle_incoming_text(
             }
         )
 
-        extra_actions = handle_smalltalk(msg, session, new_conversation)
-        actions.extend(extra_actions)
+        # If new conversation, send initial greeting instead of smalltalk
+        if new_conversation:
+            actions.append(text_action(get_initial_greeting(session)))
+        else:
+            extra_actions = handle_smalltalk(msg, session, new_conversation)
+            actions.extend(extra_actions)
 
         if state in {STATE_INIT, STATE_FAQ}:
             session["state"] = STATE_NEW

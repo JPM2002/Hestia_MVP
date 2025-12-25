@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from gateway_app.core import state as state_machine
+from gateway_app.core.conversation import session, orchestrator
 from gateway_app.services import audio as audio_svc
 
 logger = logging.getLogger(__name__)
@@ -62,21 +62,21 @@ def process_guest_message(
         msg_text = (transcript or "").strip()
 
     # 2) Cargar sesión actual
-    session = state_machine.load_session(wa_id)
+    user_session = session.load_session(wa_id)
 
     # 3) Ejecutar un paso del autómata
-    actions, new_session = state_machine.handle_incoming_text(
+    actions, new_session = orchestrator.handle_incoming_text(
         wa_id=wa_id,
         guest_phone=from_phone,
         guest_name=guest_name,
         text=msg_text,
-        session=session,
+        session=user_session,
         timestamp=timestamp,
         raw_payload=raw_payload,
     )
 
     # 4) Guardar nueva sesión
-    state_machine.save_session(wa_id, new_session)
+    session.save_session(wa_id, new_session)
 
     # 5) Retornar acciones (sin enviar por ningún canal)
     return actions

@@ -19,7 +19,7 @@ from . import bp  # blueprint: url_prefix="/webhook"
 from gateway_app.config import cfg
 from gateway_app.services import audio as audio_svc
 from gateway_app.services import whatsapp_api
-from gateway_app.core import state as state_machine
+from gateway_app.core.conversation import session as session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +247,7 @@ def test_webhook():
             bot_responses.append(act.get("text", ""))
 
     # Load updated session to return state
-    session = state_machine.load_session(phone)
+    session = session_manager.load_session(phone)
 
     # Return the conversation in the response (NO WhatsApp sending)
     return jsonify({

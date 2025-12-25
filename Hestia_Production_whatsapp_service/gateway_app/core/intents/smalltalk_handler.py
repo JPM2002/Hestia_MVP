@@ -84,8 +84,8 @@ def get_initial_greeting(session: Dict[str, Any]) -> str:
 
     return (
         prefix
-        + "¡Hola! Te damos la bienvenida a nuestro servicio de asistencia digital.\n"
-          "Para poder ayudarte rápidamente por favor indícame tu número de habitación y cuál es tu consulta o solicitud."
+        + "Te damos la bienvenida a nuestro servicio de asistencia digital.\n"
+          "Para poder ayudarte rápidamente, por favor indícame tu número de habitación y cuál es tu consulta o solicitud."
     )
 
 
