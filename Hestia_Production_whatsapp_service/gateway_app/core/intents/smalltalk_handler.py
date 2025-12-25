@@ -53,12 +53,20 @@ def get_smalltalk_reply(original: str) -> str:
     """
     lower = original.lower()
 
+    # Detect greetings
+    greeting_patterns = ["hola", "buenos días", "buenas tardes", "buenas noches", "buen día", "hey", "hi", "hello"]
+    if any(pattern in lower for pattern in greeting_patterns):
+        return "Hola, ¿en qué puedo ayudarte?"
+
+    # Detect thanks
     if "gracia" in lower:
         return "Con gusto, estoy aquí para ayudarte durante tu estadía. ¿Algo más?"
 
+    # Detect positive responses
     if "todo bien" in lower or "todo ok" in lower or "estoy bien" in lower:
         return "Perfecto, me alegra saberlo. Si necesitas algo más, solo escribe por aquí."
 
+    # Default smalltalk response
     return "Entendido. Cualquier cosa que necesites, solo escríbeme por aquí."
 
 

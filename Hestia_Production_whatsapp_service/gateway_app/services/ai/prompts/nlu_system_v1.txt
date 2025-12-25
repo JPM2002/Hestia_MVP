@@ -137,11 +137,25 @@ Use not_understood when the message is:
 OR it is unclear/random.
 
 Examples:
-• Pure info:
+• Pure info (schedule/hours questions):
   - "¿a qué hora es el desayuno?" → not_understood
-  - "¿tienen piscina?" → not_understood
-  - "¿cuál es la clave del wifi?" → not_understood
+  - "¿y el almuerzo?" → not_understood
+  - "¿hasta qué hora está el restaurante?" → not_understood
+  - "¿cuándo cierran la piscina?" → not_understood
+  - "horario del desayuno" → not_understood
   - "horario del restaurante" → not_understood
+  - "horario de check-out" → not_understood
+
+• Pure info (facilities/amenities):
+  - "¿tienen piscina?" → not_understood
+  - "¿hay gimnasio?" → not_understood
+  - "¿dónde está el restaurante?" → not_understood
+  - "¿cuál es la clave del wifi?" → not_understood
+
+• Pure info (pricing):
+  - "¿cuánto cuesta el desayuno?" → not_understood
+  - "¿cuánto vale el room service?" → not_understood
+  - "precio del minibar" → not_understood
 
 • How-to / usage:
   - "¿Cómo prendo el aire acondicionado?" → not_understood

@@ -15,6 +15,21 @@ from gateway_app.services import faq_llm
 logger = logging.getLogger(__name__)
 
 
+def get_reception_fallback_message() -> str:
+    """
+    Generate fallback message for questions without FAQ answer.
+
+    Directs user to contact reception.
+
+    Returns:
+        Formatted message to contact reception
+    """
+    return (
+        "No tengo información sobre eso en este momento.\n"
+        "Para resolver esta duda, puedes contactar a recepción."
+    )
+
+
 def handle_faq_fallback(
     msg: str,
     session: Dict[str, Any]
@@ -62,11 +77,11 @@ def handle_faq_fallback(
 
         return True, actions
 
-    # Si ni siquiera FAQ funciona, mensaje genérico de ayuda
+    # Si ni siquiera FAQ funciona, derivar a recepción
     logger.info(
-        "[FAQ] ⚠️ FAQ fallback missed → Show help message",
+        "[FAQ] ⚠️ FAQ fallback missed → Suggest contacting reception",
         extra={
-            "decision": "FAQ_FALLBACK_MISS_DEFAULT",
+            "decision": "FAQ_FALLBACK_MISS_RECEPTION",
             "wa_id": session.get("wa_id"),
             "user_message": msg,
             "location": "gateway_app/core/intents/faq_handler.py"
@@ -74,13 +89,7 @@ def handle_faq_fallback(
     )
 
     actions = [
-        text_action(
-            "No estoy seguro de haber entendido bien. Puedo ayudarte a:\n\n"
-            "• Crear solicitudes de mantenimiento, housekeeping o room service.\n"
-            "• Responder preguntas frecuentes sobre el hotel.\n"
-            "• Ponerte en contacto con recepción.\n\n"
-            "¿Qué necesitas?"
-        )
+        text_action(get_reception_fallback_message())
     ]
 
     session["state"] = "GH_S0_INIT"
