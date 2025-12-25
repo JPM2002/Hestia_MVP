@@ -65,8 +65,8 @@ def request_guest_identity(nlu: Any, session: Dict[str, Any]) -> List[Dict[str, 
     """
     session["state"] = STATE_GUEST_IDENTIFY
 
-    # Store partial ticket info in temp_ticket_draft
-    session["temp_ticket_draft"] = {
+    # Store partial ticket info in ticket_draft (single source of truth)
+    session["ticket_draft"] = {
         "area": getattr(nlu, "area", None),
         "priority": getattr(nlu, "priority", None),
         "detail": getattr(nlu, "detail", None),
@@ -181,14 +181,14 @@ def create_combined_confirmation(session: Dict[str, Any]) -> List[Dict[str, Any]
     """
     Create a single combined confirmation message with identity + ticket details.
 
-    Uses temp_guest_name, temp_room, and temp_ticket_draft from session.
+    Uses temp_guest_name, temp_room, and ticket_draft from session.
 
     Returns:
         List of actions (WhatsApp messages).
     """
     temp_name = session.get("temp_guest_name", "")
     temp_room = session.get("temp_room", "")
-    temp_draft = session.get("temp_ticket_draft", {})
+    temp_draft = session.get("ticket_draft", {})
 
     area = temp_draft.get("area", "MANTENCION")
     priority = temp_draft.get("priority", "MEDIA")
@@ -209,6 +209,12 @@ def create_combined_confirmation(session: Dict[str, Any]) -> List[Dict[str, Any]
         f"🏨 Habitación {temp_room}\n\n"
         "¿Confirmas? (Sí/No)"
     )
+
+    # Update ticket_draft with collected identity data (single source of truth)
+    session["ticket_draft"].update({
+        "room": temp_room,
+        "guest_name": temp_name,
+    })
 
     # Transition to TICKET_CONFIRM state
     session["state"] = STATE_TICKET_CONFIRM

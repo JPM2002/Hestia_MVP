@@ -101,72 +101,72 @@ def handle_ticket_confirmation_yes_no(
         )
 
         # Crear ticket en tu backend (usa tu create_ticket real)
-        #ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+        ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
 
-        # if ticket_id:
-        #     logger.info(
-        #         "[TICKET] ✅ Ticket created successfully in database",
-        #         extra={
-        #             "decision": "TICKET_CREATED_SUCCESS",
-        #             "wa_id": session.get("wa_id"),
-        #             "ticket_id": ticket_id,
-        #             "payload": payload,
-        #             "location": "gateway_app/core/intents/ticket_handler.py"
-        #         }
-        #     )
-        # else:
-        #     logger.error(
-        #         "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
-        #         extra={
-        #             "decision": "TICKET_CREATED_FAILED",
-        #             "wa_id": session.get("wa_id"),
-        #             "payload": payload,
-        #             "location": "gateway_app/core/intents/ticket_handler.py"
-        #         }
-        #     )
+        if ticket_id:
+            logger.info(
+                "[TICKET] ✅ Ticket created successfully in database",
+                extra={
+                    "decision": "TICKET_CREATED_SUCCESS",
+                    "wa_id": session.get("wa_id"),
+                    "ticket_id": ticket_id,
+                    "payload": payload,
+                    "location": "gateway_app/core/intents/ticket_handler.py"
+                }
+            )
+        else:
+            logger.error(
+                "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
+                extra={
+                    "decision": "TICKET_CREATED_FAILED",
+                    "wa_id": session.get("wa_id"),
+                    "payload": payload,
+                    "location": "gateway_app/core/intents/ticket_handler.py"
+                }
+            )
 
-        # # Opcional: seguir notificando al sistema central, si lo usas
-        # notify.notify_internal(
-        #     "ticket_created",
-        #     {
-        #         "ticket_id": ticket_id,
-        #         "payload": payload,
-        #         "wa_id": session.get("wa_id"),
-        #         "phone": session.get("phone"),
-        #         "guest_name": session.get("guest_name"),
-        #     },
-        # )
+        # Opcional: seguir notificando al sistema central, si lo usas
+        notify.notify_internal(
+            "ticket_created",
+            {
+                "ticket_id": ticket_id,
+                "payload": payload,
+                "wa_id": session.get("wa_id"),
+                "phone": session.get("phone"),
+                "guest_name": session.get("guest_name"),
+            },
+        )
 
-        # # Volvemos al estado "normal" después de crear el ticket
-        # session["state"] = STATE_NEW
+        # Volvemos al estado "normal" después de crear el ticket
+        session["state"] = STATE_NEW
 
-        # # ⭐ Get area name for user-friendly message
-        # area = payload.get("area", "MANTENCION")
-        # area_map = {
-        #     "MANTENCION": "Mantenimiento",
-        #     "HOUSEKEEPING": "Housekeeping",
-        #     "ROOMSERVICE": "Room Service",
-        # }
-        # area_name = area_map.get(area, area)
-        # room = payload.get("ubicacion", "")
+        # ⭐ Get area name for user-friendly message
+        area = payload.get("area", "MANTENCION")
+        area_map = {
+            "MANTENCION": "Mantenimiento",
+            "HOUSEKEEPING": "Housekeeping",
+            "ROOMSERVICE": "Room Service",
+        }
+        area_name = area_map.get(area, area)
+        room = payload.get("ubicacion", "")
 
-        # if ticket_id:
-        #     # ⭐ NO mostrar ticket ID al huésped
-        #     text = (
-        #         f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
-        #         f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
-        #     )
-        # else:
-        #     # Si por cualquier motivo create_ticket devolvió None,
-        #     # avisamos al huésped pero también dejamos constancia en logs.
-        #     text = (
-        #         "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
-        #         "El equipo de recepción ha sido notificado."
-        #     )
+        if ticket_id:
+            # ⭐ NO mostrar ticket ID al huésped
+            text = (
+                f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
+                f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
+            )
+        else:
+            # Si por cualquier motivo create_ticket devolvió None,
+            # avisamos al huésped pero también dejamos constancia en logs.
+            text = (
+                "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
+                "El equipo de recepción ha sido notificado."
+            )
 
-        # actions.append(text_action(text))
-        # clear_ticket_draft(session)
-        # return True, actions
+        actions.append(text_action(text))
+        clear_ticket_draft(session)
+        return True, actions
 
     # ---------- NO = volver a modo edición ----------
     if is_no(msg):
@@ -183,7 +183,7 @@ def handle_ticket_confirmation_yes_no(
         # ⭐ Clear temporary identity fields and restart collection
         session.pop("temp_guest_name", None)
         session.pop("temp_room", None)
-        session.pop("temp_ticket_draft", None)
+        # ticket_draft will be recreated when re-entering identity flow
 
         session["state"] = "GH_IDENTIFY"
 
