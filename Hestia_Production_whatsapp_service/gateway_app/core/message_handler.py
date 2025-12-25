@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from gateway_app.core import state as state_machine
 from gateway_app.services import audio as audio_svc
-from gateway_app.services import whatsapp_api
 
 logger = logging.getLogger(__name__)
 
 
-def handle_guest_message(
+def process_guest_message(
     *,
     wa_id: str,
     from_phone: str,
@@ -21,16 +20,36 @@ def handle_guest_message(
     media_id: Optional[str],
     timestamp,
     raw_payload: Dict[str, Any],
-) -> None:
+) -> List[Dict[str, Any]]:
     """
-    High-level handler for guest WhatsApp messages.
+    Process guest message and return bot actions (WITHOUT sending via any channel).
+
+    This is the CORE processing logic shared by ALL channels:
+    - WhatsApp (/whatsapp endpoint)
+    - Test endpoint (/test)
+    - Web chat (custom implementations)
+    - Telegram, SMS, etc. (future channels)
 
     Responsibilities:
     - If needed, transcribe audio -> text.
     - Load DFA session.
     - Call state_machine.handle_incoming_text (the DFA).
     - Save DFA session.
-    - Send WhatsApp replies using whatsapp_api.
+    - Return actions (WITHOUT sending them)
+
+    Args:
+        wa_id: User identifier (WhatsApp ID, user ID, etc.)
+        from_phone: Phone number or user identifier
+        guest_name: Guest name (if available from channel)
+        msg_type: Message type ("text", "audio", etc.)
+        text: Message text content
+        media_id: Media ID for audio/images (optional)
+        timestamp: Message timestamp
+        raw_payload: Raw webhook payload for debugging
+
+    Returns:
+        List of actions (dicts with "type", "text", etc.)
+        Example: [{"type": "text", "text": "Hola, ¿cómo puedo ayudarte?"}]
     """
     # 1) Audio -> texto si hace falta
     msg_text = (text or "").strip()
@@ -59,15 +78,6 @@ def handle_guest_message(
     # 4) Guardar nueva sesión
     state_machine.save_session(wa_id, new_session)
 
-    # 5) Enviar acciones salientes
-    for act in actions:
-        if act.get("type") == "text":
-            try:
-                whatsapp_api.send_text_message(
-                    to=from_phone,
-                    text=act.get("text", ""),
-                    preview_url=bool(act.get("preview_url", False)),
-                )
-            except Exception:
-                logger.exception("Failed to send WhatsApp text message: %r", act)
+    # 5) Retornar acciones (sin enviar por ningún canal)
+    return actions
     

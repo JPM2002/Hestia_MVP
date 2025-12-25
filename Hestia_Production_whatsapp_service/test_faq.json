@@ -1,0 +1,22 @@
+[
+  {
+    "key": "no_power_in_room",
+    "q": "No hay luz en mi habitación.",
+    "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."
+  },
+  {
+    "key": "light",
+    "q": "No hay luz en mi habitación.",
+    "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."
+  },
+  {
+    "key": "power_room",
+    "q": "¿Cómo prendo la luz de la habitación?.",
+    "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."
+  },
+  {
+    "key": "aire_acondicionado",
+    "q": "¿Cómo prendo el aire acondicionado?.",
+    "a": "¿Probó insertando la tarjeta en el interruptor de tarjeta? se encuentra al ingresar a la habitación a media altura, en la muralla. Un plástico con ranura, de color blanco. En caso contrario, por favor llame a recepción al 100 o 101+ OK  para reportar la falta de luz en su habitación."
+  }
+]

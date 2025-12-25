@@ -145,12 +145,12 @@ def whatsapp_webhook():
         },
     )
 
-        # Run high-level message handler (DFA + replies)
+    # Process message using shared logic (same as /test endpoint)
     media_id = None
     if msg_type == "audio":
         media_id = (msg.get("audio") or {}).get("id")
 
-    message_handler.handle_guest_message(
+    actions = message_handler.process_guest_message(
         wa_id=wa_id or from_number,
         from_phone=from_number,
         guest_name=guest_name,
@@ -160,6 +160,18 @@ def whatsapp_webhook():
         timestamp=ts,
         raw_payload=data,
     )
+
+    # Send responses via WhatsApp API
+    for act in actions:
+        if act.get("type") == "text":
+            try:
+                whatsapp_api.send_text_message(
+                    to=from_number,
+                    text=act.get("text", ""),
+                    preview_url=bool(act.get("preview_url", False)),
+                )
+            except Exception:
+                logger.exception("Failed to send WhatsApp text message: %r", act)
 
     # Mark as read (optional)
     if msg_id:
@@ -176,6 +188,9 @@ def test_webhook():
     """
     Simplified test endpoint for simulating WhatsApp messages without real WhatsApp integration.
 
+    This endpoint uses the SAME processing logic as production (/whatsapp),
+    but returns responses as JSON instead of sending via WhatsApp API.
+
     Expected JSON payload:
     {
         "phone": "56998765432",
@@ -185,6 +200,12 @@ def test_webhook():
     }
 
     Returns the bot's responses in the JSON response instead of sending via WhatsApp API.
+
+    Use cases:
+    - Testing bot logic without WhatsApp
+    - Custom web chat interface
+    - Integration with other messaging platforms
+    - Automated testing
     """
     data = request.get_json(force=True, silent=True) or {}
 
@@ -207,21 +228,17 @@ def test_webhook():
         },
     )
 
-    # Load session and process message through state machine
-    session = state_machine.load_session(phone)
-
-    actions, new_session = state_machine.handle_incoming_text(
+    # This is the SAME logic used by /whatsapp endpoint
+    actions = message_handler.process_guest_message(
         wa_id=phone,
-        guest_phone=phone,
+        from_phone=phone,
         guest_name=guest_name,
+        msg_type=msg_type,
         text=text,
-        session=session,
+        media_id=None,
         timestamp=datetime.now(timezone.utc),
         raw_payload=data,
     )
-
-    # Save the new session
-    state_machine.save_session(phone, new_session)
 
     # Extract bot responses from actions
     bot_responses = []
@@ -229,15 +246,18 @@ def test_webhook():
         if act.get("type") == "text":
             bot_responses.append(act.get("text", ""))
 
-    # Return the conversation in the response
+    # Load updated session to return state
+    session = state_machine.load_session(phone)
+
+    # Return the conversation in the response (NO WhatsApp sending)
     return jsonify({
         "status": "ok",
         "message": "Test message processed",
         "conversation": {
             "user_message": text,
             "bot_responses": bot_responses,
-            "session_state": new_session.get("state"),
-            "session_data": new_session.get("data", {})
+            "session_state": session.get("state") if session else None,
+            "session_data": session.get("data", {}) if session else {}
         }
     }), 200
 
