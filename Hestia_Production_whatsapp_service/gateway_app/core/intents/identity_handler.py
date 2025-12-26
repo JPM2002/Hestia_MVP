@@ -71,6 +71,11 @@ def request_guest_identity(nlu: Any, session: Dict[str, Any]) -> List[Dict[str, 
         "priority": getattr(nlu, "priority", None),
         "detail": getattr(nlu, "detail", None),
         "room": getattr(nlu, "room", None),  # May be None
+        # Routing metadata
+        "routing_source": getattr(nlu, "routing_source", "fallback"),
+        "routing_reason": getattr(nlu, "routing_reason", "No metadata"),
+        "routing_confidence": getattr(nlu, "routing_confidence", 0.0),
+        "routing_version": getattr(nlu, "routing_version", "v1"),
     }
 
     logger.info(
@@ -250,15 +255,61 @@ def create_combined_confirmation_direct(nlu: Any, session: Dict[str, Any]) -> Li
     guest_name = nlu_name or session.get("guest_name", "")
     room = nlu_room or session.get("room", "")
 
-    area = getattr(nlu, "area", None) or "MANTENCION"
+    area = getattr(nlu, "area", None)
     priority = getattr(nlu, "priority", None) or "MEDIA"
     detail = getattr(nlu, "detail", None) or "Sin detalles"
+
+    # Extraer metadata de routing
+    routing_source = getattr(nlu, "routing_source", "llm")
+    routing_confidence = getattr(nlu, "routing_confidence", 0.75)
+    routing_reason = getattr(nlu, "routing_reason", "LLM classification")
+
+    # =========================================================================
+    # CONFIDENCE THRESHOLD: Pedir aclaración si confianza es baja
+    # =========================================================================
+    CONFIDENCE_THRESHOLD = 0.65
+
+    if not area or routing_confidence < CONFIDENCE_THRESHOLD:
+        logger.warning(
+            f"[ROUTING] ⚠️ Low confidence ({routing_confidence:.2f}) or missing area → Request clarification",
+            extra={
+                "area": area,
+                "confidence": routing_confidence,
+                "threshold": CONFIDENCE_THRESHOLD,
+                "will_ask_clarification": True
+            }
+        )
+
+        # Guardar contexto pendiente
+        session["state"] = "GH_AREA_CLARIFICATION"
+        session["pending_detail"] = detail
+        session["pending_room"] = room
+        session["pending_guest_name"] = guest_name
+
+        clarification_text = (
+            f"Entiendo que necesitas ayuda con: *{detail}*\n\n"
+            "Para asignarlo correctamente, ¿es sobre:\n\n"
+            "1️⃣ *Mantenimiento* (técnico/AC/agua/luz)\n"
+            "2️⃣ *Housekeeping* (limpieza/toallas/amenities)\n"
+            "3️⃣ *Recepción* (pagos/reservas/info)\n"
+            "4️⃣ *Otro* (queja/gerencia)\n\n"
+            "Responde con el número (1-4)."
+        )
+
+        logger.info("[ROUTING] 📋 Requesting area clarification from user")
+
+        from gateway_app.core.intents.base import text_action
+        return [text_action(clarification_text)]
+
+    # Si confidence OK, continuar con confirmación normal...
 
     # Map area to friendly name
     area_map = {
         "MANTENCION": "Mantenimiento",
         "HOUSEKEEPING": "Housekeeping",
-        "ROOMSERVICE": "Room Service",
+        "RECEPCION": "Recepción",
+        "SUPERVISION": "Supervisión",
+        "GERENCIA": "Gerencia",
     }
     area_name = area_map.get(area, area)
 
@@ -277,6 +328,11 @@ def create_combined_confirmation_direct(nlu: Any, session: Dict[str, Any]) -> Li
         "room": room,
         "detail": detail,
         "guest_name": guest_name,
+        # Metadata de routing
+        "routing_source": routing_source,
+        "routing_reason": routing_reason,
+        "routing_confidence": routing_confidence,
+        "routing_version": "v1",
     }
 
     # Transition to TICKET_CONFIRM state

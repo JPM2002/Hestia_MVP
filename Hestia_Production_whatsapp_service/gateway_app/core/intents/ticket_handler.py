@@ -89,6 +89,11 @@ def handle_ticket_confirmation_yes_no(
             "huesped_id": session.get("phone"),
             "huesped_phone": session.get("phone"),
             "huesped_nombre": session.get("guest_name") or "",
+            # ⭐ Routing metadata (audit trail)
+            "routing_source": draft.get("routing_source", "fallback"),
+            "routing_reason": draft.get("routing_reason", "No metadata"),
+            "routing_confidence": draft.get("routing_confidence", 0.0),
+            "routing_version": draft.get("routing_version", "v1"),
         }
 
         logger.info(
@@ -145,7 +150,9 @@ def handle_ticket_confirmation_yes_no(
         area_map = {
             "MANTENCION": "Mantenimiento",
             "HOUSEKEEPING": "Housekeeping",
-            "ROOMSERVICE": "Room Service",
+            "RECEPCION": "Recepción",
+            "SUPERVISION": "Supervisión",
+            "GERENCIA": "Gerencia",
         }
         area_name = area_map.get(area, area)
         room = payload.get("ubicacion", "")

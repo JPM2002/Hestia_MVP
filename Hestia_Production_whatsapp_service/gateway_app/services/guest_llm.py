@@ -136,7 +136,13 @@ def _call_json_llm(
 
 def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     """
-    Main NLU entry point.
+    Main NLU entry point con rules-first approach.
+
+    Flow:
+    1. Intenta routing por reglas (rápido, determinístico, gratis)
+    2. Si reglas fallan, usa LLM (flexible pero más lento)
+    3. Aplica guardrails de validación
+    4. Retorna resultado con metadata de routing
 
     Args:
         text: Inbound guest message (plain text).
@@ -144,13 +150,15 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         state: Current DFA/state machine label (string), passed as context to the LLM.
 
     Returns:
-        A dict with the normalized fields as described in _BASE_SYSTEM_PROMPT.
+        A dict with the normalized fields + routing metadata (_routing_*).
         If parsing fails, returns {}.
     """
+    from gateway_app.services.routing_rules import route_by_rules
+
     logger.info(
         "[NLU] 🧠 Starting NLU analysis",
         extra={
-            "text": text,
+            "text": text[:80] + "..." if len(text) > 80 else text,
             "state": state,
             "location": "gateway_app/services/guest_llm.py"
         }
@@ -163,6 +171,49 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         )
         return {}
 
+    # =========================================================================
+    # LAYER 1: RULES-FIRST (determinístico, 0ms extra, $0 costo)
+    # =========================================================================
+    rules_result = route_by_rules(text)
+
+    if rules_result:
+        logger.info(
+            f"[NLU] ✅ RULES HIT → {rules_result['area']} (conf={rules_result['confidence']:.2f}) - LLM SKIPPED",
+            extra={
+                "area": rules_result["area"],
+                "confidence": rules_result["confidence"],
+                "source": "rules",
+                "llm_call_saved": True,
+                "location": "gateway_app/services/guest_llm.py"
+            }
+        )
+
+        return {
+            "intent": "ticket_request",
+            "area": rules_result["area"],
+            "confidence": rules_result["confidence"],
+            "priority": None,
+            "room": None,
+            "detail": text,
+            "name": None,
+            "is_smalltalk": False,
+            "wants_handoff": False,
+            "is_cancel": False,
+            "is_help": False,
+            # Metadata de routing
+            "_routing_source": "rules",
+            "_routing_reason": rules_result["reason"],
+            "_routing_confidence": rules_result["confidence"],
+        }
+
+    logger.info(
+        "[NLU] ⚠️ Rules missed → LLM fallback",
+        extra={"location": "gateway_app/services/guest_llm.py"}
+    )
+
+    # =========================================================================
+    # LAYER 2: LLM con guardrails estrictos
+    # =========================================================================
     prompt = (
         f"Estado DFA actual: {state}\n\n"
         f"Mensaje del huésped:\n{text}"
@@ -189,7 +240,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         "help",
         "not_understood",
     }
-    allowed_areas = {"MANTENCION", "HOUSEKEEPING", "ROOMSERVICE"}
+    allowed_areas = {"MANTENCION", "HOUSEKEEPING", "RECEPCION", "SUPERVISION", "GERENCIA"}
     allowed_priorities = {"URGENTE", "ALTA", "MEDIA", "BAJA"}
 
     intent = data.get("intent")
@@ -199,8 +250,21 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         intent = "not_understood"
 
     area = data.get("area")
-    if area not in allowed_areas:
+    if area and area not in allowed_areas:
+        logger.warning(
+            f"[NLU] ⚠️ Invalid area '{area}' from LLM → setting to None",
+            extra={"invalid_area": area, "location": "gateway_app/services/guest_llm.py"}
+        )
         area = None
+
+    # Extraer confidence del LLM (CRÍTICO para threshold checking)
+    confidence = data.get("confidence", 0.75)
+    if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+        logger.warning(
+            f"[NLU] ⚠️ Invalid confidence '{confidence}' from LLM → default 0.75",
+            extra={"invalid_confidence": confidence, "location": "gateway_app/services/guest_llm.py"}
+        )
+        confidence = 0.75
 
     priority = data.get("priority")
     if priority not in allowed_priorities:
@@ -221,6 +285,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     result = {
         "intent": intent,
         "area": area,
+        "confidence": confidence,
         "priority": priority,
         "room": room,
         "detail": detail,
@@ -229,17 +294,19 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         "wants_handoff": bool(data.get("wants_handoff")),
         "is_cancel": bool(data.get("is_cancel")),
         "is_help": bool(data.get("is_help")),
+        # Metadata de routing
+        "_routing_source": "llm",
+        "_routing_reason": "LLM classification",
+        "_routing_confidence": confidence,
     }
 
     logger.info(
-        "[NLU] ✅ NLU analysis completed",
+        f"[NLU] ✅ LLM result: intent={intent}, area={area}, conf={confidence:.2f}",
         extra={
-            "text": text,
+            "text": text[:80] + "..." if len(text) > 80 else text,
             "intent": intent,
             "area": area,
-            "room": room,
-            "detail": detail,
-            "guest_name_extracted": name,
+            "confidence": confidence,
             "result": result,
             "location": "gateway_app/services/guest_llm.py"
         }

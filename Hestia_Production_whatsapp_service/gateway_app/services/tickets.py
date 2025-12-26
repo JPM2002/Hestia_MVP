@@ -53,12 +53,17 @@ def create_ticket(
             assigned_to,
             created_by,
             confidence_score,
-            qr_required
+            qr_required,
+            routing_source,
+            routing_reason,
+            routing_confidence,
+            routing_version
         )
         VALUES (
             {ph}, {ph}, {ph}, {ph}, {ph},
             {ph}, {ph}, {ph}, {ph}, {ph},
-            {ph}, {ph}, {ph}, {ph}, {ph}
+            {ph}, {ph}, {ph}, {ph}, {ph},
+            {ph}, {ph}, {ph}, {ph}
         )
     """
 
@@ -78,6 +83,11 @@ def create_ticket(
         None,  # created_by
         float(payload.get("confidence_score", 0.85)),
         bool(payload.get("qr_required", False)),
+        # ⭐ Routing metadata (audit trail)
+        payload.get("routing_source", "fallback"),
+        payload.get("routing_reason", "No metadata"),
+        float(payload.get("routing_confidence", 0.0)),
+        payload.get("routing_version", "v1"),
     )
 
     ticket_id = insert_and_get_id(sql, params)

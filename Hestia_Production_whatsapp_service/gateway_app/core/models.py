@@ -50,6 +50,12 @@ class NLUResult:
     is_smalltalk: bool = False
     wants_handoff: bool = False
 
+    # Routing metadata (audit trail)
+    routing_source: Optional[str] = None       # rules | llm | clarification | fallback
+    routing_reason: Optional[str] = None       # Human-readable routing reason
+    routing_confidence: Optional[float] = None  # 0.0-1.0
+    routing_version: str = "v1"
+
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "NLUResult":
         """
@@ -67,6 +73,11 @@ class NLUResult:
             is_help=bool(data.get("is_help", False)),
             is_smalltalk=bool(data.get("is_smalltalk", False)),
             wants_handoff=bool(data.get("wants_handoff", False)),
+            # Routing metadata (with _ prefix in source dict)
+            routing_source=data.get("_routing_source"),
+            routing_reason=data.get("_routing_reason"),
+            routing_confidence=data.get("_routing_confidence"),
+            routing_version=data.get("_routing_version", "v1"),
         )
 
     def to_dict(self) -> Dict[str, Any]:

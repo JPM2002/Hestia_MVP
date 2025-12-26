@@ -46,6 +46,8 @@ STATE_NEW = "GH_S0"
 STATE_INIT = "GH_S0_INIT"
 STATE_GUEST_IDENTIFY = "GH_IDENTIFY"
 STATE_TICKET_CONFIRM = "GH_TICKET_CONFIRM"
+STATE_AREA_CLARIFICATION = "GH_AREA_CLARIFICATION"
+STATE_DETAIL_CLARIFICATION = "GH_DETAIL_CLARIFICATION"
 STATE_FAQ = "GH_FAQ"
 
 # Cancel patterns
@@ -155,6 +157,40 @@ def handle_incoming_text(
             "[STATE] global cancel",
             extra={"wa_id": wa_id, "state": session.get("state"), "text": msg},
         )
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # Area clarification: user chose department (1-4)
+    # ------------------------------------------------------------------
+    if state == STATE_AREA_CLARIFICATION:
+        from gateway_app.core.intents.identity_handler_clarification import handle_area_clarification_response
+
+        handled, extra_actions = handle_area_clarification_response(msg, session)
+        actions.extend(extra_actions)
+
+        if handled:
+            logger.debug(
+                "[STATE] Area clarified",
+                extra={"wa_id": wa_id, "state": session.get("state")}
+            )
+
+        return actions, session
+
+    # ------------------------------------------------------------------
+    # Detail clarification: user provides specific problem description
+    # ------------------------------------------------------------------
+    if state == STATE_DETAIL_CLARIFICATION:
+        from gateway_app.core.intents.identity_handler_clarification import handle_detail_clarification_response
+
+        handled, extra_actions = handle_detail_clarification_response(msg, session)
+        actions.extend(extra_actions)
+
+        if handled:
+            logger.debug(
+                "[STATE] Detail clarified",
+                extra={"wa_id": wa_id, "state": session.get("state")}
+            )
+
         return actions, session
 
     # ------------------------------------------------------------------
@@ -277,6 +313,43 @@ def handle_incoming_text(
                 "location": "gateway_app/core/conversation/orchestrator.py"
             }
         )
+
+        # =========================================================================
+        # CONFIDENCE THRESHOLD: Check routing confidence BEFORE asking for identity
+        # =========================================================================
+        routing_confidence = getattr(nlu, "routing_confidence", 0.75)
+        area = getattr(nlu, "area", None)
+        CONFIDENCE_THRESHOLD = 0.65
+
+        if not area or routing_confidence < CONFIDENCE_THRESHOLD:
+            logger.warning(
+                f"[ROUTING] ⚠️ Low confidence ({routing_confidence:.2f}) or missing area → Request clarification",
+                extra={
+                    "area": area,
+                    "confidence": routing_confidence,
+                    "threshold": CONFIDENCE_THRESHOLD,
+                    "will_ask_clarification": True
+                }
+            )
+
+            # Guardar contexto pendiente (NO pedir identidad todavía)
+            session["state"] = "GH_AREA_CLARIFICATION"
+            session["pending_detail"] = getattr(nlu, "detail", None)
+
+            clarification_text = (
+                f"Entiendo que necesitas ayuda con: *{getattr(nlu, 'detail', 'tu solicitud')}*\n\n"
+                "Para asignarlo correctamente, ¿es sobre:\n\n"
+                "1️⃣ *Mantenimiento* (técnico/AC/agua/luz)\n"
+                "2️⃣ *Housekeeping* (limpieza/toallas/amenities)\n"
+                "3️⃣ *Recepción* (pagos/reservas/info)\n"
+                "4️⃣ *Otro* (queja/gerencia)\n\n"
+                "Responde con el número (1-4)."
+            )
+
+            logger.info("[ROUTING] 📋 Requesting area clarification from user")
+
+            actions.append(text_action(clarification_text))
+            return actions, session
 
         # ⭐ Validate identity BEFORE creating ticket
         if not has_guest_identity(session, nlu):
