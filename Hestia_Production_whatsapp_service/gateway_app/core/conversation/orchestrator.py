@@ -208,6 +208,158 @@ def handle_incoming_text(
         # If not handled as SI/NO, fall through and treat as a normal message
 
     # ------------------------------------------------------------------
+    # Next ticket confirmation: handle sequential multi-ticket flow
+    # ------------------------------------------------------------------
+    if state == "GH_NEXT_TICKET_CONFIRM":
+        from gateway_app.core.intents.ticket_handler import is_yes, is_no
+        from gateway_app.core.intents.identity_handler import create_combined_confirmation_direct
+
+        if is_yes(msg):
+            # User wants to create the next ticket
+            next_ticket = session.pop("next_ticket_pending", None)
+            remaining_requests = session.get("remaining_requests", [])
+
+            if next_ticket:
+                # Remove this request from remaining list
+                if remaining_requests and len(remaining_requests) > 0:
+                    remaining_requests = remaining_requests[1:]  # Remove first item
+                    session["remaining_requests"] = remaining_requests if remaining_requests else []
+
+                # ⭐ CREATE TICKET DIRECTLY (user already confirmed with "Sí")
+                from gateway_app.services.tickets import create_ticket
+                from gateway_app.services import notify
+                from gateway_app.core.intents.ticket_handler import ORG_ID_DEFAULT, HOTEL_ID_DEFAULT
+
+                area = next_ticket.get("area", "MANTENCION")
+                priority = next_ticket.get("priority", "MEDIA")
+                detail = next_ticket.get("detail", "")
+                room = session.get("room", "")
+                guest_name = session.get("guest_name", "")
+
+                logger.info(
+                    "[TICKET] 📋 Preparing payload for next ticket",
+                    extra={
+                        "area": area,
+                        "detail": detail,
+                        "room": room,
+                        "guest_name": guest_name,
+                        "phone": session.get("phone"),
+                        "session_keys": list(session.keys())
+                    }
+                )
+
+                payload = {
+                    "org_id": ORG_ID_DEFAULT,
+                    "hotel_id": HOTEL_ID_DEFAULT,
+                    "area": area,
+                    "prioridad": priority,
+                    "detalle": detail,
+                    "canal_origen": "huesped_whatsapp",
+                    "ubicacion": room,
+                    "huesped_id": session.get("phone"),
+                    "huesped_phone": session.get("phone"),
+                    "huesped_nombre": guest_name,
+                    # Routing metadata
+                    "routing_source": "clarification",
+                    "routing_reason": f"Sequential multi-ticket: {area}",
+                    "routing_confidence": 1.0,
+                    "routing_version": "v1",
+                }
+
+                ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+
+                if ticket_id:
+                    logger.info(
+                        "[TICKET] ✅ Next ticket created successfully",
+                        extra={
+                            "ticket_id": ticket_id,
+                            "area": area,
+                            "detail": detail,
+                            "remaining_count": len(remaining_requests)
+                        }
+                    )
+                else:
+                    logger.error("[TICKET] ❌ Next ticket creation failed")
+
+                # Notify internal systems
+                notify.notify_internal(
+                    "ticket_created",
+                    {
+                        "ticket_id": ticket_id,
+                        "payload": payload,
+                        "wa_id": session.get("wa_id"),
+                        "phone": session.get("phone"),
+                        "guest_name": guest_name,
+                    },
+                )
+
+                # Get area name for user-friendly message
+                area_map = {
+                    "MANTENCION": "Mantenimiento",
+                    "HOUSEKEEPING": "Housekeeping",
+                    "RECEPCION": "Recepción",
+                    "GERENCIA": "Gerencia",
+                }
+                area_name = area_map.get(area, area)
+
+                if ticket_id:
+                    success_text = (
+                        f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
+                        f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
+                    )
+                    actions.append(text_action(success_text))
+                else:
+                    error_text = (
+                        "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
+                        "El equipo de recepción ha sido notificado."
+                    )
+                    actions.append(text_action(error_text))
+
+                # ⭐ Check if there are MORE remaining requests
+                if remaining_requests and len(remaining_requests) > 0:
+                    next_request = remaining_requests[0]
+                    next_area = next_request.get("area", "")
+                    next_detail = next_request.get("detail", "")
+                    next_area_name = area_map.get(next_area, next_area)
+
+                    prompt_text = (
+                        f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_name})\n\n"
+                        f"¿Quieres que cree esta solicitud también? (Sí/No)"
+                    )
+                    actions.append(text_action(prompt_text))
+
+                    session["state"] = "GH_NEXT_TICKET_CONFIRM"
+                    session["next_ticket_pending"] = next_request
+
+                    logger.info(
+                        "[TICKET] 📋 Prompting user for next ticket in sequence",
+                        extra={
+                            "remaining_count": len(remaining_requests),
+                            "next_area": next_area,
+                            "next_detail": next_detail
+                        }
+                    )
+                else:
+                    # No more tickets, reset to normal state
+                    session["state"] = STATE_NEW
+                    session.pop("remaining_requests", None)
+
+            return actions, session
+
+        elif is_no(msg):
+            # User doesn't want to create more tickets
+            session.pop("next_ticket_pending", None)
+            session.pop("remaining_requests", None)
+            session["state"] = STATE_NEW
+
+            actions.append(text_action(
+                "Perfecto. Si necesitas algo más, escríbeme cuando quieras. 😊"
+            ))
+
+            logger.info("[TICKET] ℹ️ User declined next ticket creation")
+            return actions, session
+
+    # ------------------------------------------------------------------
     # Simple commands to reset / show menu
     # ------------------------------------------------------------------
     if msg.lower() in {"menu", "inicio", "start"}:
@@ -319,6 +471,7 @@ def handle_incoming_text(
         # =========================================================================
         routing_confidence = getattr(nlu, "routing_confidence", 0.75)
         area = getattr(nlu, "area", None)
+        multiple_requests = getattr(nlu, "multiple_requests", None)
         CONFIDENCE_THRESHOLD = 0.65
 
         if not area or routing_confidence < CONFIDENCE_THRESHOLD:
@@ -328,6 +481,7 @@ def handle_incoming_text(
                     "area": area,
                     "confidence": routing_confidence,
                     "threshold": CONFIDENCE_THRESHOLD,
+                    "multiple_requests": multiple_requests,
                     "will_ask_clarification": True
                 }
             )
@@ -336,17 +490,82 @@ def handle_incoming_text(
             session["state"] = "GH_AREA_CLARIFICATION"
             session["pending_detail"] = getattr(nlu, "detail", None)
 
-            clarification_text = (
-                f"Entiendo que necesitas ayuda con: *{getattr(nlu, 'detail', 'tu solicitud')}*\n\n"
-                "Para asignarlo correctamente, ¿es sobre:\n\n"
-                "1️⃣ *Mantenimiento* (técnico/AC/agua/luz)\n"
-                "2️⃣ *Housekeeping* (limpieza/toallas/amenities)\n"
-                "3️⃣ *Recepción* (pagos/reservas/info)\n"
-                "4️⃣ *Otro* (queja/gerencia)\n\n"
-                "Responde con el número (1-4)."
-            )
+            # ⭐ NEW: If multiple requests detected, show them and store for later
+            if multiple_requests and isinstance(multiple_requests, list) and len(multiple_requests) >= 2:
+                session["pending_requests"] = multiple_requests
 
-            logger.info("[ROUTING] 📋 Requesting area clarification from user")
+                # Build friendly list of requests
+                requests_text = ""
+                area_map = {
+                    "MANTENCION": ("Mantenimiento", "1", "técnico/AC/agua/luz"),
+                    "HOUSEKEEPING": ("Housekeeping", "2", "limpieza/toallas/amenities"),
+                    "RECEPCION": ("Recepción", "3", "pagos/reservas/info"),
+                    "GERENCIA": ("Gerencia", "4", "queja/gerencia")
+                }
+
+                # Get unique areas from multiple requests
+                detected_areas = []
+                seen_areas = set()
+                for req in multiple_requests:
+                    req_area = req.get("area", "")
+                    if req_area and req_area not in seen_areas:
+                        detected_areas.append(req_area)
+                        seen_areas.add(req_area)
+
+                # Sort detected areas by their fixed number to maintain consistent order
+                # (1=MANTENCION, 2=HOUSEKEEPING, 3=RECEPCION, 4=GERENCIA)
+                area_order = {
+                    "MANTENCION": 1,
+                    "HOUSEKEEPING": 2,
+                    "RECEPCION": 3,
+                    "GERENCIA": 4
+                }
+                detected_areas.sort(key=lambda area: area_order.get(area, 99))
+
+                # Build list of detected requests with details
+                for i, req in enumerate(multiple_requests, 1):
+                    req_area = req.get("area", "")
+                    area_name = area_map.get(req_area, ("", "", ""))[0]
+                    req_detail = req.get("detail", "")
+                    requests_text += f"{i}. *{req_detail}* ({area_name})\n"
+
+                # Build options showing ONLY detected areas
+                options_text = ""
+                for area_code in detected_areas:
+                    area_info = area_map.get(area_code)
+                    if area_info:
+                        area_name, number, description = area_info
+                        options_text += f"{number}️⃣ *{area_name}* ({description})\n"
+
+                clarification_text = (
+                    f"Veo que tienes {len(multiple_requests)} necesidades diferentes:\n\n"
+                    f"{requests_text}\n"
+                    f"Voy a crear solicitudes separadas para cada una.\n\n"
+                    f"¿Con cuál quieres empezar?\n\n"
+                    f"{options_text}\n"
+                    f"Responde con el número ({', '.join(area_map[a][1] for a in detected_areas)})."
+                )
+
+                logger.info(
+                    "[ROUTING] 📋 Multiple requests detected, asking user which to start with",
+                    extra={
+                        "request_count": len(multiple_requests),
+                        "detected_areas": detected_areas
+                    }
+                )
+            else:
+                # Original single-request clarification
+                clarification_text = (
+                    f"Entiendo que necesitas ayuda con: *{getattr(nlu, 'detail', 'tu solicitud')}*\n\n"
+                    "Para asignarlo correctamente, ¿es sobre:\n\n"
+                    "1️⃣ *Mantenimiento* (técnico/AC/agua/luz)\n"
+                    "2️⃣ *Housekeeping* (limpieza/toallas/amenities)\n"
+                    "3️⃣ *Recepción* (pagos/reservas/info)\n"
+                    "4️⃣ *Otro* (queja/gerencia)\n\n"
+                    "Responde con el número (1-4)."
+                )
+
+                logger.info("[ROUTING] 📋 Requesting area clarification from user")
 
             actions.append(text_action(clarification_text))
             return actions, session

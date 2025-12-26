@@ -159,20 +159,59 @@ def handle_ticket_confirmation_yes_no(
 
         if ticket_id:
             # ⭐ NO mostrar ticket ID al huésped
-            text = (
+            success_text = (
                 f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
                 f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
             )
+            actions.append(text_action(success_text))
         else:
             # Si por cualquier motivo create_ticket devolvió None,
             # avisamos al huésped pero también dejamos constancia en logs.
-            text = (
+            error_text = (
                 "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
                 "El equipo de recepción ha sido notificado."
             )
+            actions.append(text_action(error_text))
 
-        actions.append(text_action(text))
         clear_ticket_draft(session)
+
+        # ⭐ NEW: Check if there are remaining requests from multi-request flow
+        remaining_requests = session.get("remaining_requests", [])
+        if remaining_requests and isinstance(remaining_requests, list) and len(remaining_requests) > 0:
+            # Get next request
+            next_request = remaining_requests[0]
+            next_area = next_request.get("area", "")
+            next_detail = next_request.get("detail", "")
+
+            area_map = {
+                "MANTENCION": "Mantenimiento",
+                "HOUSEKEEPING": "Housekeeping",
+                "RECEPCION": "Recepción",
+                "GERENCIA": "Gerencia",
+            }
+            next_area_name = area_map.get(next_area, next_area)
+
+            # Ask if user wants to create the next ticket
+            prompt_text = (
+                f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_name})\n\n"
+                f"¿Quieres que cree esta solicitud también? (Sí/No)"
+            )
+
+            actions.append(text_action(prompt_text))
+
+            # Set state to handle next ticket confirmation
+            session["state"] = "GH_NEXT_TICKET_CONFIRM"
+            session["next_ticket_pending"] = next_request
+
+            logger.info(
+                "[TICKET] 📋 Prompting user for next ticket in sequence",
+                extra={
+                    "remaining_count": len(remaining_requests),
+                    "next_area": next_area,
+                    "next_detail": next_detail
+                }
+            )
+
         return True, actions
 
     # ---------- NO = volver a modo edición ----------

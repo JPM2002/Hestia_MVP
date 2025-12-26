@@ -298,7 +298,6 @@ def create_combined_confirmation_direct(nlu: Any, session: Dict[str, Any]) -> Li
 
         logger.info("[ROUTING] 📋 Requesting area clarification from user")
 
-        from gateway_app.core.intents.base import text_action
         return [text_action(clarification_text)]
 
     # Si confidence OK, continuar con confirmación normal...

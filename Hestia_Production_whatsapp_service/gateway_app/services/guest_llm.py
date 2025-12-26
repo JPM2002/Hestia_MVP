@@ -282,6 +282,22 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     if name is not None:
         name = str(name).strip() or None
 
+    # Extract multiple_requests if present (for multi-department scenarios)
+    multiple_requests = data.get("multiple_requests")
+    if multiple_requests and isinstance(multiple_requests, list):
+        # Validate each request has required fields
+        valid_requests = []
+        for req in multiple_requests:
+            if isinstance(req, dict) and req.get("area") and req.get("detail"):
+                valid_requests.append({
+                    "area": req.get("area"),
+                    "detail": req.get("detail"),
+                    "priority": req.get("priority") if req.get("priority") in allowed_priorities else None
+                })
+        multiple_requests = valid_requests if valid_requests else None
+    else:
+        multiple_requests = None
+
     result = {
         "intent": intent,
         "area": area,
@@ -294,19 +310,26 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         "wants_handoff": bool(data.get("wants_handoff")),
         "is_cancel": bool(data.get("is_cancel")),
         "is_help": bool(data.get("is_help")),
+        "multiple_requests": multiple_requests,
         # Metadata de routing
         "_routing_source": "llm",
         "_routing_reason": "LLM classification",
         "_routing_confidence": confidence,
     }
 
+    # Log result with multiple_requests info
+    log_msg = f"[NLU] ✅ LLM result: intent={intent}, area={area}, conf={confidence:.2f}"
+    if multiple_requests:
+        log_msg += f", multiple_requests={len(multiple_requests)}"
+
     logger.info(
-        f"[NLU] ✅ LLM result: intent={intent}, area={area}, conf={confidence:.2f}",
+        log_msg,
         extra={
             "text": text[:80] + "..." if len(text) > 80 else text,
             "intent": intent,
             "area": area,
             "confidence": confidence,
+            "multiple_requests_count": len(multiple_requests) if multiple_requests else 0,
             "result": result,
             "location": "gateway_app/services/guest_llm.py"
         }

@@ -156,15 +156,50 @@ def handle_area_clarification_response(
 
     area, area_name = area_map[choice]
 
-    # Recuperar datos pendientes
-    detail = session.pop("pending_detail", "Sin detalles")
+    # ⭐ NEW: Handle multiple requests if present
+    pending_requests = session.get("pending_requests", [])
+    remaining_requests = []
+    selected_request = None
+
+    if pending_requests and isinstance(pending_requests, list):
+        # Find the request matching the selected area
+        for req in pending_requests:
+            if req.get("area") == area:
+                if not selected_request:
+                    selected_request = req  # Use first match
+                else:
+                    remaining_requests.append(req)  # Save duplicates for later
+            else:
+                remaining_requests.append(req)  # Save other departments for later
+
+        # Use detail and priority from selected request
+        detail = selected_request.get("detail", session.get("pending_detail", "Sin detalles")) if selected_request else session.get("pending_detail", "Sin detalles")
+        priority = selected_request.get("priority", "MEDIA") if selected_request else "MEDIA"
+
+        # Store remaining requests for later (after this ticket is done)
+        if remaining_requests:
+            session["remaining_requests"] = remaining_requests
+            logger.info(
+                f"[ROUTING] 📋 Stored {len(remaining_requests)} remaining requests for later",
+                extra={"remaining_count": len(remaining_requests)}
+            )
+        else:
+            session.pop("remaining_requests", None)
+
+        # Clear pending_requests now that we've processed them
+        session.pop("pending_requests", None)
+    else:
+        # Original single-request flow
+        detail = session.pop("pending_detail", "Sin detalles")
+        priority = "MEDIA"
+
     room = session.pop("pending_room", None)
     guest_name = session.pop("pending_guest_name", None)
 
     # Crear draft con área clarificada
     session["ticket_draft"] = {
         "area": area,
-        "priority": "MEDIA",
+        "priority": priority,
         "room": room,
         "detail": detail,
         "guest_name": guest_name,
@@ -181,7 +216,8 @@ def handle_area_clarification_response(
             "area": area,
             "user_choice": choice,
             "routing_source": "clarification",
-            "confidence": 1.0
+            "confidence": 1.0,
+            "has_remaining_requests": bool(remaining_requests)
         }
     )
 

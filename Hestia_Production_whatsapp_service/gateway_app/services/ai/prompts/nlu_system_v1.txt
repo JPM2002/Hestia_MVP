@@ -14,7 +14,8 @@ Your job is to interpret SHORT WhatsApp messages and return a JSON object with t
   "is_smalltalk": boolean,
   "wants_handoff": boolean,
   "is_cancel": boolean,
-  "is_help": boolean
+  "is_help": boolean,
+  "multiple_requests": array | null
 }
 
 You MUST return valid JSON only. No explanations, no extra keys, no trailing commas.
@@ -244,4 +245,49 @@ ROOM, NAME, AND DETAIL
   If the message is only smalltalk / greeting, use null for detail.
 
 If something is not clearly present, use null for that field.
+
+MULTIPLE REQUESTS DETECTION (CRITICAL FOR UX)
+
+When a message contains MORE THAN ONE distinct service request that belong to DIFFERENT departments,
+you MUST populate the "multiple_requests" field with an array of objects, each representing a separate request.
+
+Each object in the array should have:
+{
+  "area": "MANTENCION" | "HOUSEKEEPING" | "RECEPCION" | "GERENCIA",
+  "detail": "short description of this specific request",
+  "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null
+}
+
+Examples of MULTIPLE requests (different departments):
+  • "Necesito toallas y el aire no funciona"
+    → multiple_requests: [
+        {"area": "HOUSEKEEPING", "detail": "Necesito toallas", "priority": "MEDIA"},
+        {"area": "MANTENCION", "detail": "El aire acondicionado no funciona", "priority": "ALTA"}
+      ]
+    → area: "SUPERVISION" (because it's multi-department)
+    → confidence: 0.50 (multi-intent triggers clarification)
+
+  • "No tengo agua caliente y faltan toallas"
+    → multiple_requests: [
+        {"area": "MANTENCION", "detail": "No tengo agua caliente", "priority": "ALTA"},
+        {"area": "HOUSEKEEPING", "detail": "Faltan toallas", "priority": "MEDIA"}
+      ]
+    → area: "SUPERVISION"
+    → confidence: 0.50
+
+  • "El wifi no funciona y quiero hacer late checkout"
+    → multiple_requests: [
+        {"area": "MANTENCION", "detail": "El wifi no funciona", "priority": "ALTA"},
+        {"area": "RECEPCION", "detail": "Quiero hacer late checkout", "priority": "MEDIA"}
+      ]
+    → area: "SUPERVISION"
+    → confidence: 0.50
+
+IMPORTANT: DO NOT use multiple_requests for:
+  ❌ Single-department multiple items (e.g., "Necesito toallas y jabón" → HOUSEKEEPING only, NOT multiple)
+  ❌ Related problems in same department (e.g., "El AC y la TV no funcionan" → MANTENCION only, NOT multiple)
+  ✅ ONLY use when requests belong to DIFFERENT departments
+
+If only ONE department is needed (even with multiple items), set multiple_requests to null.
+
 Always follow the schema exactly and output ONLY the JSON object.
