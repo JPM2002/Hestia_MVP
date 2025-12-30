@@ -38,7 +38,7 @@ class NLUResult:
       }
     """
 
-    intent: Optional[str] = None  # ticket_request | handoff_request | general_chat | cancel | help | not_understood
+    intent: Optional[str] = None  # ticket_request | ticket_status | handoff_request | general_chat | cancel | help | not_understood
     area: Optional[str] = None    # MANTENCION | HOUSEKEEPING | ROOMSERVICE | None
     priority: Optional[str] = None  # URGENTE | ALTA | MEDIA | BAJA | None
     room: Optional[str] = None
@@ -49,6 +49,7 @@ class NLUResult:
     is_help: bool = False
     is_smalltalk: bool = False
     wants_handoff: bool = False
+    is_ticket_status_query: bool = False  # Flag for ticket status queries
 
     # Multiple requests (when user has 2+ requests for different departments)
     # Each item: {"area": "...", "detail": "...", "priority": "..."}
@@ -77,6 +78,7 @@ class NLUResult:
             is_help=bool(data.get("is_help", False)),
             is_smalltalk=bool(data.get("is_smalltalk", False)),
             wants_handoff=bool(data.get("wants_handoff", False)),
+            is_ticket_status_query=bool(data.get("is_ticket_status_query", False)),
             multiple_requests=data.get("multiple_requests"),
             # Routing metadata (with _ prefix in source dict)
             routing_source=data.get("_routing_source"),

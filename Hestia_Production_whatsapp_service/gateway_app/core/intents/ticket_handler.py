@@ -197,7 +197,7 @@ def handle_ticket_confirmation_yes_no(
         _, ticket_actions = _create_ticket_internal(
             payload=payload,
             session=session,
-            dev_mode=True  # Set to False to enable real ticket creation
+            dev_mode=False  # ✅ PRODUCTION MODE: Create real tickets in database
         )
 
         actions.extend(ticket_actions)

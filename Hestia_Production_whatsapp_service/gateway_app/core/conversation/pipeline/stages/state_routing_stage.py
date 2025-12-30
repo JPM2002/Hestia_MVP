@@ -168,7 +168,7 @@ class StateRoutingStage(PipelineStage):
         _, ticket_actions = _create_ticket_internal(
             payload=payload,
             session=context.session,
-            dev_mode=True  # Set to False to enable real ticket creation
+            dev_mode=False  # ✅ PRODUCTION MODE: Create real tickets in database
         )
 
         # Add ticket creation responses

@@ -10,7 +10,7 @@ Responsibilities:
 The LLM is instructed to ALWAYS output a strict JSON object with this shape:
 
 {
-  "intent": "ticket_request" | "general_chat" | "handoff_request" | "cancel" | "help" | "not_understood",
+  "intent": "ticket_request" | "ticket_status" | "general_chat" | "handoff_request" | "cancel" | "help" | "not_understood",
   "area": "MANTENCION" | "HOUSEKEEPING" | "ROOMSERVICE" | null,
   "priority": "URGENTE" | "ALTA" | "MEDIA" | "BAJA" | null,
   "room": string | null,
@@ -18,6 +18,7 @@ The LLM is instructed to ALWAYS output a strict JSON object with this shape:
   "name": string | null,
   "is_smalltalk": boolean,
   "wants_handoff": boolean,
+  "is_ticket_status_query": boolean,
   "is_cancel": boolean,
   "is_help": boolean
 }
@@ -250,6 +251,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
     # --------- Guardrails / clamping ---------
     allowed_intents = {
         "ticket_request",
+        "ticket_status",
         "general_chat",
         "handoff_request",
         "cancel",

@@ -18,6 +18,7 @@ from gateway_app.core.intents.smalltalk_handler import (
 from gateway_app.core.intents.handoff_handler import handle_handoff_request
 from gateway_app.core.intents.ticket_handler import clear_ticket_draft
 from gateway_app.core.intents.faq_handler import handle_faq_fallback
+from gateway_app.core.intents.ticket_status_handler import handle_ticket_status_query
 from gateway_app.core.intents.identity_handler import (
     has_guest_identity,
     request_guest_identity,
@@ -37,6 +38,7 @@ class IntentRoutingStage(PipelineStage):
     - handoff_request
     - cancel
     - ticket_request
+    - ticket_status
     - general_chat
     - not_understood
     """
@@ -48,6 +50,7 @@ class IntentRoutingStage(PipelineStage):
             "handoff_request": self._handle_handoff,
             "cancel": self._handle_cancel,
             "ticket_request": self._handle_ticket_request,
+            "ticket_status": self._handle_ticket_status,
             "general_chat": self._handle_smalltalk,
             "not_understood": self._handle_not_understood,
         }
@@ -84,10 +87,11 @@ class IntentRoutingStage(PipelineStage):
 
         # If in GH_IDENTIFY state
         if current_state == "GH_IDENTIFY":
-            # Check if this is a high-priority intent that should interrupt
-            if intent in ("help", "handoff_request", "cancel", "not_understood"):
+            # Check if this is an EXPLICIT high-priority intent that should interrupt immediately
+            # (cancel, help, handoff are clear user actions that should stop identity flow)
+            if intent in ("help", "handoff_request", "cancel"):
                 logger.info(
-                    f"[INTENT_ROUTING] High-priority intent '{intent}' interrupts identity flow",
+                    f"[INTENT_ROUTING] Explicit high-priority intent '{intent}' interrupts identity flow",
                     extra={"intent": intent, "wa_id": context.wa_id}
                 )
                 from gateway_app.core.intents.ticket_handler import clear_ticket_draft
@@ -98,7 +102,8 @@ class IntentRoutingStage(PipelineStage):
                 # Fall through to normal intent handling
 
             else:
-                # Try to handle as identity info
+                # For ANY other intent (including not_understood, ticket_request, general_chat, etc.),
+                # first try to extract identity info from the message
                 from gateway_app.core.intents.identity_handler import handle_guest_identify
 
                 handled, actions = handle_guest_identify(
@@ -117,17 +122,33 @@ class IntentRoutingStage(PipelineStage):
                     self.log_exit(context)
                     return context
                 else:
-                    # Not identity info -> implicit cancel, handle new intent
-                    logger.info(
-                        "[INTENT_ROUTING] User changed topic during identity, implicit cancel",
-                        extra={"wa_id": context.wa_id, "new_intent": intent}
-                    )
-                    from gateway_app.core.intents.ticket_handler import clear_ticket_draft
-                    from gateway_app.core.conversation.utils.constants import STATE_NEW
+                    # Not identity info AND it's a clear new intent (not not_understood)
+                    # → implicit cancel, handle new intent
+                    if intent in ("ticket_request", "ticket_status"):
+                        logger.info(
+                            "[INTENT_ROUTING] User changed topic during identity (implicit cancel)",
+                            extra={"wa_id": context.wa_id, "new_intent": intent}
+                        )
+                        from gateway_app.core.intents.ticket_handler import clear_ticket_draft
+                        from gateway_app.core.conversation.utils.constants import STATE_NEW
 
-                    clear_ticket_draft(context.session)
-                    context.session["state"] = STATE_NEW
-                    # Fall through to handle the new intent
+                        clear_ticket_draft(context.session)
+                        context.session["state"] = STATE_NEW
+                        # Fall through to handle the new intent
+                    else:
+                        # It's not_understood or general_chat, and identity extraction failed
+                        # → Keep asking for identity (don't cancel)
+                        logger.info(
+                            "[INTENT_ROUTING] Could not extract identity, asking again",
+                            extra={"wa_id": context.wa_id, "intent": intent}
+                        )
+                        context.add_action(text_action(
+                            "No pude entender esa información. "
+                            "Por favor indícame tu nombre y número de habitación."
+                        ))
+                        context.mark_handled()
+                        self.log_exit(context)
+                        return context
 
         handler = self.intent_handlers.get(intent)
 
@@ -264,3 +285,29 @@ class IntentRoutingStage(PipelineStage):
         found_faq, actions = handle_faq_fallback(context.message, context.session)
         context.actions.extend(actions)
         context.mark_handled()
+
+    def _handle_ticket_status(self, context: PipelineContext) -> None:
+        """Handle ticket status query."""
+        logger.info(
+            "[INTENT_ROUTING] Handling ticket_status intent",
+            extra={
+                "wa_id": context.wa_id,
+                "user_message": context.message,
+                "location": "gateway_app/core/conversation/pipeline/stages/intent_routing_stage.py"
+            }
+        )
+
+        handled, actions = handle_ticket_status_query(context.message, context.session)
+        context.actions.extend(actions)
+
+        if handled:
+            # Set state to a neutral state after query
+            if context.session.get("state") in {STATE_INIT, "GH_FAQ"}:
+                context.session["state"] = STATE_NEW
+
+            context.mark_handled()
+        else:
+            logger.warning(
+                "[INTENT_ROUTING] ticket_status handler did not handle request",
+                extra={"wa_id": context.wa_id}
+            )
