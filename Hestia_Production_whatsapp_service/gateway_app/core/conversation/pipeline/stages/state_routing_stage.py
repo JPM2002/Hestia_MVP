@@ -120,9 +120,11 @@ class StateRoutingStage(PipelineStage):
 
     def _create_next_ticket(self, context: PipelineContext) -> None:
         """Create next ticket in multi-ticket flow."""
-        from gateway_app.services.tickets import create_ticket
-        from gateway_app.services import notify
-        from gateway_app.core.intents.ticket_handler import ORG_ID_DEFAULT, HOTEL_ID_DEFAULT
+        from gateway_app.core.intents.ticket_handler import (
+            ORG_ID_DEFAULT,
+            HOTEL_ID_DEFAULT,
+            _create_ticket_internal
+        )
         from gateway_app.core.intents.base import text_action
         from gateway_app.core.conversation.utils.area_utils import get_area_name
         from gateway_app.core.conversation.utils.constants import STATE_NEW
@@ -162,38 +164,15 @@ class StateRoutingStage(PipelineStage):
             "routing_version": "v1",
         }
 
-        ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
-
-        if ticket_id:
-            logger.info(f"[MULTI_TICKET] Ticket {ticket_id} created")
-        else:
-            logger.error("[MULTI_TICKET] Ticket creation failed")
-
-        # Notify
-        notify.notify_internal(
-            "ticket_created",
-            {
-                "ticket_id": ticket_id,
-                "payload": payload,
-                "wa_id": context.session.get("wa_id"),
-                "phone": context.session.get("phone"),
-                "guest_name": guest_name,
-            }
+        # Use shared ticket creation logic (DRY principle)
+        _, ticket_actions = _create_ticket_internal(
+            payload=payload,
+            session=context.session,
+            dev_mode=True  # Set to False to enable real ticket creation
         )
 
-        # Build response
-        area_name = get_area_name(area)
-
-        if ticket_id:
-            context.add_action(text_action(
-                f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
-                f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
-            ))
-        else:
-            context.add_action(text_action(
-                "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
-                "El equipo de recepción ha sido notificado."
-            ))
+        # Add ticket creation responses
+        context.actions.extend(ticket_actions)
 
         # Check for more tickets
         if remaining_requests:

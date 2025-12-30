@@ -36,7 +36,7 @@ class CancellationStage(PipelineStage):
         if looks_like_global_cancel(context.message):
             logger.info(
                 "[CANCELLATION] Global cancel detected",
-                extra={"wa_id": context.wa_id, "message": context.message}
+                extra={"wa_id": context.wa_id, "user_message": context.message}
             )
 
             # Clear ticket draft

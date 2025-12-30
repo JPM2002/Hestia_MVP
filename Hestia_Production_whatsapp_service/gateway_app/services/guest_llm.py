@@ -39,7 +39,18 @@ from gateway_app.services.ai.prompt_loader import (
 logger = logging.getLogger(__name__)
 
 _client = OpenAI()
-LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4.1-mini")
+LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4o-mini")
+
+# 🔴 TEST: Verificar que el cliente de OpenAI está inicializado
+logger.error(
+    "🔴 [STARTUP] OpenAI client initialized",
+    extra={
+        "client_type": type(_client).__name__,
+        "model": LLM_MODEL,
+        "api_key_set": bool(os.getenv("OPENAI_API_KEY")),
+        "location": "gateway_app/services/guest_llm.py"
+    }
+)
 
 # Load prompts from external files for easier maintenance and versioning
 _BASE_SYSTEM_PROMPT = get_nlu_system_prompt(version="v1")
@@ -67,23 +78,28 @@ def _call_json_llm(
     )
 
     try:
-        resp = _client.responses.create(
+        logger.error(
+            "🔴 [LLM] About to call OpenAI chat.completions.create",
+            extra={"model": LLM_MODEL, "location": "guest_llm.py"}
+        )
+
+        resp = _client.chat.completions.create(
             model=LLM_MODEL,
-            input=[
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            # JSON mode is now configured via text.format, not response_format
-            text={
-                "format": {
-                    "type": "json_object"
-                }
-            },
-            max_output_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
         )
 
-        # Responses API: JSON text is in output[0].content[0].text
-        content = resp.output[0].content[0].text
+        logger.error(
+            "🔴 [LLM] OpenAI response received",
+            extra={"model": LLM_MODEL, "location": "guest_llm.py"}
+        )
+
+        # Standard OpenAI Chat Completions API
+        content = resp.choices[0].message.content
 
         logger.info(
             "[NLU LLM] 📥 LLM response received (raw JSON)",

@@ -37,7 +37,7 @@ class ShortcutStage(PipelineStage):
         if is_menu_shortcut(context.message):
             logger.info(
                 "[SHORTCUT] Menu shortcut detected",
-                extra={"wa_id": context.wa_id, "message": context.message}
+                extra={"wa_id": context.wa_id, "user_message": context.message}
             )
 
             context.session["state"] = STATE_INIT

@@ -40,7 +40,7 @@ class NLUStage(PipelineStage):
             extra={
                 "wa_id": context.wa_id,
                 "state": context.session.get("state"),
-                "message": context.message
+                "user_message": context.message  # Changed from 'message' to avoid LogRecord conflict
             }
         )
 

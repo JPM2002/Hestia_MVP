@@ -36,6 +36,103 @@ except Exception:
 STATE_NEW = "GH_S0"
 
 
+def _create_ticket_internal(
+    payload: Dict[str, Any],
+    session: Dict[str, Any],
+    dev_mode: bool = True
+) -> tuple[str, List[Dict[str, Any]]]:
+    """
+    Internal helper to create a ticket (or mock it in dev mode).
+
+    Args:
+        payload: Ticket payload
+        session: User session
+        dev_mode: If True, don't actually create ticket (mock mode)
+
+    Returns:
+        (ticket_id, actions) tuple
+    """
+    actions: List[Dict[str, Any]] = []
+
+    if dev_mode:
+        # 🚧 MODO DESARROLLO: No crear ticket en base de datos
+        ticket_id = "DEV-MOCK-12345"
+        logger.info(
+            "[TICKET] 🚧 DEV MODE: Ticket NOT created in database (mock mode)",
+            extra={
+                "decision": "DEV_MODE_MOCK_TICKET",
+                "wa_id": session.get("wa_id"),
+                "mock_ticket_id": ticket_id,
+                "payload": payload,
+                "location": "gateway_app/core/intents/ticket_handler.py::_create_ticket_internal"
+            }
+        )
+    else:
+        # Crear ticket real en base de datos
+        ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+
+        if ticket_id:
+            logger.info(
+                "[TICKET] ✅ Ticket created successfully in database",
+                extra={
+                    "decision": "TICKET_CREATED_SUCCESS",
+                    "wa_id": session.get("wa_id"),
+                    "ticket_id": ticket_id,
+                    "payload": payload,
+                    "location": "gateway_app/core/intents/ticket_handler.py::_create_ticket_internal"
+                }
+            )
+        else:
+            logger.error(
+                "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
+                extra={
+                    "decision": "TICKET_CREATED_FAILED",
+                    "wa_id": session.get("wa_id"),
+                    "payload": payload,
+                    "location": "gateway_app/core/intents/ticket_handler.py::_create_ticket_internal"
+                }
+            )
+
+        # Notificación interna
+        notify.notify_internal(
+            "ticket_created",
+            {
+                "ticket_id": ticket_id,
+                "payload": payload,
+                "wa_id": session.get("wa_id"),
+                "phone": session.get("phone"),
+                "guest_name": session.get("guest_name"),
+            },
+        )
+
+    # Build user-facing message
+    area = payload.get("area", "MANTENCION")
+    area_map = {
+        "MANTENCION": "Mantenimiento",
+        "HOUSEKEEPING": "Housekeeping",
+        "RECEPCION": "Recepción",
+        "SUPERVISION": "Supervisión",
+        "GERENCIA": "Gerencia",
+    }
+    area_name = area_map.get(area, area)
+    room = payload.get("ubicacion", "")
+
+    if ticket_id:
+        success_text = (
+            f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
+            f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
+        )
+        actions.append(text_action(success_text))
+    else:
+        error_text = (
+            "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
+            "El equipo de recepción ha sido notificado."
+        )
+        actions.append(text_action(error_text))
+
+    return ticket_id, actions
+
+
 def handle_ticket_confirmation_yes_no(
     msg: str,
     session: Dict[str, Any],
@@ -96,83 +193,17 @@ def handle_ticket_confirmation_yes_no(
             "routing_version": draft.get("routing_version", "v1"),
         }
 
-        logger.info(
-            "[TICKET] 💾 Calling create_ticket() with payload",
-            extra={
-                "wa_id": session.get("wa_id"),
-                "payload": payload,
-                "location": "gateway_app/core/intents/ticket_handler.py"
-            }
+        # Use shared ticket creation logic
+        _, ticket_actions = _create_ticket_internal(
+            payload=payload,
+            session=session,
+            dev_mode=True  # Set to False to enable real ticket creation
         )
 
-        # Crear ticket en tu backend (usa tu create_ticket real)
-        ticket_id = create_ticket(payload, initial_status="PENDIENTE_APROBACION")
+        actions.extend(ticket_actions)
 
-        if ticket_id:
-            logger.info(
-                "[TICKET] ✅ Ticket created successfully in database",
-                extra={
-                    "decision": "TICKET_CREATED_SUCCESS",
-                    "wa_id": session.get("wa_id"),
-                    "ticket_id": ticket_id,
-                    "payload": payload,
-                    "location": "gateway_app/core/intents/ticket_handler.py"
-                }
-            )
-        else:
-            logger.error(
-                "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
-                extra={
-                    "decision": "TICKET_CREATED_FAILED",
-                    "wa_id": session.get("wa_id"),
-                    "payload": payload,
-                    "location": "gateway_app/core/intents/ticket_handler.py"
-                }
-            )
-
-        # Opcional: seguir notificando al sistema central, si lo usas
-        notify.notify_internal(
-            "ticket_created",
-            {
-                "ticket_id": ticket_id,
-                "payload": payload,
-                "wa_id": session.get("wa_id"),
-                "phone": session.get("phone"),
-                "guest_name": session.get("guest_name"),
-            },
-        )
-
-        # Volvemos al estado "normal" después de crear el ticket
+        # Reset state and clear draft
         session["state"] = STATE_NEW
-
-        # ⭐ Get area name for user-friendly message
-        area = payload.get("area", "MANTENCION")
-        area_map = {
-            "MANTENCION": "Mantenimiento",
-            "HOUSEKEEPING": "Housekeeping",
-            "RECEPCION": "Recepción",
-            "SUPERVISION": "Supervisión",
-            "GERENCIA": "Gerencia",
-        }
-        area_name = area_map.get(area, area)
-        room = payload.get("ubicacion", "")
-
-        if ticket_id:
-            # ⭐ NO mostrar ticket ID al huésped
-            success_text = (
-                f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
-                f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
-            )
-            actions.append(text_action(success_text))
-        else:
-            # Si por cualquier motivo create_ticket devolvió None,
-            # avisamos al huésped pero también dejamos constancia en logs.
-            error_text = (
-                "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
-                "El equipo de recepción ha sido notificado."
-            )
-            actions.append(text_action(error_text))
-
         clear_ticket_draft(session)
 
         # ⭐ NEW: Check if there are remaining requests from multi-request flow

@@ -31,7 +31,7 @@ class FallbackStage(PipelineStage):
 
         logger.warning(
             "[FALLBACK] No handler processed message, using fallback",
-            extra={"wa_id": context.wa_id, "message": context.message}
+            extra={"wa_id": context.wa_id, "user_message": context.message}  # Changed from 'message'
         )
 
         context.add_action(text_action(

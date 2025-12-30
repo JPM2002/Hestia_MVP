@@ -95,7 +95,25 @@ class ConversationPipeline:
         # Run through pipeline
         for stage in self.stages:
             try:
+                logger.info(
+                    f"[PIPELINE] 🔄 BEFORE {stage.name}",
+                    extra={
+                        "stage": stage.name,
+                        "skip_remaining": context.skip_remaining,
+                        "actions_count": len(context.actions)
+                    }
+                )
+
                 context = stage.process(context)
+
+                logger.info(
+                    f"[PIPELINE] ✅ AFTER {stage.name}",
+                    extra={
+                        "stage": stage.name,
+                        "skip_remaining": context.skip_remaining,
+                        "actions_count": len(context.actions)
+                    }
+                )
 
                 # If marked to skip, break early
                 if context.skip_remaining:
@@ -107,7 +125,7 @@ class ConversationPipeline:
 
             except Exception as e:
                 logger.exception(
-                    f"[PIPELINE] Stage {stage.name} failed",
+                    f"[PIPELINE] ❌ Stage {stage.name} FAILED",
                     exc_info=e,
                     extra={"stage": stage.name, "wa_id": wa_id}
                 )

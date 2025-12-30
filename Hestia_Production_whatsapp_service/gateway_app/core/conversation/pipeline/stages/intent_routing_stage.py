@@ -66,9 +66,10 @@ class IntentRoutingStage(PipelineStage):
 
         self.log_entry(context)
 
+        # Determine intent first
         intent = context.nlu.intent
 
-        # Check for intent flags first
+        # Check for intent flags
         if context.nlu.is_help:
             intent = "help"
         elif context.nlu.wants_handoff:
@@ -77,6 +78,56 @@ class IntentRoutingStage(PipelineStage):
             intent = "cancel"
         elif context.nlu.is_smalltalk:
             intent = "general_chat"
+
+        # 🔥 PRIORITY: Handle state-specific flows that need NLU
+        current_state = context.session.get("state")
+
+        # If in GH_IDENTIFY state
+        if current_state == "GH_IDENTIFY":
+            # Check if this is a high-priority intent that should interrupt
+            if intent in ("help", "handoff_request", "cancel", "not_understood"):
+                logger.info(
+                    f"[INTENT_ROUTING] High-priority intent '{intent}' interrupts identity flow",
+                    extra={"intent": intent, "wa_id": context.wa_id}
+                )
+                from gateway_app.core.intents.ticket_handler import clear_ticket_draft
+                from gateway_app.core.conversation.utils.constants import STATE_NEW
+
+                clear_ticket_draft(context.session)
+                context.session["state"] = STATE_NEW
+                # Fall through to normal intent handling
+
+            else:
+                # Try to handle as identity info
+                from gateway_app.core.intents.identity_handler import handle_guest_identify
+
+                handled, actions = handle_guest_identify(
+                    context.message,
+                    context.nlu,
+                    context.session
+                )
+
+                if handled:
+                    logger.info(
+                        "[INTENT_ROUTING] Identity handler processed message",
+                        extra={"wa_id": context.wa_id, "state": current_state}
+                    )
+                    context.actions.extend(actions)
+                    context.mark_handled()
+                    self.log_exit(context)
+                    return context
+                else:
+                    # Not identity info -> implicit cancel, handle new intent
+                    logger.info(
+                        "[INTENT_ROUTING] User changed topic during identity, implicit cancel",
+                        extra={"wa_id": context.wa_id, "new_intent": intent}
+                    )
+                    from gateway_app.core.intents.ticket_handler import clear_ticket_draft
+                    from gateway_app.core.conversation.utils.constants import STATE_NEW
+
+                    clear_ticket_draft(context.session)
+                    context.session["state"] = STATE_NEW
+                    # Fall through to handle the new intent
 
         handler = self.intent_handlers.get(intent)
 
