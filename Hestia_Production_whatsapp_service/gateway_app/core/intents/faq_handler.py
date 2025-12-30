@@ -25,8 +25,11 @@ def get_reception_fallback_message() -> str:
         Formatted message to contact reception
     """
     return (
-        "No tengo información sobre eso en este momento.\n"
-        "Para resolver esta duda, puedes contactar a recepción."
+        "No estoy seguro de haber entendido bien. Puedo ayudarte a:\n\n"
+        "• Crear solicitudes de mantenimiento, housekeeping o recepción.\n"
+        "• Responder preguntas frecuentes sobre el hotel.\n"
+        "• Ponerte en contacto con recepción.\n\n"
+        "¿Qué necesitas?"
     )
 
 
