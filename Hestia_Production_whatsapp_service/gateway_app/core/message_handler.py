@@ -61,6 +61,15 @@ def process_guest_message(
             transcript = None
         msg_text = (transcript or "").strip()
 
+    # 1.5) Verificar si es respuesta a encuesta CSAT (ANTES del pipeline conversacional)
+    from gateway_app.core import survey_handler
+    is_survey, survey_actions = survey_handler.handle_survey_response(from_phone, msg_text)
+
+    if is_survey:
+        # Es respuesta a encuesta, retornar acciones de la encuesta sin procesar conversación
+        logger.info(f"[SURVEY] Mensaje de {from_phone} procesado como respuesta a encuesta")
+        return survey_actions
+
     # 2) Cargar sesión actual
     user_session = session.load_session(wa_id)
 

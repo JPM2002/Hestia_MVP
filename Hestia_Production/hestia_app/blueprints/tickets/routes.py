@@ -497,6 +497,10 @@ def ticket_confirm(id: int):
             except Exception as e:
                 print(f"[WA] notify tech assignment failed: {e}", flush=True)
 
+    # Notificar al huésped (estado ASIGNADO)
+    from ...services.guest_notifications import notify_state_change
+    notify_state_change(id, "ASIGNADO")
+
     msg = (
         "Ticket confirmado y asignado."
         if assignee
@@ -727,6 +731,11 @@ def ticket_accept(id: int):
         },
         "ACEPTADO",
     )
+
+    # Notificar al huésped
+    from ...services.guest_notifications import notify_state_change
+    notify_state_change(id, "ACEPTADO")
+
     return _ok_or_redirect("Ticket aceptado.", ticket_id=id, new_estado="ACEPTADO")
 
 
@@ -759,6 +768,11 @@ def ticket_start(id: int):
         {"estado": "EN_CURSO", "started_at": datetime.now().isoformat()},
         "INICIADO",
     )
+
+    # Notificar al huésped
+    from ...services.guest_notifications import notify_state_change
+    notify_state_change(id, "EN_CURSO")
+
     return _ok_or_redirect("Ticket iniciado.", ticket_id=id, new_estado="EN_CURSO")
 
 
@@ -847,26 +861,41 @@ def ticket_finish(id: int):
         "RESUELTO",
     )
 
-    # Avisar al huésped por WhatsApp si tenemos algo en huesped_id.
-    # En el nuevo esquema solo tenemos huesped_id; lo usamos como identificador / teléfono.
+    # Avisar al huésped por WhatsApp y enviar encuesta CSAT
     try:
         t2 = fetchone(
             """
-            SELECT huesped_id
+            SELECT huesped_whatsapp, org_id, hotel_id
             FROM Tickets
             WHERE id=?
             """,
             (id,),
         )
-        to_phone = (t2["huesped_id"] if t2 and t2.get("huesped_id") else "") or ""
-        if to_phone.strip():
-            _notify_guest_final(
-                to_phone=to_phone,
-                ticket_id=id,
-                huesped_nombre=None,  # nombre no está en el schema actual
-            )
+
+        if t2 and t2.get("huesped_whatsapp"):
+            guest_phone = t2["huesped_whatsapp"].strip()
+
+            if guest_phone:
+                # 1. Notificación final (mensaje existente)
+                try:
+                    _notify_guest_final(
+                        to_phone=guest_phone,
+                        ticket_id=id,
+                        huesped_nombre=None,
+                    )
+                except Exception as e:
+                    print(f"[WA] notify guest final failed: {e}", flush=True)
+
+                # 2. Enviar encuesta CSAT inmediatamente
+                from ...services.guest_notifications import send_csat_survey
+                send_csat_survey(
+                    ticket_id=id,
+                    guest_phone=guest_phone,
+                    org_id=t2["org_id"],
+                    hotel_id=t2["hotel_id"]
+                )
     except Exception as e:
-        print(f"[WA] notify guest final failed: {e}", flush=True)
+        print(f"[CSAT] Error en flujo de encuesta: {e}", flush=True)
 
     return _ok_or_redirect("Ticket resuelto.", ticket_id=id, new_estado="RESUELTO")
 

@@ -1,0 +1,268 @@
+"""
+Handler para respuestas de encuestas CSAT post-interacción.
+Detecta si un mensaje entrante es respuesta a una encuesta activa.
+"""
+
+import logging
+import re
+import os
+from typing import Tuple, List, Dict, Any, Optional
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+# Importar funciones de BD desde la app principal (Hestia_Production)
+# Nota: Esto requiere que el gateway tenga acceso a la misma BD
+try:
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../../Hestia_Production'))
+    from hestia_app.services.db import fetchone, execute
+    DB_AVAILABLE = True
+except ImportError:
+    logger.warning("[SURVEY] No se pudo importar DB de Hestia_Production")
+    DB_AVAILABLE = False
+    fetchone = None
+    execute = None
+
+
+# Mensajes de la encuesta
+SURVEY_Q2_LOW_MESSAGE = "¿Qué podríamos haber hecho mejor?"
+SURVEY_Q2_HIGH_MESSAGE = "¡Qué bueno! ¿Qué fue lo que más te gustó?"
+
+SURVEY_Q3_MESSAGE = """Una última pregunta: ¿qué tan útil te pareció usar WhatsApp para esto?
+
+Del 1 al 5:
+1 - Nada útil
+5 - Muy útil"""
+
+SURVEY_THANK_YOU_MESSAGE = """¡Gracias por tu tiempo! Nos ayuda mucho a mejorar. 🙏
+
+Si necesitas algo más, escríbenos cuando quieras."""
+
+SURVEY_INVALID_RATING_MESSAGE = "Por favor responde con un número del 1 al 5."
+SURVEY_INVALID_COMMENT_MESSAGE = "Por favor comparte tu opinión con más detalle."
+
+
+def extract_rating(text: str) -> Optional[int]:
+    """
+    Extrae una calificación del 1 al 5 de un mensaje de texto.
+
+    Soporta:
+    - Números directos: "4", "5"
+    - Estrellas: "⭐⭐⭐⭐"
+    - Palabras: "cuatro", "cinco"
+
+    Args:
+        text: Texto del mensaje
+
+    Returns:
+        Número del 1-5, o None si no se detecta
+    """
+    text_lower = text.lower().strip()
+
+    # 1. Buscar número directo
+    match = re.search(r'\b([1-5])\b', text)
+    if match:
+        return int(match.group(1))
+
+    # 2. Contar estrellas
+    stars = text.count('⭐') + text.count('*')
+    if 1 <= stars <= 5:
+        return stars
+
+    # 3. Palabras en español
+    word_map = {
+        'uno': 1, 'una': 1,
+        'dos': 2,
+        'tres': 3,
+        'cuatro': 4,
+        'cinco': 5
+    }
+
+    for word, num in word_map.items():
+        if word in text_lower:
+            return num
+
+    return None
+
+
+def check_active_survey(guest_phone: str) -> Optional[Dict[str, Any]]:
+    """
+    Verifica si existe una encuesta activa para el huésped.
+
+    Args:
+        guest_phone: Número de WhatsApp del huésped
+
+    Returns:
+        Dict con datos de la encuesta activa, o None si no hay encuesta
+    """
+    if not DB_AVAILABLE or not fetchone:
+        return None
+
+    try:
+        survey = fetchone("""
+            SELECT id, ticket_id, survey_state, csat_score
+            FROM csat_surveys
+            WHERE guest_phone = ?
+              AND survey_state IN ('q1_sent', 'q2_sent', 'q3_sent')
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (guest_phone,))
+
+        return survey
+    except Exception as e:
+        logger.exception(f"[SURVEY] Error al buscar encuesta activa: {e}")
+        return None
+
+
+def handle_survey_response(
+    guest_phone: str,
+    msg_text: str
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    """
+    Procesa respuesta a encuesta si existe una activa.
+
+    Args:
+        guest_phone: Número WhatsApp del huésped
+        msg_text: Texto del mensaje
+
+    Returns:
+        (is_survey_response, actions)
+        - is_survey_response: True si el mensaje es respuesta a encuesta
+        - actions: Lista de acciones a ejecutar (mensajes a enviar)
+    """
+    if not DB_AVAILABLE:
+        return False, []
+
+    # 1. Verificar si hay encuesta activa
+    survey = check_active_survey(guest_phone)
+    if not survey:
+        # No hay encuesta activa, no es respuesta a encuesta
+        return False, []
+
+    survey_id = survey["id"]
+    ticket_id = survey["ticket_id"]
+    state = survey["survey_state"]
+
+    logger.info(f"[SURVEY] Procesando respuesta para encuesta {survey_id}, estado {state}")
+
+    # 2. Procesar según el estado
+
+    if state == "q1_sent":
+        # Esperando calificación CSAT (1-5)
+        return _handle_q1_response(survey_id, ticket_id, guest_phone, msg_text)
+
+    elif state == "q2_sent":
+        # Esperando comentario abierto
+        return _handle_q2_response(survey_id, ticket_id, guest_phone, msg_text, survey["csat_score"])
+
+    elif state == "q3_sent":
+        # Esperando calificación de utilidad (1-5)
+        return _handle_q3_response(survey_id, ticket_id, guest_phone, msg_text)
+
+    return False, []
+
+
+def _handle_q1_response(
+    survey_id: int,
+    ticket_id: int,
+    guest_phone: str,
+    msg_text: str
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Procesa respuesta a Q1 (CSAT)"""
+
+    rating = extract_rating(msg_text)
+
+    if rating is None:
+        # Respuesta inválida
+        return True, [{"type": "text", "text": SURVEY_INVALID_RATING_MESSAGE}]
+
+    # Guardar calificación
+    try:
+        execute("""
+            UPDATE csat_surveys
+            SET csat_score = ?,
+                survey_state = 'q2_sent',
+                survey_last_prompt_at = ?
+            WHERE id = ?
+        """, (rating, datetime.utcnow().isoformat(), survey_id))
+
+        logger.info(f"[SURVEY] Ticket {ticket_id}: CSAT score = {rating}")
+    except Exception as e:
+        logger.exception(f"[SURVEY] Error al guardar CSAT: {e}")
+        return True, [{"type": "text", "text": "Hubo un error. Por favor intenta de nuevo."}]
+
+    # Determinar Q2 según el puntaje
+    if rating <= 3:
+        q2_message = SURVEY_Q2_LOW_MESSAGE
+    else:
+        q2_message = SURVEY_Q2_HIGH_MESSAGE
+
+    return True, [{"type": "text", "text": q2_message}]
+
+
+def _handle_q2_response(
+    survey_id: int,
+    ticket_id: int,
+    guest_phone: str,
+    msg_text: str,
+    csat_score: int
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Procesa respuesta a Q2 (Comentario)"""
+
+    comment = msg_text.strip()
+
+    if len(comment) < 2:
+        # Comentario muy corto
+        return True, [{"type": "text", "text": SURVEY_INVALID_COMMENT_MESSAGE}]
+
+    # Guardar comentario
+    try:
+        execute("""
+            UPDATE csat_surveys
+            SET csat_comment = ?,
+                survey_state = 'q3_sent',
+                survey_last_prompt_at = ?
+            WHERE id = ?
+        """, (comment, datetime.utcnow().isoformat(), survey_id))
+
+        logger.info(f"[SURVEY] Ticket {ticket_id}: Comentario guardado")
+    except Exception as e:
+        logger.exception(f"[SURVEY] Error al guardar comentario: {e}")
+        return True, [{"type": "text", "text": "Hubo un error. Por favor intenta de nuevo."}]
+
+    # Enviar Q3 (utilidad)
+    return True, [{"type": "text", "text": SURVEY_Q3_MESSAGE}]
+
+
+def _handle_q3_response(
+    survey_id: int,
+    ticket_id: int,
+    guest_phone: str,
+    msg_text: str
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Procesa respuesta a Q3 (Utilidad)"""
+
+    utility = extract_rating(msg_text)
+
+    if utility is None:
+        # Respuesta inválida
+        return True, [{"type": "text", "text": SURVEY_INVALID_RATING_MESSAGE}]
+
+    # Guardar utilidad y COMPLETAR encuesta
+    try:
+        execute("""
+            UPDATE csat_surveys
+            SET tool_utility_score = ?,
+                survey_state = 'completed',
+                completed_at = ?
+            WHERE id = ?
+        """, (utility, datetime.utcnow().isoformat(), survey_id))
+
+        logger.info(f"[SURVEY] Ticket {ticket_id}: Encuesta completada (utilidad = {utility})")
+    except Exception as e:
+        logger.exception(f"[SURVEY] Error al completar encuesta: {e}")
+        return True, [{"type": "text", "text": "Hubo un error. Por favor intenta de nuevo."}]
+
+    # Enviar mensaje de agradecimiento
+    return True, [{"type": "text", "text": SURVEY_THANK_YOU_MESSAGE}]
