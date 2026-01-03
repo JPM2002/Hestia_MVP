@@ -39,10 +39,10 @@ from gateway_app.services import faq_llm, guest_llm, notify
 
 logger = logging.getLogger(__name__)
 
-
+# Need to make not hardcoded TODO:
 # IDs para tu backend de tickets (ajusta según tu setup)
-ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "2"))
-HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "1"))
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "4"))
+HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "3"))
 
 # Import real ticket creator if available; otherwise fall back to a stub.
 try:
