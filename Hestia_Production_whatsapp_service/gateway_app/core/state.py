@@ -1054,9 +1054,9 @@ def _create_combined_confirmation(session: Dict[str, Any]) -> list:
     temp_room = session.get("temp_room", "")
     temp_draft = session.get("temp_ticket_draft", {})
 
-    area = temp_draft.get("area", "MANTENCION")
-    priority = temp_draft.get("priority", "MEDIA")
-    detail = temp_draft.get("detail", "Sin detalles")
+    area = temp_draft.get("area") or "MANTENCION"
+    priority = temp_draft.get("priority") or "MEDIA"
+    detail = temp_draft.get("detail") or "Sin detalles"
 
     # Map area to friendly name
     area_map = {
@@ -1074,6 +1074,15 @@ def _create_combined_confirmation(session: Dict[str, Any]) -> list:
         "¿Confirmas? (Sí/No)"
     )
 
+    # ⭐ FIX: Create ticket_draft in session so _handle_ticket_confirmation_yes_no can read it
+    session["ticket_draft"] = {
+        "area": area,
+        "priority": priority,
+        "room": temp_room,
+        "detail": detail,
+        "guest_name": temp_name,
+    }
+
     # Transition to TICKET_CONFIRM state
     session["state"] = STATE_TICKET_CONFIRM
 
@@ -1085,12 +1094,12 @@ def _create_combined_confirmation(session: Dict[str, Any]) -> list:
             "temp_room": temp_room,
             "area": area,
             "priority": priority,
+            "detail": detail,
             "state": STATE_TICKET_CONFIRM,
         }
     )
 
     return [_text_action(text)]
-
 
 def _create_combined_confirmation_direct(nlu: NLUResult, session: Dict[str, Any]) -> list:
     """
