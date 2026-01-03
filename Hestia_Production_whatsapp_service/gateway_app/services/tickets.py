@@ -1,3 +1,4 @@
+# gateway_app/services/tickets.py
 from datetime import datetime
 from typing import Any, Dict
 
@@ -10,6 +11,7 @@ from gateway_app.services.db import (
 )
 from gateway_app.services.sla import compute_due
 from gateway_app.services.notify import _auto_assign_and_notify
+from gateway_app.services.triage import notify_triage
 
 
 def create_ticket(
@@ -143,5 +145,18 @@ def create_ticket(
         )
     except Exception as e:
         print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
+
+    # Send to triage channel (WhatsApp notification to triage team)
+    try:
+        notify_triage(
+            ticket_id=ticket_id,
+            payload={
+                **payload,
+                "org_id": org_id,
+                "hotel_id": hotel_id,
+            },
+        )
+    except Exception as e:
+        print(f"[WARN] triage notification failed: {e}", flush=True)
 
     return ticket_id

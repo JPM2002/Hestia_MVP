@@ -30,5 +30,9 @@ class Config:
     TESTING: bool = _get_bool("TESTING", False)
     DEBUG: bool = _get_bool("DEBUG", False)
 
+    # Triage channel (comma-separated phone numbers)
+    TRIAGE_PHONE_NUMBERS: str = os.getenv("TRIAGE_PHONE_NUMBERS", "")
+    TRIAGE_ENABLED: bool = _get_bool("TRIAGE_ENABLED", True)
+
 
 cfg = Config()
