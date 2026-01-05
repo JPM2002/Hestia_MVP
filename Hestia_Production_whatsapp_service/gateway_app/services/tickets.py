@@ -32,7 +32,7 @@ def create_ticket(
         print(f"[WARN] compute_due failed: {e}", flush=True)
         due_at = None
 
-#Need to make not harcoded TODO:
+    # IDs configurables vía payload o config (fallback a valores por defecto)
     org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", 4)))
     hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", 3)))
 

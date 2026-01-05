@@ -101,7 +101,7 @@ def check_active_survey(guest_phone: str) -> Optional[Dict[str, Any]]:
 
     try:
         survey = fetchone("""
-            SELECT id, ticket_id, survey_state, csat_score
+            SELECT id, ticket_id, survey_state
             FROM csat_surveys
             WHERE guest_phone = ?
               AND survey_state IN ('q1_sent', 'q2_sent', 'q3_sent')
@@ -154,7 +154,7 @@ def handle_survey_response(
 
     elif state == "q2_sent":
         # Esperando comentario abierto
-        return _handle_q2_response(survey_id, ticket_id, guest_phone, msg_text, survey["csat_score"])
+        return _handle_q2_response(survey_id, ticket_id, guest_phone, msg_text)
 
     elif state == "q3_sent":
         # Esperando calificación de utilidad (1-5)
@@ -205,8 +205,7 @@ def _handle_q2_response(
     survey_id: int,
     ticket_id: int,
     guest_phone: str,
-    msg_text: str,
-    csat_score: int
+    msg_text: str
 ) -> Tuple[bool, List[Dict[str, Any]]]:
     """Procesa respuesta a Q2 (Comentario)"""
 
