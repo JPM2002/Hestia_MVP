@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 
 # ---- NLU result -------------------------------------------------------------
@@ -38,7 +38,7 @@ class NLUResult:
       }
     """
 
-    intent: Optional[str] = None  # ticket_request | handoff_request | general_chat | cancel | help | not_understood
+    intent: Optional[str] = None  # ticket_request | ticket_status | handoff_request | general_chat | cancel | help | not_understood
     area: Optional[str] = None    # MANTENCION | HOUSEKEEPING | ROOMSERVICE | None
     priority: Optional[str] = None  # URGENTE | ALTA | MEDIA | BAJA | None
     room: Optional[str] = None
@@ -49,6 +49,17 @@ class NLUResult:
     is_help: bool = False
     is_smalltalk: bool = False
     wants_handoff: bool = False
+    is_ticket_status_query: bool = False  # Flag for ticket status queries
+
+    # Multiple requests (when user has 2+ requests for different departments)
+    # Each item: {"area": "...", "detail": "...", "priority": "..."}
+    multiple_requests: Optional[List[Dict[str, Any]]] = None
+
+    # Routing metadata (audit trail)
+    routing_source: Optional[str] = None       # rules | llm | clarification | fallback
+    routing_reason: Optional[str] = None       # Human-readable routing reason
+    routing_confidence: Optional[float] = None  # 0.0-1.0
+    routing_version: str = "v1"
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "NLUResult":
@@ -67,6 +78,13 @@ class NLUResult:
             is_help=bool(data.get("is_help", False)),
             is_smalltalk=bool(data.get("is_smalltalk", False)),
             wants_handoff=bool(data.get("wants_handoff", False)),
+            is_ticket_status_query=bool(data.get("is_ticket_status_query", False)),
+            multiple_requests=data.get("multiple_requests"),
+            # Routing metadata (with _ prefix in source dict)
+            routing_source=data.get("_routing_source"),
+            routing_reason=data.get("_routing_reason"),
+            routing_confidence=data.get("_routing_confidence"),
+            routing_version=data.get("_routing_version", "v1"),
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(python -c:*)",
+      "Bash(source:*)",
+      "Bash(python test_routing_redundancy.py:*)",
+      "Bash(python debug_caso8.py:*)",
+      "Bash(python:*)"
     ]
   }
 }

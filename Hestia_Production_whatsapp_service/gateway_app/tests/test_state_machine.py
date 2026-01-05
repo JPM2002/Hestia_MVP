@@ -5,7 +5,8 @@ def test_state_module_importable():
     Smoke test muy simple: el módulo de estado se debe poder importar.
     No toca la BD ni el LLM.
     """
-    import gateway_app.core.state as state_module  # noqa: F401
+    import gateway_app.core.conversation.orchestrator as state_module  # noqa: F401
+    import gateway_app.core.conversation.session as session_module  # noqa: F401
 
     # Si llegamos aquí sin excepción, el test pasa
     assert True
