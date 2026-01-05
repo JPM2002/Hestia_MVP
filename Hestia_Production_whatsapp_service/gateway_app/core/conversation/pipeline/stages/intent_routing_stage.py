@@ -101,8 +101,17 @@ class IntentRoutingStage(PipelineStage):
                 context.session["state"] = STATE_NEW
                 # Fall through to normal intent handling
 
+            elif intent == "not_understood":
+                # FAQ questions (not_understood) should be answered even during identity collection
+                # This allows users to ask info questions while providing their identity
+                logger.info(
+                    "[INTENT_ROUTING] FAQ question during identity flow, allowing FAQ handler",
+                    extra={"wa_id": context.wa_id, "message": context.message}
+                )
+                # Fall through to normal intent handling (will trigger _handle_not_understood)
+
             else:
-                # For ANY other intent (including not_understood, ticket_request, general_chat, etc.),
+                # For ANY other intent (ticket_request, general_chat, etc.),
                 # first try to extract identity info from the message
                 from gateway_app.core.intents.identity_handler import handle_guest_identify
 
@@ -136,7 +145,7 @@ class IntentRoutingStage(PipelineStage):
                         context.session["state"] = STATE_NEW
                         # Fall through to handle the new intent
                     else:
-                        # It's not_understood or general_chat, and identity extraction failed
+                        # It's general_chat, and identity extraction failed
                         # → Keep asking for identity (don't cancel)
                         logger.info(
                             "[INTENT_ROUTING] Could not extract identity, asking again",
