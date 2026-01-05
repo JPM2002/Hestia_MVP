@@ -19,17 +19,16 @@ def get_reception_fallback_message() -> str:
     """
     Generate fallback message for questions without FAQ answer.
 
-    Directs user to contact reception.
+    Directs user to contact reception with phone number.
 
     Returns:
         Formatted message to contact reception
     """
     return (
-        "No estoy seguro de haber entendido bien. Puedo ayudarte a:\n\n"
-        "• Crear solicitudes de mantenimiento, housekeeping o recepción.\n"
-        "• Responder preguntas frecuentes sobre el hotel.\n"
-        "• Ponerte en contacto con recepción.\n\n"
-        "¿Qué necesitas?"
+        "Para resolver esta duda te pedimos llamar a recepción al *100 o 101+OK* "
+        "desde el teléfono de tu habitación.\n\n"
+        "Si necesitas que gestionemos algo (ej. pedir algo a la habitación), "
+        "dime 'Necesito...' y lo registramos. 😊"
     )
 
 

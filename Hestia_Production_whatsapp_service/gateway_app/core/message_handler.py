@@ -61,14 +61,32 @@ def process_guest_message(
             transcript = None
         msg_text = (transcript or "").strip()
 
-    # 1.5) Verificar si es respuesta a encuesta CSAT (ANTES del pipeline conversacional)
-    from gateway_app.core import survey_handler
-    is_survey, survey_actions = survey_handler.handle_survey_response(from_phone, msg_text)
+    # 1.2) NUEVO: Log mensaje del huésped
+    from gateway_app.services import conversation_logger
+    conversation_logger.log_guest_message(
+        wa_id=wa_id,
+        text=msg_text,
+        intent=None,  # Se llenará después del NLU si es necesario
+        confidence=None
+    )
 
-    if is_survey:
-        # Es respuesta a encuesta, retornar acciones de la encuesta sin procesar conversación
-        logger.info(f"[SURVEY] Mensaje de {from_phone} procesado como respuesta a encuesta")
-        return survey_actions
+    # 1.5) Verificar si es respuesta a encuesta CSAT de TICKET (ANTES del pipeline conversacional)
+    from gateway_app.core import survey_handler
+    is_ticket_survey, ticket_survey_actions = survey_handler.handle_survey_response(from_phone, msg_text)
+
+    if is_ticket_survey:
+        # Es respuesta a encuesta de ticket, retornar acciones sin procesar conversación
+        logger.info(f"[SURVEY] Mensaje de {from_phone} procesado como respuesta a encuesta de TICKET")
+        return ticket_survey_actions
+
+    # 1.6) NUEVO: Verificar si es respuesta a encuesta FAQ
+    from gateway_app.core import faq_survey_handler
+    is_faq_survey, faq_survey_actions = faq_survey_handler.handle_faq_survey_response(wa_id, msg_text)
+
+    if is_faq_survey:
+        # Es respuesta a encuesta FAQ, retornar acciones sin procesar conversación
+        logger.info(f"[FAQ_SURVEY] Mensaje de {wa_id} procesado como respuesta a encuesta FAQ")
+        return faq_survey_actions
 
     # 2) Cargar sesión actual
     user_session = session.load_session(wa_id)
@@ -86,6 +104,35 @@ def process_guest_message(
 
     # 4) Guardar nueva sesión
     session.save_session(wa_id, new_session)
+
+    # 4.5) NUEVO: Log respuestas del bot y programar encuesta FAQ si aplica
+    if actions:
+        from gateway_app.services import conversation_logger
+
+        # Determinar si fue respuesta FAQ (basado en estado de sesión)
+        current_state = new_session.get("state", "")
+        is_faq_state = current_state in ["GH_FAQ", "IDLE"]  # FAQ responses happen in these states
+
+        # Log cada acción de texto del bot
+        for action in actions:
+            if action.get("type") == "text":
+                conversation_logger.log_bot_message(
+                    wa_id=wa_id,
+                    text=action["text"],
+                    is_faq=is_faq_state
+                )
+
+        # Si hubo respuesta FAQ, programar encuesta para +15 min
+        if is_faq_state:
+            from gateway_app.services import faq_survey_scheduler
+            conv_log = conversation_logger.get_active_conversation(wa_id)
+
+            if conv_log:
+                faq_survey_scheduler.schedule_faq_survey(
+                    conversation_log_id=conv_log["id"],
+                    wa_id=wa_id,
+                    delay_minutes=15
+                )
 
     # 5) Retornar acciones (sin enviar por ningún canal)
     return actions

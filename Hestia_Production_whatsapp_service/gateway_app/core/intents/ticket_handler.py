@@ -82,6 +82,16 @@ def _create_ticket_internal(
                     "location": "gateway_app/core/intents/ticket_handler.py::_create_ticket_internal"
                 }
             )
+
+            # NUEVO: Marcar que se creó ticket en conversation_logs (evita encuesta FAQ)
+            try:
+                from gateway_app.services import conversation_logger
+                wa_id = session.get("wa_id")
+                if wa_id:
+                    conversation_logger.mark_ticket_created(wa_id, ticket_id)
+            except Exception as e:
+                logger.warning(f"[TICKET] No se pudo marcar ticket en conversation_logs: {e}")
+
         else:
             logger.error(
                 "[TICKET] ❌ Ticket creation FAILED (create_ticket returned None)",
