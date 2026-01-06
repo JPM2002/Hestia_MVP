@@ -275,6 +275,26 @@ ROOM, NAME, AND DETAIL
 
 If something is not clearly present, use null for that field.
 
+🔥 SPECIAL RULES FOR GH_IDENTIFY STATE (IDENTITY COLLECTION):
+When the DFA state is "GH_IDENTIFY", the bot is actively collecting the guest's name and room number.
+In this state, you MUST be MORE AGGRESSIVE in extracting name and room from ANY reasonable format:
+
+NAME extraction in GH_IDENTIFY:
+  ✅ "Marco 101" → name: "Marco", room: "101"
+  ✅ "Juan Pérez 305" → name: "Juan Pérez", room: "305"
+  ✅ "María habitación 207" → name: "María", room: "207"
+  ✅ "Pedro González, cuarto 412" → name: "Pedro González", room: "412"
+  ✅ "Ana 201" → name: "Ana", room: "201"
+  ✅ "mi nombre es Carlos y estoy en la 108" → name: "Carlos", room: "108"
+  ✅ "soy Luis, hab 310" → name: "Luis", room: "310"
+
+  RULE: In GH_IDENTIFY state, any capitalized word(s) that looks like a name should be extracted as "name",
+        and any 2-4 digit number should be extracted as "room", even without explicit keywords.
+
+INTENT in GH_IDENTIFY:
+  When in GH_IDENTIFY state and the message contains name/room info, set intent to "general_chat"
+  (not ticket_request), because this is identity information, not a new request.
+
 MULTIPLE REQUESTS DETECTION (CRITICAL FOR UX)
 
 When a message contains MORE THAN ONE distinct service request that belong to DIFFERENT departments,

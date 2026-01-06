@@ -39,8 +39,12 @@ SURVEY_THANK_YOU_MESSAGE = """¡Gracias por tu tiempo! Nos ayuda mucho a mejorar
 
 Si necesitas algo más, escríbenos cuando quieras."""
 
-SURVEY_INVALID_RATING_MESSAGE = "Por favor responde con un número del 1 al 5."
-SURVEY_INVALID_COMMENT_MESSAGE = "Por favor comparte tu opinión con más detalle."
+SURVEY_INVALID_RATING_MESSAGE = """No entendí tu calificación.
+
+Por favor responde con un número del 1 al 5 sobre qué tan satisfecho quedaste con el servicio:
+1 - Muy insatisfecho
+5 - Muy satisfecho"""
+SURVEY_INVALID_COMMENT_MESSAGE = "Por favor comparte tu opinión con más detalle para ayudarnos a mejorar."
 
 
 def extract_rating(text: str) -> Optional[int]:

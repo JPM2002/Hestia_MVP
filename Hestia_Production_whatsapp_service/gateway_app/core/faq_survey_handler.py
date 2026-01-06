@@ -26,8 +26,12 @@ except ImportError:
 # Mensajes de la encuesta
 FAQ_SURVEY_Q2_MESSAGE = "¿Qué podríamos haber hecho mejor?"
 FAQ_SURVEY_THANK_YOU_MESSAGE = "¡Gracias por tu feedback! Nos ayuda a mejorar. 🙏"
-FAQ_SURVEY_INVALID_RATING_MESSAGE = "Por favor responde con un número del 1 al 5."
-FAQ_SURVEY_INVALID_COMMENT_MESSAGE = "Por favor comparte tu opinión con más detalle."
+FAQ_SURVEY_INVALID_RATING_MESSAGE = """No entendí tu calificación.
+
+Por favor responde con un número del 1 al 5 sobre qué tan útil fue mi respuesta:
+1 - Nada útil
+5 - Muy útil"""
+FAQ_SURVEY_INVALID_COMMENT_MESSAGE = "Por favor comparte tu opinión con más detalle para ayudarnos a mejorar."
 
 
 def extract_rating(text: str) -> Optional[int]:

@@ -143,7 +143,7 @@
             </button>
 
             <div class="collapse mt-1 text-start" id="assign-{{ t.id }}">
-              <form method="post" action="{{ url_for('tickets.ticket_reassign', id=t.id) }}">
+              <form method="post" action="{{ url_for('tickets.ticket_reassign', id=t.id) }}" class="reassign-form" data-ticket-id="{{ t.id }}">
                 <div class="small text-muted mb-1">Técnicos ({{ t.area }}):</div>
                 <div class="d-flex flex-column gap-1">
                   {% for tech in techs %}
@@ -187,4 +187,42 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Manejar la reasignación de tickets con AJAX
+  const reassignForms = document.querySelectorAll('.reassign-form');
+
+  reassignForms.forEach(form => {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const formData = new FormData(form);
+      const ticketId = form.dataset.ticketId;
+      const actionUrl = form.action;
+
+      try {
+        const response = await fetch(actionUrl, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          // Mostrar mensaje de éxito
+          alert('Ticket reasignado correctamente');
+          // Recargar la página para ver los cambios
+          window.location.reload();
+        } else {
+          alert('Error al reasignar el ticket');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Error de red al reasignar el ticket');
+      }
+    });
+  });
+});
+</script>
 {% endblock %}
