@@ -861,7 +861,7 @@ def ticket_finish(id: int):
         "RESUELTO",
     )
 
-    # Avisar al huésped por WhatsApp y enviar encuesta CSAT
+    # Avisar al huésped por WhatsApp
     try:
         t2 = fetchone(
             """
@@ -876,7 +876,7 @@ def ticket_finish(id: int):
             guest_phone = t2["huesped_whatsapp"].strip()
 
             if guest_phone:
-                # 1. Notificación final (mensaje existente)
+                # Notificación final (mensaje existente)
                 try:
                     _notify_guest_final(
                         to_phone=guest_phone,
@@ -885,17 +885,8 @@ def ticket_finish(id: int):
                     )
                 except Exception as e:
                     print(f"[WA] notify guest final failed: {e}", flush=True)
-
-                # 2. Enviar encuesta CSAT inmediatamente
-                from ...services.guest_notifications import send_csat_survey
-                send_csat_survey(
-                    ticket_id=id,
-                    guest_phone=guest_phone,
-                    org_id=t2["org_id"],
-                    hotel_id=t2["hotel_id"]
-                )
     except Exception as e:
-        print(f"[CSAT] Error en flujo de encuesta: {e}", flush=True)
+        print(f"[WA] Error en notificación: {e}", flush=True)
 
     return _ok_or_redirect("Ticket resuelto.", ticket_id=id, new_estado="RESUELTO")
 
