@@ -229,3 +229,14 @@ class StateRoutingStage(PipelineStage):
         if handled:
             context.actions.extend(actions)
             context.mark_handled()
+        else:
+            # 🔥 NEW: If identity handler returns False (e.g., message is a FAQ question),
+            # do NOT mark as handled - let the pipeline continue to IntentRoutingStage
+            logger.info(
+                "[STATE_ROUTING] Identity handler did not handle message → Continuing to next stage",
+                extra={
+                    "wa_id": context.wa_id,
+                    "state": context.session.get("state"),
+                    "message": context.message
+                }
+            )

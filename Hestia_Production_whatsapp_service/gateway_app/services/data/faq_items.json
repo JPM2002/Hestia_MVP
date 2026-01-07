@@ -147,7 +147,7 @@
   {
     "key": "iron_available",
     "q": "¿Tienen plancha?",
-    "a": "Sí, puede solicitar una plancha en recepción."
+    "a": "Actualmente, no contamos con servicio de planchado ni tintorería, ni disponemos de plancha para préstamo. No obstante, en los alrededores del hotel, especialmente a lo largo de Avenida Providencia, encontrará tintorerías y servicios de lavandería con planchado, a los que puede acceder fácilmente caminando o en un corto trayecto"
   },
   {
     "key": "ac_remote_location",
@@ -532,7 +532,7 @@
   {
     "key": "room_charge_alt",
     "q": "¿Se puede cargar a la habitación el consumo en restaurante?",
-    "a": "Sí, el consumo en el restaurante se puede cargar a la habitación indicándole al personal."
+    "a": "Sí, el consumo en el restaurante se puede cargar a la habitación indicando al personal el número de habitación a la hora de pedir la cuenta."
   },
   {
     "key": "contact_reception",
@@ -612,7 +612,7 @@
   {
     "key": "car_rental",
     "q": "¿Dónde puedo arrendar un auto?",
-    "a": "El hotel no cuenta con servicio de arriendo de autos."
+    "a": "El hotel no cuenta con servicio de arriendo de autos. Para más información, puede consultar directamente en recepción."
   },
   {
     "key": "nearest_supermarket",
@@ -620,9 +620,54 @@
     "a": "El supermercado más cercano se encuentra a menos de dos cuadras del hotel. Puede encontrar opciones por Av. Providencia"
   },
   {
+    "key": "shopping",
+    "q": "¿Hay un shopping cerca?",
+    "a": "Sí, en los alrededores del Hotel encontrarás diversas opciones de shopping. A lo largo de Avenida Providencia hay galerías comerciales como Portal Lyon, además de centros cercanos como Mall Vivo Panorámico y el Costanera Center, todos de fácil acceso."
+  },
+  {
+    "key": "mall",
+    "q": "¿Hay un centro comercial cerca?",
+    "a": "Sí, en los alrededores del Hotel encontrarás diversas opciones de shopping. A lo largo de Avenida Providencia hay galerías comerciales como Portal Lyon, además de centros cercanos como Mall Vivo Panorámico y el Costanera Center, todos de fácil acceso."
+  },
+  {
+    "key": "bank",
+    "q": "¿Hay un banco cercano?",
+    "a": "Sí, en los alrededores del Hotel Diego de Almagro Express Providencia encontrarás diversas sucursales bancarias y cajeros automáticos. A lo largo de Avenida Providencia hay bancos como Banco de Chile, Banco Santander, BancoEstado y BCI, todos a pocos minutos caminando desde el hotel."
+  },
+  {
+    "key": "bar",
+    "q": "¿Hay Bar cerca del hotel?",
+    "a": "Sí, en los alrededores del Hotel Diego de Almagro Express Providencia encontrará bares y pubs cercanos. Principalmente en los sectores de Avenida Providencia, Manuel Montt y Nueva Providencia, todos a pocos minutos caminando desde el hotel."
+  },
+  {
+    "key": "pub",
+    "q": "¿Hay Pub cerca?",
+    "a": "Sí, en los alrededores del Hotel Diego de Almagro Express Providencia encontrará bares y pubs cercanos. Principalmente en los sectores de Avenida Providencia, Manuel Montt y Nueva Providencia, todos a pocos minutos caminando desde el hotel."
+  },
+  {
+    "key": "ice",
+    "q": "¿Tienen hielo?",
+    "a": "Puede consultar directamente en recepción al 100 o 101 + ok o encontrar en el minimarket ubicado a un costado del hotel"
+  },
+  {
+    "key": "tea",
+    "q": "¿Tienen té?",
+    "a": "Para solicitar té o café, llame directamente a recepción al 100 o 101 + ok."
+  },
+  {
+    "key": "coffee",
+    "q": "¿Tienen café?",
+    "a": "Para solicitar té o café, llame directamente a recepción al 100 o 101 + ok."
+  },
+  {
+    "key": "cup_glasses",
+    "q": "¿Tienen taza para mi habitación?",
+    "a": "Para solicitar tazas o vasos, llame directamente a recepción al 100 o 101 + ok."
+  },
+  {
     "key": "souvenirs",
     "q": "¿Dónde puedo comprar recuerdos?",
-    "a": "En el centro de Santiago, en ferias artesanales y en el Pueblito Los Dominicos."
+    "a": " En los alrededores del Hotel encontrarás diversas opciones para comprar recuerdos. A lo largo de Avenida Providencia hay galerías comerciales como Portal Lyon."
   },
   {
     "key": "nearby_restaurants",
