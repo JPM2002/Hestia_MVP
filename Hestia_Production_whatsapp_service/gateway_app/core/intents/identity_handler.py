@@ -113,8 +113,25 @@ def handle_guest_identify(
 
     Returns:
         (handled: bool, actions: list)
+        - (False, []) if message appears to be a FAQ question (not identity info)
+        - (True, actions) if identity extraction attempted
     """
     wa_id = session.get("wa_id")
+
+    # 🔥 NEW: Check if this is a FAQ question instead of identity info
+    # If the message is asking "how to", "what time", "where is", etc., it's likely a FAQ question
+    # and should NOT be handled as identity collection
+    if is_faq_question(msg):
+        logger.info(
+            "[IDENTITY] Message appears to be a FAQ question, not identity info → Letting FAQ handler process it",
+            extra={
+                "wa_id": wa_id,
+                "msg": msg,
+                "state": session.get("state")
+            }
+        )
+        # Return False to let the pipeline continue to IntentRoutingStage (FAQ handler)
+        return False, []
 
     # Try to extract from NLU first
     nlu_name = getattr(nlu, "name", None)
@@ -422,3 +439,72 @@ def extract_room_simple(msg: str) -> Optional[str]:
 
     logger.debug("[EXTRACT] No room pattern matched")
     return None
+
+
+def is_faq_question(msg: str) -> bool:
+    """
+    Detect if a message is likely a FAQ question instead of identity information.
+
+    FAQ questions typically ask about:
+    - Schedules/times (¿a qué hora...?, ¿cuándo...?, horario...)
+    - Availability (¿tienen...?, ¿hay...?)
+    - Location (¿dónde...?)
+    - How-to (¿cómo...?)
+    - Pricing (¿cuánto...?, precio...)
+    - General info (¿qué...?, ¿cuál...?)
+
+    Args:
+        msg: User message to check
+
+    Returns:
+        True if message appears to be a FAQ question, False otherwise
+    """
+    msg_lower = msg.lower().strip()
+
+    # Common FAQ question patterns (Spanish & English)
+    faq_patterns = [
+        # Schedule/Time questions
+        r"\b(a qu[eé] hora|qu[eé] hora|horario|cuando|what time|schedule)\b",
+
+        # Availability questions
+        r"\b(tienen|hay|have|is there|do you have)\b.*\?",
+
+        # Location questions
+        r"\b(d[oó]nde|where)\b.*\?",
+
+        # How-to questions
+        r"\b(c[oó]mo|como|how)\b.*\?",
+
+        # Pricing questions
+        r"\b(cu[aá]nto|precio|costo|price|cost|how much)\b",
+
+        # General info questions starting with interrogatives
+        r"^\s*¿?(qu[eé]|cu[aá]l|cu[aá]ndo|d[oó]nde|c[oó]mo|cu[aá]nto|what|which|when|where|how)\b",
+
+        # Common FAQ topics
+        r"\b(desayuno|almuerzo|cena|breakfast|lunch|dinner)\b",
+        r"\b(piscina|gimnasio|spa|pool|gym)\b",
+        r"\b(wifi|internet|contrase[ñn]a|password|clave)\b",
+        r"\b(check-?in|check-?out)\b",
+        r"\b(estacionamiento|parking)\b",
+        r"\b(restaurante|restaurant|bar|cafeter[ií]a)\b",
+    ]
+
+    # Check if message matches any FAQ pattern
+    for pattern in faq_patterns:
+        if re.search(pattern, msg_lower, re.IGNORECASE):
+            logger.debug(
+                f"[FAQ_DETECTION] Message matched FAQ pattern: {pattern}",
+                extra={"msg": msg}
+            )
+            return True
+
+    # Additional check: If message has a question mark but no name/room indicators, likely FAQ
+    if "?" in msg and not re.search(r"\b(mi nombre|me llamo|soy|habitaci[oó]n|room|hab)\b", msg_lower):
+        logger.debug(
+            "[FAQ_DETECTION] Message has '?' but no identity indicators → Likely FAQ",
+            extra={"msg": msg}
+        )
+        return True
+
+    return False

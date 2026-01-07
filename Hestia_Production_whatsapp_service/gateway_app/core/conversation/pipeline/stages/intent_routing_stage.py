@@ -131,9 +131,25 @@ class IntentRoutingStage(PipelineStage):
                     self.log_exit(context)
                     return context
                 else:
+                    # 🔥 IMPORTANT: Check if this is a FAQ question
+                    # If identity handler returned False because it's a FAQ question (not because extraction failed),
+                    # we should let the FAQ handler answer it, not ask for identity again
+                    from gateway_app.core.intents.identity_handler import is_faq_question
+
+                    if is_faq_question(context.message):
+                        logger.info(
+                            "[INTENT_ROUTING] Message is FAQ question (not identity info) → Allowing FAQ handler",
+                            extra={
+                                "wa_id": context.wa_id,
+                                "user_message": context.message,
+                                "intent": intent
+                            }
+                        )
+                        # Fall through to FAQ handler (will be handled by _handle_not_understood)
+                        # Don't mark as handled, let the pipeline continue
                     # Not identity info AND it's a clear new intent (not not_understood)
                     # → implicit cancel, handle new intent
-                    if intent in ("ticket_request", "ticket_status"):
+                    elif intent in ("ticket_request", "ticket_status"):
                         logger.info(
                             "[INTENT_ROUTING] User changed topic during identity (implicit cancel)",
                             extra={"wa_id": context.wa_id, "new_intent": intent}
@@ -195,6 +211,26 @@ class IntentRoutingStage(PipelineStage):
 
     def _handle_ticket_request(self, context: PipelineContext) -> None:
         """Handle ticket request workflow."""
+        # 🔥 CRITICAL FIX: Check if this is actually a FAQ question, not a ticket request
+        # Sometimes the NLU incorrectly classifies FAQ questions as ticket_request
+        # Example: "cual es el horario del desayuno" might be classified as ticket_request
+        # but it should be answered by FAQ handler instead
+        from gateway_app.core.intents.identity_handler import is_faq_question
+
+        if is_faq_question(context.message):
+            logger.warning(
+                "[INTENT_ROUTING] Message classified as ticket_request but is actually FAQ question → Routing to FAQ handler",
+                extra={
+                    "wa_id": context.wa_id,
+                    "user_message": context.message,
+                    "nlu_intent": "ticket_request",
+                    "corrected_to": "not_understood"
+                }
+            )
+            # Route to FAQ handler instead
+            self._handle_not_understood(context)
+            return
+
         # Check confidence
         routing_confidence = getattr(context.nlu, "routing_confidence", 0.75)
         area = getattr(context.nlu, "area", None)
@@ -276,6 +312,26 @@ class IntentRoutingStage(PipelineStage):
 
     def _handle_smalltalk(self, context: PipelineContext) -> None:
         """Handle general chat."""
+        # 🔥 CRITICAL FIX: Check if this is actually a FAQ question, not smalltalk
+        # Sometimes the NLU incorrectly classifies FAQ questions as general_chat/smalltalk
+        # Example: "cual es el horario del desayuno" might be classified as general_chat
+        # but it should be answered by FAQ handler instead
+        from gateway_app.core.intents.identity_handler import is_faq_question
+
+        if is_faq_question(context.message):
+            logger.warning(
+                "[INTENT_ROUTING] Message classified as general_chat but is actually FAQ question → Routing to FAQ handler",
+                extra={
+                    "wa_id": context.wa_id,
+                    "user_message": context.message,
+                    "nlu_intent": "general_chat",
+                    "corrected_to": "not_understood"
+                }
+            )
+            # Route to FAQ handler instead
+            self._handle_not_understood(context)
+            return
+
         new_conversation = context.metadata.get("new_conversation", False)
 
         if new_conversation:
