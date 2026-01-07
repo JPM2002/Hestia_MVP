@@ -122,18 +122,6 @@ def process_guest_message(
                     is_faq=is_faq_state
                 )
 
-        # Si hubo respuesta FAQ, programar encuesta para +15 min
-        if is_faq_state:
-            from gateway_app.services import faq_survey_scheduler
-            conv_log = conversation_logger.get_active_conversation(wa_id)
-
-            if conv_log:
-                faq_survey_scheduler.schedule_faq_survey(
-                    conversation_log_id=conv_log["id"],
-                    wa_id=wa_id,
-                    delay_minutes=15
-                )
-
     # 5) Retornar acciones (sin enviar por ningún canal)
     return actions
     

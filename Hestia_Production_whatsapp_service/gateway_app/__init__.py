@@ -58,14 +58,6 @@ def create_app() -> Flask:
     from .core.errors import register_error_handlers
     register_error_handlers(app)
 
-    # NUEVO: Inicializar APScheduler para encuestas FAQ
-    try:
-        from gateway_app.services.faq_survey_scheduler import init_scheduler
-        init_scheduler()
-        logger.info("APScheduler initialized for FAQ surveys")
-    except Exception as e:
-        logger.error(f"Failed to initialize APScheduler: {e}")
-
     logger.info("Hestia WhatsApp gateway app created")
     return app
 
