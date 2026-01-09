@@ -61,15 +61,6 @@ def process_guest_message(
             transcript = None
         msg_text = (transcript or "").strip()
 
-    # 1.2) NUEVO: Log mensaje del huésped
-    from gateway_app.services import conversation_logger
-    conversation_logger.log_guest_message(
-        wa_id=wa_id,
-        text=msg_text,
-        intent=None,  # Se llenará después del NLU si es necesario
-        confidence=None
-    )
-
     # 1.5) Verificar si es respuesta a encuesta CSAT de TICKET (ANTES del pipeline conversacional)
     from gateway_app.core import survey_handler
     is_ticket_survey, ticket_survey_actions = survey_handler.handle_survey_response(from_phone, msg_text)
@@ -87,6 +78,15 @@ def process_guest_message(
         # Es respuesta a encuesta FAQ, retornar acciones sin procesar conversación
         logger.info(f"[FAQ_SURVEY] Mensaje de {wa_id} procesado como respuesta a encuesta FAQ")
         return faq_survey_actions
+
+    # 1.2) NUEVO: Log mensaje del huésped (SOLO si NO es respuesta a encuesta)
+    from gateway_app.services import conversation_logger
+    conversation_logger.log_guest_message(
+        wa_id=wa_id,
+        text=msg_text,
+        intent=None,  # Se llenará después del NLU si es necesario
+        confidence=None
+    )
 
     # 2) Cargar sesión actual
     user_session = session.load_session(wa_id)
