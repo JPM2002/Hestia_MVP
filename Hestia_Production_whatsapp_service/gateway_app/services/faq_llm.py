@@ -28,12 +28,13 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Iterable, List, Mapping, Optional, Any
+from typing import Iterable, List, Mapping, Optional, Any, Tuple, Dict
 
 
 from openai import OpenAI
 from gateway_app.services.ai.prompt_loader import get_faq_system_prompt
 from gateway_app.services.data.faq_loader import load_faq_items
+from gateway_app.services.token_tracker import extract_token_usage, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -223,13 +224,14 @@ def _best_static_match(
 _FAQ_SYSTEM_PROMPT = get_faq_system_prompt(version="v1")
 
 
-def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
+def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Tuple[Optional[str], Optional[TokenUsage]]:
     """
     Ask the LLM to pick or synthesize an answer from the FAQ list.
 
     Returns:
-        - A short answer as string, or
-        - None if the LLM decides there is no relevant FAQ (NO_MATCH or error).
+        Tuple of (answer, token_usage):
+        - answer: A short answer as string, or None if the LLM decides there is no relevant FAQ (NO_MATCH or error)
+        - token_usage: TokenUsage object with input/output tokens, or None if extraction fails
     """
     faq_block_lines = []
     for item in faq_items:
@@ -249,7 +251,7 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
                 "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
             }
         )
-        return None
+        return None, None
 
     user_prompt = (
         f"FAQs:\n{faq_block}\n\n"
@@ -279,6 +281,23 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
         )
         text = resp.output[0].content[0].text.strip()
 
+        # Extract token usage from response
+        token_usage = extract_token_usage(resp)
+
+        # Debug: Log response structure (changed to INFO for visibility)
+        if hasattr(resp, 'usage'):
+            usage_dict = {k: getattr(resp.usage, k, None) for k in dir(resp.usage) if not k.startswith('_')}
+            logger.info(
+                "[FAQ LLM] 🔍 Debug response structure",
+                extra={
+                    "has_usage": True,
+                    "has_output": hasattr(resp, 'output'),
+                    "usage_type": type(resp.usage).__name__,
+                    "usage_dict": usage_dict,
+                    "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
+                }
+            )
+
         logger.info(
             "[FAQ LLM] 📥 LLM response received",
             extra={
@@ -286,6 +305,7 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
                 "user_text": user_text,
                 "llm_response": text,
                 "response_length": len(text),
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
             }
         )
@@ -299,7 +319,7 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
                 "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
             }
         )
-        return None
+        return None, None
 
     if not text or text.upper().startswith("NO_MATCH"):
         logger.info(
@@ -307,20 +327,22 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Optional[str]:
             extra={
                 "user_text": user_text,
                 "llm_response": text,
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
             }
         )
-        return None
+        return None, token_usage  # Still return token usage even if no match
 
     logger.info(
         "[FAQ LLM] ✅ LLM found valid answer",
         extra={
             "user_text": user_text,
             "llm_response": text,
+            "token_usage": str(token_usage) if token_usage else None,
             "location": "gateway_app/services/faq_llm.py::_call_faq_llm"
         }
     )
-    return text
+    return text, token_usage
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +353,7 @@ def answer_faq(
     user_text: str,
     faq_items: Optional[Iterable[FAQItem]] = None,
     use_llm_fallback: bool = True,
-) -> Optional[str]:
+) -> Tuple[Optional[str], Optional[TokenUsage]]:
     """
     Try to answer `user_text` using the FAQ list.
 
@@ -340,8 +362,9 @@ def answer_faq(
     2) If no strong static match and use_llm_fallback=True, ask the LLM to reason over the FAQ list.
 
     Returns:
-        - The answer text (string) if a relevant FAQ was found.
-        - None if no FAQ applies.
+        Tuple of (answer, token_usage):
+        - answer: The answer text (string) if a relevant FAQ was found, or None if no FAQ applies
+        - token_usage: TokenUsage object if LLM was called, or None if static match or no LLM call
     """
     logger.info(
         "[FAQ] 🔍 Starting FAQ search",
@@ -371,9 +394,8 @@ def answer_faq(
                 "location": "gateway_app/services/faq_llm.py"
             },
         )
-        if isinstance(static_item, dict):
-            return static_item.get("a")
-        return getattr(static_item, "a", None)
+        answer = static_item.get("a") if isinstance(static_item, dict) else getattr(static_item, "a", None)
+        return answer, None  # No token usage for static match
 
     logger.info(
         "[FAQ] ⚠️ Static match REJECTED (low similarity), trying LLM fallback",
@@ -387,7 +409,7 @@ def answer_faq(
 
     # 2) LLM fallback for all fuzzy / paraphrased / misspelled cases.
     if use_llm_fallback:
-        llm_answer = _call_faq_llm(user_text, items)
+        llm_answer, token_usage = _call_faq_llm(user_text, items)
         if llm_answer:
             logger.info(
                 "[FAQ] ✅ LLM fallback FOUND answer",
@@ -395,6 +417,7 @@ def answer_faq(
                     "decision": "FAQ_LLM_MATCH",
                     "user": user_text,
                     "answer_preview": llm_answer[:100] if llm_answer else None,
+                    "token_usage": str(token_usage) if token_usage else None,
                     "location": "gateway_app/services/faq_llm.py"
                 }
             )
@@ -404,10 +427,11 @@ def answer_faq(
                 extra={
                     "decision": "FAQ_NO_MATCH",
                     "user": user_text,
+                    "token_usage": str(token_usage) if token_usage else None,
                     "location": "gateway_app/services/faq_llm.py"
                 }
             )
-        return llm_answer
+        return llm_answer, token_usage
 
     logger.info(
         "[FAQ] ❌ NO FAQ match (LLM fallback disabled)",
@@ -417,11 +441,12 @@ def answer_faq(
             "location": "gateway_app/services/faq_llm.py"
         }
     )
-    return None
+    return None, None
 
 
 def has_faq_match(user_text: str, faq_items: Optional[Iterable[FAQItem]] = None) -> bool:
     """
     Convenience helper: returns True if `answer_faq` finds any match.
     """
-    return answer_faq(user_text, faq_items=faq_items, use_llm_fallback=False) is not None
+    answer, _ = answer_faq(user_text, faq_items=faq_items, use_llm_fallback=False)
+    return answer is not None
