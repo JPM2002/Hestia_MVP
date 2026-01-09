@@ -9,6 +9,8 @@ import sys
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
+from gateway_app.services.token_tracker import TokenUsage
+
 logger = logging.getLogger(__name__)
 
 # Importar funciones de BD desde Hestia_Production
@@ -89,7 +91,13 @@ def get_or_create_conversation(wa_id: str, guest_phone: str = None, guest_name: 
         return None
 
 
-def log_guest_message(wa_id: str, text: str, intent: str = None, confidence: float = None):
+def log_guest_message(
+    wa_id: str,
+    text: str,
+    intent: str = None,
+    confidence: float = None,
+    token_usage: Optional[TokenUsage] = None
+):
     """
     Registra un mensaje del huésped.
 
@@ -98,6 +106,7 @@ def log_guest_message(wa_id: str, text: str, intent: str = None, confidence: flo
         text: Texto del mensaje
         intent: Intent detectado (opcional)
         confidence: Confianza del intent (opcional)
+        token_usage: Token usage del procesamiento LLM (opcional)
     """
     if not DB_AVAILABLE:
         return
@@ -107,7 +116,10 @@ def log_guest_message(wa_id: str, text: str, intent: str = None, confidence: flo
         if not conv:
             return
 
-        # Guardar mensaje
+        # Guardar mensaje con token tracking
+        input_tokens = token_usage.input_tokens if token_usage else 0
+        output_tokens = token_usage.output_tokens if token_usage else 0
+
         execute("""
             INSERT INTO conversation_messages (
                 conversation_log_id,
@@ -115,23 +127,29 @@ def log_guest_message(wa_id: str, text: str, intent: str = None, confidence: flo
                 sender,
                 message_text,
                 intent,
-                intent_confidence
-            ) VALUES (?, ?, 'guest', ?, ?, ?)
+                intent_confidence,
+                input_tokens,
+                output_tokens
+            ) VALUES (?, ?, 'guest', ?, ?, ?, ?, ?)
         """, (
             conv["id"],
             datetime.utcnow().isoformat(),
             text,
             intent,
-            confidence
+            confidence,
+            input_tokens,
+            output_tokens
         ))
 
-        # Actualizar contador de mensajes
+        # Actualizar contador de mensajes y tokens totales
         execute("""
             UPDATE conversation_logs
             SET message_count = message_count + 1,
+                total_input_tokens = total_input_tokens + ?,
+                total_output_tokens = total_output_tokens + ?,
                 updated_at = ?
             WHERE id = ?
-        """, (datetime.utcnow().isoformat(), conv["id"]))
+        """, (input_tokens, output_tokens, datetime.utcnow().isoformat(), conv["id"]))
 
         logger.debug(f"[CONV_LOGGER] Mensaje del huésped registrado en conv {conv['id']}")
 
@@ -139,7 +157,13 @@ def log_guest_message(wa_id: str, text: str, intent: str = None, confidence: flo
         logger.exception(f"[CONV_LOGGER] Error al registrar mensaje del huésped: {e}")
 
 
-def log_bot_message(wa_id: str, text: str, is_faq: bool = False, faq_id: str = None):
+def log_bot_message(
+    wa_id: str,
+    text: str,
+    is_faq: bool = False,
+    faq_id: str = None,
+    token_usage: Optional[TokenUsage] = None
+):
     """
     Registra un mensaje del bot y actualiza timestamp de último mensaje.
 
@@ -148,6 +172,7 @@ def log_bot_message(wa_id: str, text: str, is_faq: bool = False, faq_id: str = N
         text: Texto del mensaje
         is_faq: Si es respuesta FAQ
         faq_id: ID del FAQ matched (opcional)
+        token_usage: Token usage del procesamiento LLM (opcional)
     """
     if not DB_AVAILABLE:
         return
@@ -159,7 +184,10 @@ def log_bot_message(wa_id: str, text: str, is_faq: bool = False, faq_id: str = N
 
         now = datetime.utcnow().isoformat()
 
-        # Guardar mensaje
+        # Guardar mensaje con token tracking
+        input_tokens = token_usage.input_tokens if token_usage else 0
+        output_tokens = token_usage.output_tokens if token_usage else 0
+
         execute("""
             INSERT INTO conversation_messages (
                 conversation_log_id,
@@ -167,27 +195,33 @@ def log_bot_message(wa_id: str, text: str, is_faq: bool = False, faq_id: str = N
                 sender,
                 message_text,
                 is_faq_response,
-                faq_matched_id
-            ) VALUES (?, ?, 'bot', ?, ?, ?)
+                faq_matched_id,
+                input_tokens,
+                output_tokens
+            ) VALUES (?, ?, 'bot', ?, ?, ?, ?, ?)
         """, (
             conv["id"],
             now,
             text,
             is_faq,
-            faq_id
+            faq_id,
+            input_tokens,
+            output_tokens
         ))
 
-        # Actualizar contadores y timestamp
+        # Actualizar contadores, tokens y timestamp
         faq_increment = 1 if is_faq else 0
 
         execute("""
             UPDATE conversation_logs
             SET bot_message_count = bot_message_count + 1,
                 faq_count = faq_count + ?,
+                total_input_tokens = total_input_tokens + ?,
+                total_output_tokens = total_output_tokens + ?,
                 last_bot_message_at = ?,
                 updated_at = ?
             WHERE id = ?
-        """, (faq_increment, now, now, conv["id"]))
+        """, (faq_increment, input_tokens, output_tokens, now, now, conv["id"]))
 
         logger.debug(f"[CONV_LOGGER] Mensaje del bot registrado en conv {conv['id']}, is_faq={is_faq}")
 

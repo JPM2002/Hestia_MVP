@@ -53,6 +53,9 @@ class NLUStage(PipelineStage):
 
             context.nlu = NLUResult.from_dict(nlu_raw) if nlu_raw else NLUResult()
 
+            # Store full NLU result in session for logging (including token_usage)
+            context.session["_nlu_result"] = nlu_raw
+
             logger.info(
                 "[NLU] Analysis complete",
                 extra={

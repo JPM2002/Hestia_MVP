@@ -29,13 +29,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 from gateway_app.services.ai.prompt_loader import (
     get_nlu_system_prompt,
     get_confirm_draft_prompt
 )
+from gateway_app.services.token_tracker import extract_token_usage, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +63,14 @@ def _call_json_llm(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int = 256,
-) -> Optional[Dict[str, Any]]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[TokenUsage]]:
     """
-    Helper that uses the Responses API in JSON mode (text.format = {"type": "json_object"})
-    and parses the result into a Python dict.
+    Helper that uses the Chat Completions API in JSON mode and parses the result into a Python dict.
+
+    Returns:
+        Tuple of (parsed_data, token_usage):
+        - parsed_data: Parsed JSON dict or None if parsing fails
+        - token_usage: TokenUsage object with input/output tokens, or None if extraction fails
     """
     logger.info(
         "[NLU LLM] 🤖 Sending request to LLM",
@@ -102,12 +107,16 @@ def _call_json_llm(
         # Standard OpenAI Chat Completions API
         content = resp.choices[0].message.content
 
+        # Extract token usage from response
+        token_usage = extract_token_usage(resp)
+
         logger.info(
             "[NLU LLM] 📥 LLM response received (raw JSON)",
             extra={
                 "model": LLM_MODEL,
                 "raw_json": content,
                 "response_length": len(content),
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/services/guest_llm.py::_call_json_llm"
             }
         )
@@ -119,11 +128,12 @@ def _call_json_llm(
             extra={
                 "model": LLM_MODEL,
                 "parsed_data": parsed,
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/services/guest_llm.py::_call_json_llm"
             }
         )
 
-        return parsed
+        return parsed, token_usage
 
     except json.JSONDecodeError as e:
         logger.error(
@@ -136,7 +146,9 @@ def _call_json_llm(
             },
             exc_info=True
         )
-        return None
+        # Still return token usage even if parsing failed
+        token_usage = extract_token_usage(resp) if 'resp' in locals() else None
+        return None, token_usage
     except Exception as e:
         logger.error(
             "[NLU LLM] ❌ LLM call failed",
@@ -148,7 +160,7 @@ def _call_json_llm(
             },
             exc_info=True
         )
-        return None
+        return None, None
 
 
 def analyze_guest_message(text: str, session: dict, state: str) -> dict:
@@ -236,17 +248,22 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         f"Mensaje del huésped:\n{text}"
     )
 
-    data = _call_json_llm(_BASE_SYSTEM_PROMPT, prompt)
+    data, token_usage = _call_json_llm(_BASE_SYSTEM_PROMPT, prompt)
     if not data or not isinstance(data, dict):
         logger.error(
             "[NLU] ❌ LLM returned invalid data",
             extra={
                 "text": text,
                 "raw_response": data,
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/services/guest_llm.py"
             }
         )
-        return {}
+        # Return empty dict with token usage if available
+        result = {}
+        if token_usage:
+            result["_token_usage"] = token_usage
+        return result
 
     # --------- Guardrails / clamping ---------
     allowed_intents = {
@@ -333,6 +350,8 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
         "_routing_source": "llm",
         "_routing_reason": "LLM classification",
         "_routing_confidence": confidence,
+        # Token usage metadata
+        "_token_usage": token_usage,
     }
 
     # Log result with multiple_requests info
@@ -348,6 +367,7 @@ def analyze_guest_message(text: str, session: dict, state: str) -> dict:
             "area": area,
             "confidence": confidence,
             "multiple_requests_count": len(multiple_requests) if multiple_requests else 0,
+            "token_usage": str(token_usage) if token_usage else None,
             "result": result,
             "location": "gateway_app/services/guest_llm.py"
         }

@@ -56,7 +56,7 @@ def handle_faq_fallback(
     )
 
     # Intenta FAQ antes del mensaje genérico de "no entendí"
-    faq_answer = faq_llm.answer_faq(msg)
+    faq_answer, token_usage = faq_llm.answer_faq(msg)
 
     if faq_answer:
         logger.info(
@@ -65,12 +65,16 @@ def handle_faq_fallback(
                 "decision": "FAQ_FALLBACK_HIT",
                 "wa_id": session.get("wa_id"),
                 "user_message": msg,
-                "answer_preview": faq_answer[:100],
+                "answer_preview": faq_answer[:100] if faq_answer else None,
+                "token_usage": str(token_usage) if token_usage else None,
                 "location": "gateway_app/core/intents/faq_handler.py"
             }
         )
 
         session["state"] = "GH_FAQ"
+
+        # Store token_usage in session for later logging
+        session["_last_faq_token_usage"] = token_usage
 
         actions = [
             text_action(faq_answer),

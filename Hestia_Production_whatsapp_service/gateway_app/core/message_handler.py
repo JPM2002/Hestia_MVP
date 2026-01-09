@@ -79,15 +79,6 @@ def process_guest_message(
         logger.info(f"[FAQ_SURVEY] Mensaje de {wa_id} procesado como respuesta a encuesta FAQ")
         return faq_survey_actions
 
-    # 1.2) NUEVO: Log mensaje del huésped (SOLO si NO es respuesta a encuesta)
-    from gateway_app.services import conversation_logger
-    conversation_logger.log_guest_message(
-        wa_id=wa_id,
-        text=msg_text,
-        intent=None,  # Se llenará después del NLU si es necesario
-        confidence=None
-    )
-
     # 2) Cargar sesión actual
     user_session = session.load_session(wa_id)
 
@@ -102,6 +93,23 @@ def process_guest_message(
         raw_payload=raw_payload,
     )
 
+    # 3.5) NUEVO: Log mensaje del huésped con NLU result (DESPUÉS del procesamiento)
+    from gateway_app.services import conversation_logger
+
+    # Extract NLU metadata from session if available
+    nlu_result = new_session.get("_nlu_result", {})
+    intent = nlu_result.get("intent")
+    confidence = nlu_result.get("confidence")
+    token_usage = nlu_result.get("_token_usage")
+
+    conversation_logger.log_guest_message(
+        wa_id=wa_id,
+        text=msg_text,
+        intent=intent,
+        confidence=confidence,
+        token_usage=token_usage
+    )
+
     # 4) Guardar nueva sesión
     session.save_session(wa_id, new_session)
 
@@ -113,14 +121,22 @@ def process_guest_message(
         current_state = new_session.get("state", "")
         is_faq_state = current_state in ["GH_FAQ", "IDLE"]  # FAQ responses happen in these states
 
+        # Extract token usage from session if available (set by FAQ handler)
+        token_usage = new_session.get("_last_faq_token_usage")
+
         # Log cada acción de texto del bot
         for action in actions:
             if action.get("type") == "text":
                 conversation_logger.log_bot_message(
                     wa_id=wa_id,
                     text=action["text"],
-                    is_faq=is_faq_state
+                    is_faq=is_faq_state,
+                    token_usage=token_usage
                 )
+
+        # Clean up token usage from session after logging
+        if "_last_faq_token_usage" in new_session:
+            del new_session["_last_faq_token_usage"]
 
     # 5) Retornar acciones (sin enviar por ningún canal)
     return actions
