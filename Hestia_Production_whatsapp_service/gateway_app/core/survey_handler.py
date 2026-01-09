@@ -105,7 +105,7 @@ def check_active_survey(guest_phone: str) -> Optional[Dict[str, Any]]:
             SELECT id, ticket_id, survey_state, csat_score
             FROM csat_surveys
             WHERE guest_phone = {ph}
-              AND survey_state IN ('q1_sent', 'q2_sent', 'q3_sent')
+              AND survey_state IN ('sent', 'in_progress')
             ORDER BY created_at DESC
             LIMIT 1
         """
@@ -145,23 +145,34 @@ def handle_survey_response(
     survey_id = survey["id"]
     ticket_id = survey["ticket_id"]
     state = survey["survey_state"]
+    csat_score = survey.get("csat_score")
 
     logger.info(f"[SURVEY] Procesando respuesta para encuesta {survey_id}, estado {state}")
 
-    # 2. Procesar según el estado
+    # 2. Procesar según el estado y qué campos ya están llenos
+    # Determinar en qué pregunta está basándonos en qué campos ya tienen respuesta
 
-    if state == "q1_sent":
-        # Esperando calificación CSAT (1-5)
+    if csat_score is None:
+        # Esperando calificación CSAT (Q1)
         return _handle_q1_response(survey_id, ticket_id, guest_phone, msg_text)
 
-    elif state == "q2_sent":
-        # Esperando comentario abierto
-        return _handle_q2_response(survey_id, ticket_id, guest_phone, msg_text)
+    # Si ya tiene CSAT, consultar más campos para saber si está en Q2 o Q3
+    ph = "%s" if db.using_pg() else "?"
+    sql_full = f"""
+        SELECT csat_score, csat_comment, tool_utility_score
+        FROM csat_surveys
+        WHERE id = {ph}
+    """
+    survey_full = db.fetchone(sql_full, [survey_id])
 
-    elif state == "q3_sent":
-        # Esperando calificación de utilidad (1-5)
+    if survey_full["csat_comment"] is None:
+        # Ya respondió Q1, esperando comentario (Q2)
+        return _handle_q2_response(survey_id, ticket_id, guest_phone, msg_text)
+    elif survey_full["tool_utility_score"] is None:
+        # Ya respondió Q1 y Q2, esperando utilidad (Q3)
         return _handle_q3_response(survey_id, ticket_id, guest_phone, msg_text)
 
+    # Si llegamos aquí, la encuesta ya está completa
     return False, []
 
 
@@ -186,7 +197,6 @@ def _handle_q1_response(
         sql = f"""
             UPDATE csat_surveys
             SET csat_score = {ph},
-                survey_state = 'q2_sent',
                 survey_last_prompt_at = {ph}
             WHERE id = {ph}
         """
@@ -228,7 +238,6 @@ def _handle_q2_response(
         sql = f"""
             UPDATE csat_surveys
             SET csat_comment = {ph},
-                survey_state = 'q3_sent',
                 survey_last_prompt_at = {ph}
             WHERE id = {ph}
         """

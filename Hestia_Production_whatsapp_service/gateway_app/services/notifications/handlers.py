@@ -142,7 +142,7 @@ Si necesitas algo más, no dudes en escribirnos."""
             if notification_cfg.ENABLE_CSAT_SURVEYS:
                 survey_id = _create_csat_survey(ticket_id, phone)
                 if survey_id:
-                    _send_csat_q1(phone, ticket_id)
+                    _send_csat_q1(phone, ticket_id, survey_id)
                     logger.info(f"[RESOLUTIONS] Encuesta CSAT iniciada para ticket {ticket_id}")
 
             # 3. Marcar como procesado
@@ -172,13 +172,13 @@ def _create_csat_survey(ticket_id: int, guest_phone: str) -> Optional[int]:
             ticket_id,
             guest_phone,
             survey_state,
-            survey_last_prompt_at,
+            scheduled_at,
             created_at
         ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
     """
 
     try:
-        survey_id = db.insert_and_get_id(sql, [ticket_id, guest_phone, "q1_sent", now, now])
+        survey_id = db.insert_and_get_id(sql, [ticket_id, guest_phone, "scheduled", now, now])
         logger.info(f"[CSAT] Encuesta creada con ID {survey_id} para ticket {ticket_id}")
         return survey_id
     except Exception as e:
@@ -186,8 +186,8 @@ def _create_csat_survey(ticket_id: int, guest_phone: str) -> Optional[int]:
         return None
 
 
-def _send_csat_q1(phone: str, ticket_id: int) -> None:
-    """Envía la primera pregunta de la encuesta CSAT"""
+def _send_csat_q1(phone: str, ticket_id: int, survey_id: int) -> None:
+    """Envía la primera pregunta de la encuesta CSAT y actualiza estado a 'sent'"""
     message = f"""Nos gustaría conocer tu opinión sobre la atención recibida en tu ticket #{ticket_id}.
 
 ¿Cómo calificarías tu experiencia?
@@ -200,6 +200,78 @@ Responde con un número del 1 al 5:
 5️⃣ - Excelente"""
 
     wa.send_text_message(to=phone, text=message)
+
+    # Actualizar estado a 'sent' después de enviar exitosamente
+    ph = "%s" if db.using_pg() else "?"
+    now = datetime.utcnow().isoformat()
+    update_sql = f"""
+        UPDATE csat_surveys
+        SET survey_state = 'sent',
+            survey_started_at = {ph},
+            survey_last_prompt_at = {ph}
+        WHERE id = {ph}
+    """
+    db.execute(update_sql, [now, now, survey_id], commit=True)
+    logger.info(f"[CSAT] Encuesta {survey_id} marcada como 'sent' para ticket {ticket_id}")
+
+
+# ============================================================================
+# Handler: Enviar Encuestas CSAT Programadas
+# ============================================================================
+
+def handle_scheduled_csat_surveys() -> int:
+    """
+    Busca encuestas CSAT en estado 'scheduled' y las envía.
+
+    Esto cubre el caso donde la encuesta fue creada pero no enviada
+    (por ejemplo, si hubo un error en el envío inicial).
+
+    Returns:
+        Cantidad de encuestas enviadas
+    """
+    if not notification_cfg.ENABLE_CSAT_SURVEYS:
+        return 0
+
+    ph = "%s" if db.using_pg() else "?"
+
+    # Buscar encuestas programadas que no se han enviado
+    sql = f"""
+        SELECT id, ticket_id, guest_phone, scheduled_at
+        FROM csat_surveys
+        WHERE survey_state = 'scheduled'
+          AND guest_phone IS NOT NULL
+        ORDER BY scheduled_at ASC
+        LIMIT 50
+    """
+
+    try:
+        surveys = db.fetchall(sql)
+    except Exception as e:
+        logger.exception(f"[SCHEDULED_CSAT] Error al buscar encuestas programadas: {e}")
+        return 0
+
+    count = 0
+    for survey in surveys:
+        try:
+            survey_id = survey["id"]
+            ticket_id = survey["ticket_id"]
+            phone = survey["guest_phone"]
+
+            # Enviar Q1
+            _send_csat_q1(phone, ticket_id, survey_id)
+
+            logger.info(f"[SCHEDULED_CSAT] Encuesta {survey_id} enviada para ticket {ticket_id}")
+            count += 1
+
+        except wa.WhatsAppError as e:
+            logger.warning(f"[SCHEDULED_CSAT] Error al enviar WhatsApp para encuesta {survey['id']}: {e}")
+        except Exception as e:
+            logger.exception(f"[SCHEDULED_CSAT] Error inesperado para encuesta {survey['id']}: {e}")
+
+    if count > 0:
+        logger.info(f"[SCHEDULED_CSAT] {count} encuestas programadas enviadas")
+
+    return count
 
 
 # ============================================================================
@@ -370,6 +442,7 @@ def process_all_notifications() -> Dict[str, int]:
         "assignments": 0,
         "in_progress": 0,
         "resolutions": 0,
+        "scheduled_csat": 0,
         "faq_surveys": 0,
     }
 
@@ -387,6 +460,11 @@ def process_all_notifications() -> Dict[str, int]:
         results["resolutions"] = handle_ticket_resolutions()
     except Exception as e:
         logger.exception(f"[PROCESS] Error en handler de resoluciones: {e}")
+
+    try:
+        results["scheduled_csat"] = handle_scheduled_csat_surveys()
+    except Exception as e:
+        logger.exception(f"[PROCESS] Error en handler de encuestas CSAT programadas: {e}")
 
     try:
         results["faq_surveys"] = handle_faq_surveys()
