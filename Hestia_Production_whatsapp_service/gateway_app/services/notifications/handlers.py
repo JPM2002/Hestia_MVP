@@ -227,13 +227,14 @@ def handle_faq_surveys() -> int:
     # 1. Tiene FAQs respondidas (faq_count > 0)
     # 2. No se ha enviado encuesta (survey_sent = FALSE)
     # 3. La última actualización fue hace más de X segundos (para evitar spam si sigue escribiendo)
+    # 4. Usa wa_id como número de teléfono
     sql = f"""
-        SELECT id, wa_id, guest_phone, created_at, updated_at
+        SELECT id, wa_id, created_at, updated_at
         FROM conversation_logs
         WHERE faq_count > 0
           AND (survey_sent IS NULL OR survey_sent = FALSE)
           AND updated_at < {ph}
-          AND guest_phone IS NOT NULL
+          AND wa_id IS NOT NULL
         LIMIT 50
     """
 
@@ -247,7 +248,7 @@ def handle_faq_surveys() -> int:
     for conv in conversations:
         try:
             conv_id = conv["id"]
-            phone = conv["guest_phone"]
+            phone = conv["wa_id"]
 
             # Enviar encuesta FAQ
             message = """¿Te fue útil la información que te proporcionamos?
