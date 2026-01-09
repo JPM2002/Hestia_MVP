@@ -4,23 +4,19 @@ Detecta y procesa respuestas a encuestas de satisfacción FAQ (NO tickets).
 """
 
 import logging
-import os
-import sys
 from typing import Tuple, List, Dict, Any, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Importar funciones de BD
+# Importar funciones de BD desde notification_db (compatible con PostgreSQL)
 try:
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../../../Hestia_Production'))
-    from hestia_app.services.db import fetchone, execute
+    from gateway_app.services.notifications import notification_db as db
     DB_AVAILABLE = True
 except ImportError:
-    logger.warning("[FAQ_SURVEY] No se pudo importar DB de Hestia_Production")
+    logger.warning("[FAQ_SURVEY] No se pudo importar notification_db")
     DB_AVAILABLE = False
-    fetchone = None
-    execute = None
+    db = None
 
 
 # Mensajes de la encuesta
@@ -86,19 +82,22 @@ def check_active_faq_survey(wa_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         Dict con datos de la conversación si hay encuesta activa, o None
     """
-    if not DB_AVAILABLE or not fetchone:
+    if not DB_AVAILABLE or not db:
         return None
 
     try:
-        conv = fetchone("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             SELECT * FROM conversation_logs
-            WHERE wa_id = ?
+            WHERE wa_id = {ph}
               AND survey_sent = TRUE
               AND survey_state IN ('q1_sent', 'q2_sent')
             ORDER BY survey_sent_at DESC
             LIMIT 1
-        """, (wa_id,))
+        """
 
+        conv = db.fetchone(sql, [wa_id])
         return conv
 
     except Exception as e:
@@ -164,13 +163,17 @@ def _handle_faq_q1_response(
 
     # Guardar calificación
     try:
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE conversation_logs
-            SET faq_csat_score = ?,
+            SET faq_csat_score = {ph},
                 survey_state = 'q2_sent',
-                updated_at = ?
-            WHERE id = ?
-        """, (rating, datetime.utcnow().isoformat(), conversation_id))
+                updated_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [rating, datetime.utcnow().isoformat(), conversation_id], commit=True)
 
         logger.info(f"[FAQ_SURVEY] Conv {conversation_id}: FAQ CSAT score = {rating}")
 
@@ -184,12 +187,16 @@ def _handle_faq_q1_response(
         return True, [{"type": "text", "text": FAQ_SURVEY_Q2_MESSAGE}]
     else:
         # Calificación alta → agradecer y terminar
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE conversation_logs
             SET survey_state = 'completed',
-                updated_at = ?
-            WHERE id = ?
-        """, (datetime.utcnow().isoformat(), conversation_id))
+                updated_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [datetime.utcnow().isoformat(), conversation_id], commit=True)
 
         logger.info(f"[FAQ_SURVEY] Conv {conversation_id}: Encuesta completada (rating alto, sin Q2)")
         return True, [{"type": "text", "text": FAQ_SURVEY_THANK_YOU_MESSAGE}]
@@ -210,13 +217,17 @@ def _handle_faq_q2_response(
 
     # Guardar comentario y completar encuesta
     try:
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE conversation_logs
-            SET faq_csat_comment = ?,
+            SET faq_csat_comment = {ph},
                 survey_state = 'completed',
-                updated_at = ?
-            WHERE id = ?
-        """, (comment, datetime.utcnow().isoformat(), conversation_id))
+                updated_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [comment, datetime.utcnow().isoformat(), conversation_id], commit=True)
 
         logger.info(f"[FAQ_SURVEY] Conv {conversation_id}: Encuesta completada con comentario")
 

@@ -9,7 +9,8 @@
       "Bash(python debug_caso8.py:*)",
       "Bash(python:*)",
       "Bash(grep:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(tree:*)"
     ]
   }
 }

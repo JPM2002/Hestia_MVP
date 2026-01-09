@@ -5,24 +5,19 @@ Detecta si un mensaje entrante es respuesta a una encuesta activa.
 
 import logging
 import re
-import os
 from typing import Tuple, List, Dict, Any, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Importar funciones de BD desde la app principal (Hestia_Production)
-# Nota: Esto requiere que el gateway tenga acceso a la misma BD
+# Importar funciones de BD desde notification_db (compatible con PostgreSQL)
 try:
-    import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../../../Hestia_Production'))
-    from hestia_app.services.db import fetchone, execute
+    from gateway_app.services.notifications import notification_db as db
     DB_AVAILABLE = True
 except ImportError:
-    logger.warning("[SURVEY] No se pudo importar DB de Hestia_Production")
+    logger.warning("[SURVEY] No se pudo importar notification_db")
     DB_AVAILABLE = False
-    fetchone = None
-    execute = None
+    db = None
 
 
 # Mensajes de la encuesta
@@ -100,19 +95,22 @@ def check_active_survey(guest_phone: str) -> Optional[Dict[str, Any]]:
     Returns:
         Dict con datos de la encuesta activa, o None si no hay encuesta
     """
-    if not DB_AVAILABLE or not fetchone:
+    if not DB_AVAILABLE or not db:
         return None
 
     try:
-        survey = fetchone("""
-            SELECT id, ticket_id, survey_state
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
+            SELECT id, ticket_id, survey_state, csat_score
             FROM csat_surveys
-            WHERE guest_phone = ?
+            WHERE guest_phone = {ph}
               AND survey_state IN ('q1_sent', 'q2_sent', 'q3_sent')
             ORDER BY created_at DESC
             LIMIT 1
-        """, (guest_phone,))
+        """
 
+        survey = db.fetchone(sql, [guest_phone])
         return survey
     except Exception as e:
         logger.exception(f"[SURVEY] Error al buscar encuesta activa: {e}")
@@ -183,13 +181,17 @@ def _handle_q1_response(
 
     # Guardar calificación
     try:
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE csat_surveys
-            SET csat_score = ?,
+            SET csat_score = {ph},
                 survey_state = 'q2_sent',
-                survey_last_prompt_at = ?
-            WHERE id = ?
-        """, (rating, datetime.utcnow().isoformat(), survey_id))
+                survey_last_prompt_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [rating, datetime.utcnow().isoformat(), survey_id], commit=True)
 
         logger.info(f"[SURVEY] Ticket {ticket_id}: CSAT score = {rating}")
     except Exception as e:
@@ -221,13 +223,17 @@ def _handle_q2_response(
 
     # Guardar comentario
     try:
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE csat_surveys
-            SET csat_comment = ?,
+            SET csat_comment = {ph},
                 survey_state = 'q3_sent',
-                survey_last_prompt_at = ?
-            WHERE id = ?
-        """, (comment, datetime.utcnow().isoformat(), survey_id))
+                survey_last_prompt_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [comment, datetime.utcnow().isoformat(), survey_id], commit=True)
 
         logger.info(f"[SURVEY] Ticket {ticket_id}: Comentario guardado")
     except Exception as e:
@@ -254,13 +260,17 @@ def _handle_q3_response(
 
     # Guardar utilidad y COMPLETAR encuesta
     try:
-        execute("""
+        ph = "%s" if db.using_pg() else "?"
+
+        sql = f"""
             UPDATE csat_surveys
-            SET tool_utility_score = ?,
+            SET tool_utility_score = {ph},
                 survey_state = 'completed',
-                completed_at = ?
-            WHERE id = ?
-        """, (utility, datetime.utcnow().isoformat(), survey_id))
+                completed_at = {ph}
+            WHERE id = {ph}
+        """
+
+        db.execute(sql, [utility, datetime.utcnow().isoformat(), survey_id], commit=True)
 
         logger.info(f"[SURVEY] Ticket {ticket_id}: Encuesta completada (utilidad = {utility})")
     except Exception as e:
