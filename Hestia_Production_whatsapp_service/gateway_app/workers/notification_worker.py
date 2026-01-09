@@ -113,6 +113,7 @@ class NotificationWorker:
                     f"Asignaciones: {results['assignments']}, "
                     f"En Curso: {results['in_progress']}, "
                     f"Resoluciones: {results['resolutions']}, "
+                    f"CSAT Programadas: {results['scheduled_csat']}, "
                     f"FAQ: {results['faq_surveys']}"
                 )
             else:
