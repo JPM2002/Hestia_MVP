@@ -1,0 +1,15 @@
+/* Reset básico para que el dashboard use todo el ancho */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  margin: 0;
+}

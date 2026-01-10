@@ -1,0 +1,222 @@
+.app {
+  min-height: 100vh;
+  background: #0b0b10;
+  color: #f3f4f6;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Arial,
+    sans-serif;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+  position: sticky;
+  top: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(222, 169, 53, 0.18);
+  border: 1px solid rgba(222, 169, 53, 0.35);
+  font-weight: 800;
+}
+
+.brandName {
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.brandTag {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.nav {
+  display: flex;
+  gap: 10px;
+  opacity: 0.9;
+}
+
+.navItem {
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: default;
+  border: 1px solid transparent;
+}
+
+.navItem.active {
+  border-color: rgba(222, 169, 53, 0.35);
+  background: rgba(222, 169, 53, 0.12);
+}
+
+.userChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.userDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 22px 16px 40px;
+}
+
+.hero {
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hero h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+}
+
+.hero p {
+  margin: 0;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+.heroActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btnPrimary,
+.btnGhost {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background: rgba(222, 169, 53, 0.18);
+  border-color: rgba(222, 169, 53, 0.35);
+  color: #f3f4f6;
+}
+
+.btnGhost {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f3f4f6;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.card {
+  grid-column: span 6;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.card:nth-child(3),
+.card:nth-child(4) {
+  grid-column: span 6;
+}
+
+@media (min-width: 900px) {
+  .card:nth-child(1),
+  .card:nth-child(2),
+  .card:nth-child(3) {
+    grid-column: span 4;
+  }
+  .card:nth-child(4) {
+    grid-column: span 4;
+  }
+}
+
+.metric {
+  font-size: 34px;
+  font-weight: 900;
+  margin-top: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pill {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pill.ok {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.pill.warn {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.25);
+}
+
+.footer {
+  margin-top: 18px;
+  opacity: 0.7;
+  font-size: 12px;
+}
