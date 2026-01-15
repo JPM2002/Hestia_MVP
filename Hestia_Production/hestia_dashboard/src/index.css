@@ -1,3 +1,33 @@
+/* Official Hestia Visual System Tokens */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Main backgrounds */
+  --bg: #F5F3EF;
+  --surface: #FAF6F2;
+
+  /* Text */
+  --text: #2B2727;
+
+  /* Brand primary */
+  --primary: #7A4DD8;
+  --primary-hover: #6B41C1;
+
+  /* Accents (limited use) */
+  --accent-gold: #C9A86A;
+  --accent-blue: #A3B9FF;
+
+  /* Status colors */
+  --success: #22c55e;
+
+  /* Topbar */
+  --topbar: #2B2727;
+  --topbar-text: #FAF6F2;
+
+  /* Borders */
+  --border: rgba(43, 39, 39, 0.12);
+}
+
 /* Reset básico para que el dashboard use todo el ancho */
 * {
   box-sizing: border-box;
@@ -12,4 +42,7 @@ body,
 
 body {
   margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }

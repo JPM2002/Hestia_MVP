@@ -1,0 +1,141 @@
+/* Layout styles - reusing existing App.css variables */
+
+.app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    background: var(--topbar);
+    border-bottom: 1px solid var(--border);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.brandMark {
+    width: 42px;
+    height: 42px;
+    background: var(--primary);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--topbar-text);
+}
+
+.brandName {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--topbar-text);
+    letter-spacing: -0.02em;
+}
+
+.brandTag {
+    font-size: 0.75rem;
+    color: rgba(250, 246, 242, 0.6);
+    margin-top: -2px;
+}
+
+.nav {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.navItem {
+    padding: 0.5rem 1rem;
+    color: rgba(250, 246, 242, 0.8);
+    text-decoration: none;
+    border-radius: 6px;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.navItem:hover {
+    color: var(--topbar-text);
+    background: rgba(250, 246, 242, 0.1);
+}
+
+.navItem.active {
+    color: var(--topbar-text);
+    background: rgba(122, 77, 216, 0.25);
+    border: 1px solid rgba(122, 77, 216, 0.4);
+}
+
+.userChip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(250, 246, 242, 0.1);
+    border-radius: 20px;
+    font-size: 0.875rem;
+    color: var(--topbar-text);
+}
+
+.userDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+}
+
+.logoutBtn {
+    padding: 0;
+    margin-left: 0.5rem;
+    background: none;
+    border: none;
+    color: rgba(250, 246, 242, 0.6);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.logoutBtn:hover {
+    color: #ff6b6b;
+}
+
+.container {
+    flex: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    width: 100%;
+}
+
+.footer {
+    padding: 1rem 2rem;
+    text-align: center;
+    color: rgba(43, 39, 39, 0.6);
+    font-size: 0.875rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .topbar {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .nav {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .container {
+        padding: 1rem;
+    }
+}

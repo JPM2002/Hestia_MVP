@@ -1,103 +1,19 @@
 .app {
   min-height: 100vh;
-  background: #0b0b10;
-  color: #f3f4f6;
-  font-family:
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Arial,
-    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.35);
-  position: sticky;
-  top: 0;
-}
+/* Page-specific styles */
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
-.brandMark {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: rgba(222, 169, 53, 0.18);
-  border: 1px solid rgba(222, 169, 53, 0.35);
-  font-weight: 800;
-}
-
-.brandName {
-  font-weight: 800;
-  letter-spacing: 0.4px;
-}
-
-.brandTag {
-  font-size: 12px;
-  opacity: 0.75;
-}
-
-.nav {
-  display: flex;
-  gap: 10px;
-  opacity: 0.9;
-}
-
-.navItem {
-  font-size: 14px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  cursor: default;
-  border: 1px solid transparent;
-}
-
-.navItem.active {
-  border-color: rgba(222, 169, 53, 0.35);
-  background: rgba(222, 169, 53, 0.12);
-}
-
-.userChip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  padding: 8px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.userDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-}
-
-.container {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 22px 16px 40px;
-}
 
 .hero {
   padding: 18px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .hero h1 {
@@ -119,22 +35,36 @@
 
 .btnPrimary,
 .btnGhost {
-  border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 10px 12px;
   border-radius: 12px;
   font-weight: 700;
   cursor: pointer;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .btnPrimary {
-  background: rgba(222, 169, 53, 0.18);
-  border-color: rgba(222, 169, 53, 0.35);
-  color: #f3f4f6;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: var(--topbar-text);
+}
+
+.btnPrimary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 
 .btnGhost {
-  background: rgba(255, 255, 255, 0.04);
-  color: #f3f4f6;
+  background: var(--surface);
+  border: 1px solid var(--primary);
+  color: var(--text);
+}
+
+.btnGhost:hover {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: var(--topbar-text);
 }
 
 .grid {
@@ -148,8 +78,8 @@
   grid-column: span 6;
   padding: 16px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .card:nth-child(3),
@@ -158,11 +88,13 @@
 }
 
 @media (min-width: 900px) {
+
   .card:nth-child(1),
   .card:nth-child(2),
   .card:nth-child(3) {
     grid-column: span 4;
   }
+
   .card:nth-child(4) {
     grid-column: span 4;
   }
@@ -194,15 +126,15 @@
   align-items: center;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg);
+  border: 1px solid var(--border);
 }
 
 .pill {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border);
 }
 
 .pill.ok {
@@ -219,4 +151,166 @@
   margin-top: 18px;
   opacity: 0.7;
   font-size: 12px;
+}
+
+/* Tickets Page Styles */
+.ticketsPage {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.pageHeader {
+  margin-bottom: 2rem;
+}
+
+.pageHeader h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+.pageHeader p {
+  margin: 0;
+  opacity: 0.7;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.statCard {
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.statLabel {
+  font-size: 0.875rem;
+  opacity: 0.7;
+  margin-bottom: 0.5rem;
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.25rem;
+}
+
+.statHint {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.tableCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tableHeader {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tableHeader h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.ticketsTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ticketsTable thead {
+  background: var(--bg);
+}
+
+.ticketsTable th {
+  padding: 0.875rem 1.25rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  border-bottom: 1px solid var(--border);
+}
+
+.ticketsTable td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9375rem;
+}
+
+.ticketsTable tbody tr:hover {
+  background: var(--bg);
+}
+
+.ticketsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mono {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-pending {
+  background: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.badge-progress {
+  background: rgba(122, 77, 216, 0.15);
+  color: var(--primary);
+  border: 1px solid rgba(122, 77, 216, 0.3);
+}
+
+.badge-resolved {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-medium {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ea580c;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.badge-low {
+  background: rgba(163, 185, 255, 0.15);
+  color: #6366f1;
+  border: 1px solid rgba(163, 185, 255, 0.3);
 }

@@ -1,83 +1,69 @@
-import "./App.css";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { LoginPage } from './pages/LoginPage';
+import { TicketListPage } from './pages/TicketListPage';
+import { TicketDetailPage } from './pages/TicketDetailPage';
+import './App.css';
 
 function App() {
+  // Mock auth: allow navigation when VITE_USE_MOCKS=true
+  const isAuthenticated = import.meta.env.VITE_USE_MOCKS === 'true';
+  const user = isAuthenticated
+    ? { name: 'Usuario Demo', role: 'RECEPCION' }
+    : null;
+
+  const handleLogout = () => {
+    // To be implemented in Bloque 2
+    alert('Logout - redirigiendo a /login');
+    window.location.href = '/login';
+  };
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brandMark">H</div>
-          <div>
-            <div className="brandName">Hestia</div>
-            <div className="brandTag">Hotel Operations Dashboard</div>
-          </div>
-        </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Login route (public) */}
+        <Route path="/login" element={<LoginPage />} />
 
-        <nav className="nav">
-          <span className="navItem active">Inicio</span>
-          <span className="navItem">Tickets</span>
-          <span className="navItem">Áreas</span>
-          <span className="navItem">Reportes</span>
-        </nav>
+        {/* Protected routes with Layout */}
+        <Route
+          path="/tickets"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <Layout user={user} onLogout={handleLogout}>
+                <TicketListPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
-        <div className="userChip" title="Demo user">
-          <span className="userDot" />
-          demo@hestia.local
-        </div>
-      </header>
+        <Route
+          path="/tickets/:id"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <Layout user={user} onLogout={handleLogout}>
+                <TicketDetailPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
-      <main className="container">
-        <section className="hero">
-          <h1>Dashboard</h1>
-          <p>
-            Vista base del panel operativo. Desde aquí se monitorean tickets, estados por área y
-            prioridades.
-          </p>
-          <div className="heroActions">
-            <button className="btnPrimary">Crear ticket</button>
-            <button className="btnGhost">Ver tickets</button>
-          </div>
-        </section>
+        {/* Root redirect */}
+        <Route
+          path="/"
+          element={
+            isAuthenticated ? (
+              <Navigate to="/tickets" replace />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
-        <section className="grid">
-          <div className="card">
-            <h3>Tickets abiertos</h3>
-            <div className="metric">12</div>
-            <div className="hint">Últimas 24 horas</div>
-          </div>
-
-          <div className="card">
-            <h3>Alta prioridad</h3>
-            <div className="metric">3</div>
-            <div className="hint">Requiere atención</div>
-          </div>
-
-          <div className="card">
-            <h3>Tiempo promedio</h3>
-            <div className="metric">18m</div>
-            <div className="hint">Desde creación a asignación</div>
-          </div>
-
-          <div className="card">
-            <h3>Áreas</h3>
-            <ul className="list">
-              <li>
-                Housekeeping <span className="pill ok">OK</span>
-              </li>
-              <li>
-                Mantención <span className="pill warn">Pendiente</span>
-              </li>
-              <li>
-                Recepción <span className="pill ok">OK</span>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        <footer className="footer">
-          <span>Hestia MVP • React + TypeScript</span>
-        </footer>
-      </main>
-    </div>
+        {/* Catch-all redirect */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
