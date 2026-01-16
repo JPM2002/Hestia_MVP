@@ -13,6 +13,53 @@
     padding: 1rem 2rem;
     background: var(--topbar);
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 200;
+}
+
+.topbarLeft {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.menuToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: rgba(250, 246, 242, 0.1);
+    border: 1px solid rgba(250, 246, 242, 0.2);
+    border-radius: 6px;
+    color: var(--topbar-text);
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.menuToggle:hover {
+    background: rgba(250, 246, 242, 0.2);
+}
+
+.layoutBody {
+    flex: 1;
+    display: flex;
+    position: relative;
+}
+
+.mainContent {
+    flex: 1;
+    margin-left: 240px;
+    transition: margin-left 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 4rem);
+}
+
+.mainContent.sidebarCollapsed {
+    margin-left: 72px;
 }
 
 .brand {
@@ -120,6 +167,7 @@
     color: rgba(43, 39, 39, 0.6);
     font-size: 0.875rem;
     border-top: 1px solid var(--border);
+    background: var(--surface);
 }
 
 /* Responsive */

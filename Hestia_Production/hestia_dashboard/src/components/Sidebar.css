@@ -1,0 +1,91 @@
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease;
+    z-index: 100;
+    padding-top: 4rem;
+}
+
+.sidebar.collapsed {
+    width: 72px;
+}
+
+.sidebarNav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 1rem 0.5rem;
+    overflow-y: auto;
+}
+
+.sidebarLink {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.2s;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.sidebarLink:hover {
+    background: var(--bg);
+}
+
+.sidebarLink.active {
+    background: rgba(122, 77, 216, 0.1);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.sidebarIcon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    width: 1.5rem;
+    text-align: center;
+}
+
+.sidebarLabel {
+    flex: 1;
+    transition: opacity 0.2s;
+}
+
+.sidebar.collapsed .sidebarLabel {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+}
+
+.sidebar.collapsed .sidebarLink {
+    padding: 0.75rem;
+    justify-content: center;
+}
+
+.sidebarToggle {
+    margin: 1rem;
+    padding: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text);
+    transition: all 0.2s;
+}
+
+.sidebarToggle:hover {
+    background: var(--primary);
+    color: var(--topbar-text);
+    border-color: var(--primary);
+}
