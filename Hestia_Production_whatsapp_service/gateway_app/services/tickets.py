@@ -12,6 +12,8 @@ from gateway_app.services.db import (
 from gateway_app.services.sla import compute_due
 from gateway_app.services.notify import _auto_assign_and_notify
 from gateway_app.services.triage import notify_triage
+from gateway_app.services.notifications.supervisor_notify import notify_supervisors_ticket_created
+
 
 
 def create_ticket(
@@ -169,5 +171,15 @@ def create_ticket(
         )
     except Exception as e:
         print(f"[WARN] triage notification failed: {e}", flush=True)
+
+    # Notify supervisors (best effort)
+    try:
+        notify_supervisors_ticket_created(
+            ticket_id=ticket_id,
+            payload={**payload, "org_id": org_id, "hotel_id": hotel_id},
+        )
+    except Exception as e:
+        print(f"[WARN] supervisor notification failed: {e}", flush=True)
+
 
     return ticket_id
