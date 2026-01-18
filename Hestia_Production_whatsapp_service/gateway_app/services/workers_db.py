@@ -46,12 +46,14 @@ def activar_turno_por_telefono(phone: str) -> bool:
     if not phone_n:
         return False
 
+    ph = "%s" if using_pg() else "?"
+
     row = fetchone(
-        """
+        f"""
         UPDATE public.users
-        SET turno_activo = ?,
+        SET turno_activo = {ph},
             turno_updated_at = now()
-        WHERE telefono = ?
+        WHERE telefono = {ph}
         RETURNING id;
         """,
         (True, phone_n),
@@ -64,13 +66,15 @@ def activar_turno_por_telefono(phone: str) -> bool:
     logger.warning("⚠️ No se activó turno: no existe user con telefono=%s", phone_n)
     return False
 
+
 def desactivar_turno_por_telefono(phone: str) -> bool:
     phone_n = _normalize_phone(phone)
     if not phone_n:
         return False
 
+    ph = "%s" if using_pg() else "?"
     execute(
-        "UPDATE public.users SET turno_activo = ?, turno_updated_at = now() WHERE telefono = ?",
+        f"UPDATE public.users SET turno_activo = {ph}, turno_updated_at = now() WHERE telefono = {ph}",
         (False, phone_n),
     )
     return True
@@ -296,6 +300,47 @@ def buscar_workers_por_nombre(nombre: str) -> List[Dict[str, Any]]:
 
 
 def buscar_worker_por_telefono(telefono: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca un worker por número de teléfono.
+    """
+    telefono_n = _normalize_phone(telefono)
+    if not telefono_n:
+        return None
+
+    is_pg = using_pg()
+    ph = "%s" if is_pg else "?"
+
+    sql = f"""
+        SELECT 
+            id,
+            username as nombre_completo,
+            telefono,
+            area,
+            activo,
+            turno_activo
+        FROM public.users
+        WHERE activo = true
+        AND area IN ('HOUSEKEEPING', 'MANTENCION', 'MANTENIMIENTO', 'AREAS_COMUNES')
+        AND telefono = {ph}
+        LIMIT 1
+    """
+
+    try:
+        worker = fetchone(sql, (telefono_n,))
+
+        if worker:
+            worker["turno_activo"] = bool(worker.get("turno_activo", False))
+            worker["area"] = normalizar_area(worker.get("area") or "HOUSEKEEPING")
+            logger.info("✅ Worker encontrado por teléfono: %s", worker.get("nombre_completo"))
+        else:
+            logger.info("⚠️ No se encontró worker con teléfono: %s", telefono_n)
+
+        return worker
+
+    except Exception as e:
+        logger.exception("❌ Error buscando worker por teléfono: %s", e)
+        return None
+
     """
     Busca un worker por número de teléfono.
     """
