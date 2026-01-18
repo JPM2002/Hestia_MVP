@@ -294,40 +294,40 @@ def buscar_workers_por_nombre(nombre: str) -> List[Dict[str, Any]]:
         return []
 
 
+def buscar_worker_por_telefono(telefono: str):
+    """
+    Busca un worker por teléfono.
+    Compatible con SQLite y Postgres.
+    """
+    from gateway_app.services.db import fetchone, using_pg
 
-def buscar_worker_por_telefono(telefono: str) -> Optional[Dict[str, Any]]:
-    """
-    Busca un worker por número de teléfono.
-    """
-    sql = """
-        SELECT 
+    if not telefono:
+        return None
+
+    is_pg = using_pg()
+    ph = "%s" if is_pg else "?"
+
+    sql = f"""
+        SELECT
             id,
-            username as nombre_completo,
+            nombre,
+            apellido,
+            nombre_completo,
             telefono,
-            area,
-            activo,
-            turno_activo
-        FROM public.users
-        WHERE activo = true
-        AND area IN ('HOUSEKEEPING', 'MANTENCION', 'MANTENIMIENTO', 'AREAS_COMUNES')
-        AND telefono = ?
+            area
+        FROM workers
+        WHERE telefono = {ph}
         LIMIT 1
     """
 
     try:
-        worker = fetchone(sql, [telefono])
-
-        if worker:
-            # ✅ Normalizaciones clave para que no salga "❓"
-            worker["turno_activo"] = bool(worker.get("turno_activo", False))
-            worker["area"] = normalizar_area(worker.get("area") or "HOUSEKEEPING")
-
-            logger.info(f"✅ Worker encontrado por teléfono: {worker['nombre_completo']}")
-        else:
-            logger.info(f"⚠️ No se encontró worker con teléfono: {telefono}")
-
-        return worker
-
+        row = fetchone(sql, (telefono,))
+        return row
     except Exception as e:
-        logger.exception(f"❌ Error buscando worker por teléfono: {e}")
+        import logging
+        logging.getLogger(__name__).exception(
+            "Error buscando worker por telefono=%s err=%s",
+            telefono,
+            e,
+        )
         return None
