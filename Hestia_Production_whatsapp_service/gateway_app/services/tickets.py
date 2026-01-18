@@ -13,6 +13,7 @@ from gateway_app.services.sla import compute_due
 # from gateway_app.services.notify import _auto_assign_and_notify
 from gateway_app.services.triage import notify_triage
 
+import os
 
 
 def create_ticket(
@@ -34,8 +35,10 @@ def create_ticket(
         due_at = None
 
     # IDs configurables vía payload o config (fallback a valores por defecto)
-    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", )))
-    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", )))
+    # IDs configurables vía payload o config (fallback a valores por defecto)
+    org_id = int(payload.get("org_id") or os.getenv("ORG_ID_DEFAULT") or 1)
+    hotel_id = int(payload.get("hotel_id") or os.getenv("HOTEL_ID_DEFAULT") or 1)
+
 
     is_pg = using_pg()
     ph = "%s" if is_pg else "?"
