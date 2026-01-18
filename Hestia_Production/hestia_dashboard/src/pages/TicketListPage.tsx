@@ -12,6 +12,9 @@ export function TicketListPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // NEW: Critical toggle
+    const [criticalOnly, setCriticalOnly] = useState(false);
+
     // Filter states
     const [filterEstado, setFilterEstado] = useState<TicketEstado | ''>('');
     const [filterPrioridad, setFilterPrioridad] = useState<TicketPrioridad | ''>('');
@@ -20,6 +23,25 @@ export function TicketListPage() {
     const [filterFrom, setFilterFrom] = useState('');
     const [filterTo, setFilterTo] = useState('');
     const [filterSearch, setFilterSearch] = useState('');
+
+    // Helpers
+    const getTodayInputValue = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`; // yyyy-mm-dd para input date
+    };
+
+    const isToday = (iso: string) => {
+        const d = new Date(iso);
+        const now = new Date();
+        return (
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate()
+        );
+    };
 
     // Load tickets
     const loadTickets = async () => {
@@ -39,16 +61,67 @@ export function TicketListPage() {
         loadTickets();
     }, []);
 
+    const clearFilters = () => {
+        setFilterEstado('');
+        setFilterPrioridad('');
+        setFilterArea('');
+        setFilterAsignado('');
+        setFilterFrom('');
+        setFilterTo('');
+        setFilterSearch('');
+        setCriticalOnly(false);
+    };
+
+    // NEW: toggle críticos (setea filtros)
+    const toggleCritical = () => {
+        if (criticalOnly) {
+            // OFF -> vuelve a vacío
+            clearFilters();
+            return;
+        }
+
+        // ON -> setea las 3 condiciones
+        const today = getTodayInputValue();
+        setCriticalOnly(true);
+
+        // 1) Pendientes
+        setFilterEstado('PENDIENTE');
+
+        // 2) Alta prioridad (incluiremos URGENTE en el filtrado)
+        setFilterPrioridad('ALTA');
+
+        // 3) Hoy
+        setFilterFrom(today);
+        setFilterTo(today);
+
+        // opcional: limpiar otros filtros para que sea “rápido y claro”
+        setFilterArea('');
+        setFilterAsignado('');
+        setFilterSearch('');
+    };
+
     // Client-side filtering
     const filteredTickets = useMemo(() => {
         let filtered = [...tickets];
 
+        // Estado: si eligen "PENDIENTE", incluir también PENDIENTE_APROBACION
         if (filterEstado) {
-            filtered = filtered.filter((t) => t.estado === filterEstado);
+            if (filterEstado === 'PENDIENTE') {
+                filtered = filtered.filter((t) =>
+                    t.estado === 'PENDIENTE' || t.estado === 'PENDIENTE_APROBACION'
+                );
+            } else {
+                filtered = filtered.filter((t) => t.estado === filterEstado);
+            }
         }
 
+        // Prioridad: si críticos está ON y prioridad=ALTA, incluir URGENTE también
         if (filterPrioridad) {
-            filtered = filtered.filter((t) => t.prioridad === filterPrioridad);
+            if (criticalOnly && filterPrioridad === 'ALTA') {
+                filtered = filtered.filter((t) => t.prioridad === 'ALTA' || t.prioridad === 'URGENTE');
+            } else {
+                filtered = filtered.filter((t) => t.prioridad === filterPrioridad);
+            }
         }
 
         if (filterArea) {
@@ -83,18 +156,28 @@ export function TicketListPage() {
             );
         }
 
-        return filtered;
-    }, [tickets, filterEstado, filterPrioridad, filterArea, filterAsignado, filterFrom, filterTo, filterSearch]);
+        // Extra garantía: si críticos ON, forzar las 3 condiciones aunque alguien intente tocar algo
+        if (criticalOnly) {
+            filtered = filtered.filter((t) => {
+                const pending = t.estado === 'PENDIENTE' || t.estado === 'PENDIENTE_APROBACION';
+                const high = t.prioridad === 'ALTA' || t.prioridad === 'URGENTE';
+                const today = isToday(t.created_at);
+                return pending && high && today;
+            });
+        }
 
-    const clearFilters = () => {
-        setFilterEstado('');
-        setFilterPrioridad('');
-        setFilterArea('');
-        setFilterAsignado('');
-        setFilterFrom('');
-        setFilterTo('');
-        setFilterSearch('');
-    };
+        return filtered;
+    }, [
+        tickets,
+        filterEstado,
+        filterPrioridad,
+        filterArea,
+        filterAsignado,
+        filterFrom,
+        filterTo,
+        filterSearch,
+        criticalOnly,
+    ]);
 
     const handleRowClick = (id: number) => {
         navigate(`/tickets/${id}`);
@@ -111,9 +194,14 @@ export function TicketListPage() {
             <div className="filtersBar">
                 <div className="filterGroup">
                     <label>Estado:</label>
-                    <select value={filterEstado} onChange={(e) => setFilterEstado(e.target.value as TicketEstado | '')}>
+                    <select
+                        value={filterEstado}
+                        disabled={criticalOnly}
+                        onChange={(e) => setFilterEstado(e.target.value as TicketEstado | '')}
+                    >
                         <option value="">Todos</option>
                         <option value="PENDIENTE">Pendiente</option>
+                        <option value="PENDIENTE_APROBACION">Pend. Aprobación</option>
                         <option value="ASIGNADO">Asignado</option>
                         <option value="ACEPTADO">Aceptado</option>
                         <option value="EN_CURSO">En Curso</option>
@@ -124,7 +212,11 @@ export function TicketListPage() {
 
                 <div className="filterGroup">
                     <label>Prioridad:</label>
-                    <select value={filterPrioridad} onChange={(e) => setFilterPrioridad(e.target.value as TicketPrioridad | '')}>
+                    <select
+                        value={filterPrioridad}
+                        disabled={criticalOnly}
+                        onChange={(e) => setFilterPrioridad(e.target.value as TicketPrioridad | '')}
+                    >
                         <option value="">Todas</option>
                         <option value="BAJA">Baja</option>
                         <option value="MEDIA">Media</option>
@@ -157,12 +249,22 @@ export function TicketListPage() {
 
                 <div className="filterGroup">
                     <label>Desde:</label>
-                    <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+                    <input
+                        type="date"
+                        value={filterFrom}
+                        disabled={criticalOnly}
+                        onChange={(e) => setFilterFrom(e.target.value)}
+                    />
                 </div>
 
                 <div className="filterGroup">
                     <label>Hasta:</label>
-                    <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+                    <input
+                        type="date"
+                        value={filterTo}
+                        disabled={criticalOnly}
+                        onChange={(e) => setFilterTo(e.target.value)}
+                    />
                 </div>
 
                 <div className="filterGroup filterGroupWide">
@@ -174,6 +276,16 @@ export function TicketListPage() {
                         onChange={(e) => setFilterSearch(e.target.value)}
                     />
                 </div>
+
+                {/* NEW: Critical button */}
+                <button
+                    type="button"
+                    className={`btnCritical ${criticalOnly ? 'active' : ''}`}
+                    onClick={toggleCritical}
+                    title="Pendiente + Alta/Urgente + Hoy"
+                >
+                    CRITICOS
+                </button>
 
                 <button className="btnClearFilters" onClick={clearFilters}>
                     Limpiar filtros
@@ -222,7 +334,11 @@ export function TicketListPage() {
                                 {filteredTickets.map((ticket) => {
                                     const slaStatus = getSLAStatus(ticket);
                                     return (
-                                        <tr key={ticket.id} onClick={() => handleRowClick(ticket.id)} className="clickableRow">
+                                        <tr
+                                            key={ticket.id}
+                                            onClick={() => handleRowClick(ticket.id)}
+                                            className="clickableRow"
+                                        >
                                             <td className="mono">#{ticket.id}</td>
                                             <td>
                                                 <Badge type="estado" value={ticket.estado} />
@@ -234,9 +350,7 @@ export function TicketListPage() {
                                             <td>{ticket.area}</td>
                                             <td>{getUserName(ticket.assigned_to)}</td>
                                             <td>{formatDateShort(ticket.created_at)}</td>
-                                            <td>
-                                                {slaStatus && <Badge type="sla" value={slaStatus} />}
-                                            </td>
+                                            <td>{slaStatus && <Badge type="sla" value={slaStatus} />}</td>
                                         </tr>
                                     );
                                 })}
