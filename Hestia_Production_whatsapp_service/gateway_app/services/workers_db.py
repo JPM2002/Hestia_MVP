@@ -293,13 +293,15 @@ def buscar_workers_por_nombre(nombre: str) -> List[Dict[str, Any]]:
         logger.exception(f"❌ Error buscando workers: {e}")
         return []
 
-
 def buscar_worker_por_telefono(telefono: str):
     """
-    Busca un worker por teléfono.
+    Busca un worker (usuario interno) por teléfono en la tabla `users`.
     Compatible con SQLite y Postgres.
     """
     from gateway_app.services.db import fetchone, using_pg
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     if not telefono:
         return None
@@ -310,23 +312,20 @@ def buscar_worker_por_telefono(telefono: str):
     sql = f"""
         SELECT
             id,
-            nombre,
-            apellido,
-            nombre_completo,
+            username AS nombre_completo,
             telefono,
+            role,
             area
-        FROM workers
+        FROM users
         WHERE telefono = {ph}
         LIMIT 1
     """
 
     try:
-        row = fetchone(sql, (telefono,))
-        return row
+        return fetchone(sql, (telefono,))
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).exception(
-            "Error buscando worker por telefono=%s err=%s",
+        logger.exception(
+            "Error buscando user por telefono=%s err=%s",
             telefono,
             e,
         )
