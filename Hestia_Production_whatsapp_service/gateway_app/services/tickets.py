@@ -10,8 +10,9 @@ from gateway_app.services.db import (
     table_has_column,
 )
 from gateway_app.services.sla import compute_due
-from gateway_app.services.notify import _auto_assign_and_notify
+# from gateway_app.services.notify import _auto_assign_and_notify
 from gateway_app.services.triage import notify_triage
+
 
 
 def create_ticket(
@@ -143,31 +144,33 @@ def create_ticket(
             commit=True,
         )
 
-    # Auto-asignación y notificación (best effort)
-    try:
-        _auto_assign_and_notify(
-            ticket_id=ticket_id,
-            area=payload.get("area"),
-            prioridad=payload.get("prioridad"),
-            detalle=payload.get("detalle"),
-            ubicacion=payload.get("ubicacion"),
-            org_id=org_id,
-            hotel_id=hotel_id,
-        )
-    except Exception as e:
-        print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
+    # # Auto-asignación y notificación (best effort)
+    # Phase 3
+    # try:
+    #     _auto_assign_and_notify(
+    #         ticket_id=ticket_id,
+    #         area=payload.get("area"),
+    #         prioridad=payload.get("prioridad"),
+    #         detalle=payload.get("detalle"),
+    #         ubicacion=payload.get("ubicacion"),
+    #         org_id=org_id,
+    #         hotel_id=hotel_id,
+    #     )
+    # except Exception as e:
+    #     print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
 
     # Send to triage channel (WhatsApp notification to triage team)
-    try:
-        notify_triage(
-            ticket_id=ticket_id,
-            payload={
-                **payload,
-                "org_id": org_id,
-                "hotel_id": hotel_id,
-            },
-        )
-    except Exception as e:
-        print(f"[WARN] triage notification failed: {e}", flush=True)
+    # try:
+    #     notify_triage(
+    #         ticket_id=ticket_id,
+    #         payload={
+    #             **payload,
+    #             "org_id": org_id,
+    #             "hotel_id": hotel_id,
+    #         },
+    #     )
+    # except Exception as e:
+    #     print(f"[WARN] triage notification failed: {e}", flush=True)
+
 
     return ticket_id
