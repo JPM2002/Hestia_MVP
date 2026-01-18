@@ -50,8 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: `Usuario ${role}`,
             email: 'demo@hestia.local',
             role,
-            area: role === 'TECNICO' ? 'MANTENCION' : undefined,
-            is_superadmin: false,
+            area: role === 'TECNICO' ? 'MANTENCION' : null,
+            is_superadmin: role === 'SUPERADMIN',
         };
         setUser(mockUser);
         navigate('/tickets');

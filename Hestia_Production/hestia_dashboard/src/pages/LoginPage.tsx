@@ -71,6 +71,7 @@ export function LoginPage() {
                                 <option value="TECNICO">Técnico</option>
                                 <option value="SUPERVISOR">Supervisor</option>
                                 <option value="GERENTE">Gerente</option>
+                                <option value="SUPERADMIN">Superadmin</option>
                             </select>
                         </div>
 

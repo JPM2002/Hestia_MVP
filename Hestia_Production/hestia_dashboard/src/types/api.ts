@@ -12,7 +12,7 @@ export interface User {
   name: string;
   email: string;
   role: 'RECEPCION' | 'TECNICO' | 'SUPERVISOR' | 'GERENTE' | 'SUPERADMIN';
-  area?: 'MANTENCION' | 'HOUSEKEEPING' | 'ROOMSERVICE';
+  area?: 'MANTENCION' | 'HOUSEKEEPING' | 'ROOMSERVICE' | null;
   is_superadmin: boolean;
 }
 

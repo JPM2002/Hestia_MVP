@@ -1,0 +1,352 @@
+.ticketDetailPage {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+
+.detailHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.btnBack {
+    padding: 0.5rem 1rem;
+    background-color: #e0e0e0;
+    color: #333;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btnBack:hover {
+    background-color: #d0d0d0;
+}
+
+.detailHeader h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    color: #1a1a1a;
+}
+
+/* Action Message */
+
+.actionMessage {
+    padding: 1rem 1.5rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+}
+
+.actionMessage.success {
+    background-color: #d1e7dd;
+    color: #0a3622;
+    border: 1px solid #badbcc;
+}
+
+.actionMessage.error {
+    background-color: #f8d7da;
+    color: #842029;
+    border: 1px solid #f5c2c7;
+}
+
+/* Ticket Info Card */
+
+.ticketInfo {
+    margin-bottom: 2rem;
+}
+
+.infoCard {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.infoHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.infoHeader h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #1a1a1a;
+}
+
+.badges {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.infoGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.infoItem {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.infoLabel {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.infoValue {
+    font-size: 1rem;
+    color: #1a1a1a;
+}
+
+.infoDescription {
+    margin-bottom: 1.5rem;
+}
+
+.infoDescription h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    color: #333;
+}
+
+.infoDescription p {
+    margin: 0;
+    color: #555;
+    line-height: 1.6;
+}
+
+/* Action Buttons */
+
+.actionButtons {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.btnAction {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btnAction:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btnAccept {
+    background-color: #28a745;
+    color: white;
+}
+
+.btnAccept:hover:not(:disabled) {
+    background-color: #218838;
+}
+
+.btnStart {
+    background-color: #007bff;
+    color: white;
+}
+
+.btnStart:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+
+.btnPause {
+    background-color: #ffc107;
+    color: #000;
+}
+
+.btnPause:hover:not(:disabled) {
+    background-color: #e0a800;
+}
+
+.btnResume {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.btnResume:hover:not(:disabled) {
+    background-color: #138496;
+}
+
+.btnFinish {
+    background-color: #28a745;
+    color: white;
+}
+
+.btnFinish:hover:not(:disabled) {
+    background-color: #218838;
+}
+
+/* Timeline Section */
+
+.timelineSection {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.timelineSection h2 {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.25rem;
+    color: #1a1a1a;
+}
+
+.timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.375rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #e0e0e0;
+}
+
+.timelineEvent {
+    position: relative;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.timelineEvent:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.eventDot {
+    position: absolute;
+    left: -1.625rem;
+    top: 0.375rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    background-color: #4a90e2;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px #e0e0e0;
+}
+
+.eventContent {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.eventAction {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #1a1a1a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.eventMeta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.eventActor {
+    font-weight: 500;
+}
+
+.eventTime {
+    color: #999;
+}
+
+.eventMotivo {
+    font-size: 0.9rem;
+    color: #555;
+    font-style: italic;
+    padding: 0.5rem;
+    background-color: #f9f9f9;
+    border-left: 3px solid #4a90e2;
+}
+
+/* States */
+
+.stateMessage {
+    padding: 2rem;
+    text-align: center;
+    color: #666;
+}
+
+.stateMessage p {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+
+.stateError {
+    color: #d32f2f;
+}
+
+.btnRetry {
+    padding: 0.6rem 1.5rem;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btnRetry:hover {
+    background-color: #357abd;
+}
+
+/* Responsive */
+
+@media (max-width: 768px) {
+    .ticketDetailPage {
+        padding: 1rem;
+    }
+
+    .infoCard {
+        padding: 1.5rem;
+    }
+
+    .infoHeader {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .infoGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .actionButtons {
+        flex-direction: column;
+    }
+
+    .btnAction {
+        width: 100%;
+    }
+}
