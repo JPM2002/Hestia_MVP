@@ -1,9 +1,10 @@
+# hestia_app/blueprints/auth/routes.py
 from datetime import datetime
 import hashlib
 
 from flask import (
     render_template, request, redirect, url_for, flash, session,
-    get_flashed_messages, current_app
+    get_flashed_messages, current_app, jsonify
 )
 
 from . import bp
@@ -135,6 +136,36 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("auth.login"))
+
+
+# ---------------------------- JSON session API ----------------------------
+
+@bp.get("/api/me")
+def api_me():
+    """
+    Frontend uses this to know current user + role and build sidebar.
+    Returns JSON (no redirects).
+    """
+    u = session.get("user")
+    if not u:
+        return jsonify({"ok": False, "error": "No autenticado"}), 401
+
+    # IMPORTANT: si es superadmin -> rol SUPERADMIN para el dashboard React
+    role = "SUPERADMIN" if u.get("is_superadmin") else (u.get("role") or "RECEPCION")
+
+    return jsonify({
+        "ok": True,
+        "user": {
+            "id": u.get("id"),
+            "name": u.get("name"),
+            "email": u.get("email"),
+            "role": role,
+            "area": u.get("area"),
+            "is_superadmin": bool(u.get("is_superadmin")),
+        },
+        "org_id": session.get("org_id"),
+        "hotel_id": session.get("hotel_id"),
+    }), 200
 
 
 @bp.get("/demo/tecnico")

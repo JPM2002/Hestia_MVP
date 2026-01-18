@@ -1,3 +1,4 @@
+// hestia_dashboard/src/services/api.ts
 import type {
     MeResponse,
     TicketsListParams,
@@ -6,67 +7,14 @@ import type {
     TicketEventsResponse,
     TicketActionResponse,
     TicketActionType,
+    MetricsParams,
+    MetricsSummaryResponse,
+    MetricsQualityResponse,
 } from '../types/api';
+import { loginRequest, logoutRequest, get, postForm } from '../api/client';
 
 // Environment variables (Vite)
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-
-/**
- * Base fetch wrapper with cookie credentials support
- */
-async function apiFetch<T>(
-    endpoint: string,
-    options: RequestInit = {}
-): Promise<T> {
-    const url = USE_MOCKS ? endpoint : `${API_BASE_URL}${endpoint}`;
-
-    const response = await fetch(url, {
-        ...options,
-        credentials: 'include', // Send cookies for session auth
-        headers: {
-            ...options.headers,
-        },
-    });
-
-    // Handle non-OK responses
-    if (!response.ok) {
-        if (response.status === 401) {
-            // Unauthorized - redirect to login
-            window.location.href = '/login';
-            throw new Error('No autenticado');
-        }
-
-        // Try to parse error message from JSON
-        try {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP ${response.status}`);
-        } catch {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-    }
-
-    // Parse JSON response
-    return response.json();
-}
-
-/**
- * POST with form data (backend expects application/x-www-form-urlencoded)
- */
-async function apiPostForm<T>(
-    endpoint: string,
-    data: Record<string, string> = {}
-): Promise<T> {
-    const formData = new URLSearchParams(data);
-
-    return apiFetch<T>(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString(),
-    });
-}
 
 // ==================== API Methods ====================
 
@@ -83,35 +31,7 @@ export async function login(
         return mockLogin(email, password);
     }
 
-    const formData = new URLSearchParams({ email, password });
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/auth/login`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString(),
-            redirect: 'manual', // Don't follow redirects (may return opaqueredirect)
-        });
-
-        // Status 0 = opaque redirect (CORS redirect, considered success)
-        // Status 302 = manual redirect
-        // Status 200 = direct success
-        if (response.type === 'opaqueredirect' || response.status === 0 || response.status === 302 || response.ok) {
-            return { ok: true };
-        }
-
-        // Any other status = failure
-        throw new Error('Credenciales inválidas');
-    } catch (error) {
-        if (error instanceof Error && error.message === 'Credenciales inválidas') {
-            throw error;
-        }
-        // Network or other fetch errors
-        throw new Error('Error de conexión');
-    }
+    return loginRequest(email, password);
 }
 
 /**
@@ -124,10 +44,7 @@ export async function logout(): Promise<void> {
         return mockLogout();
     }
 
-    await fetch(`${API_BASE_URL}/auth/logout`, {
-        credentials: 'include',
-        redirect: 'manual',
-    });
+    return logoutRequest();
 }
 
 /**
@@ -141,7 +58,7 @@ export async function getMe(): Promise<MeResponse> {
     }
 
     // TODO: Backend needs to implement this endpoint
-    return apiFetch<MeResponse>('/api/me');
+    return get<MeResponse>('/api/me');
 }
 
 /**
@@ -163,7 +80,7 @@ export async function getTickets(
     const query = queryParams.toString();
     const endpoint = `/api/recepcion/list${query ? `?${query}` : ''}`;
 
-    return apiFetch<TicketsListResponse>(endpoint);
+    return get<TicketsListResponse>(endpoint);
 }
 
 /**
@@ -177,7 +94,7 @@ export async function getTicketById(id: number): Promise<TicketDetailResponse> {
     }
 
     // TODO: Backend needs to implement this endpoint
-    return apiFetch<TicketDetailResponse>(`/api/tickets/${id}`);
+    return get<TicketDetailResponse>(`/api/tickets/${id}`);
 }
 
 /**
@@ -195,7 +112,7 @@ export async function getTicketEvents(
     }
 
     // TODO: Backend needs to implement this endpoint
-    return apiFetch<TicketEventsResponse>(`/api/tickets/${id}/events`);
+    return get<TicketEventsResponse>(`/api/tickets/${id}/events`);
 }
 
 /**
@@ -220,5 +137,59 @@ export async function updateTicketState(
         data.motivo = motivo;
     }
 
-    return apiPostForm<TicketActionResponse>(`/ops/tickets/${id}/${action}`, data);
+    return postForm<TicketActionResponse>(`/ops/tickets/${id}/${action}`, data);
+}
+
+// ==================== Metrics (Dashboard KPIs) ====================
+
+/**
+ * GET /api/metrics/summary - KPIs summary for dashboard
+ */
+export async function getMetricsSummary(
+    params: MetricsParams = {}
+): Promise<MetricsSummaryResponse> {
+    if (USE_MOCKS) {
+        const { getMetricsSummary: mockGetMetricsSummary } = await import('./api.mock.ts');
+        return mockGetMetricsSummary(params);
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.from) queryParams.set('from', params.from);
+    if (params.to) queryParams.set('to', params.to);
+    if (params.period) queryParams.set('period', params.period);
+    if (params.area) queryParams.set('area', params.area);
+    if (params.prioridad) queryParams.set('prioridad', params.prioridad);
+    if (params.estado) queryParams.set('estado', params.estado);
+    if (params.q) queryParams.set('q', params.q);
+
+    const query = queryParams.toString();
+    const endpoint = `/api/metrics/summary${query ? `?${query}` : ''}`;
+
+    return get<MetricsSummaryResponse>(endpoint);
+}
+
+/**
+ * GET /api/metrics/quality - Quality breakdown KPIs for dashboard
+ */
+export async function getMetricsQuality(
+    params: MetricsParams = {}
+): Promise<MetricsQualityResponse> {
+    if (USE_MOCKS) {
+        const { getMetricsQuality: mockGetMetricsQuality } = await import('./api.mock.ts');
+        return mockGetMetricsQuality(params);
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.from) queryParams.set('from', params.from);
+    if (params.to) queryParams.set('to', params.to);
+    if (params.period) queryParams.set('period', params.period);
+    if (params.area) queryParams.set('area', params.area);
+    if (params.prioridad) queryParams.set('prioridad', params.prioridad);
+    if (params.estado) queryParams.set('estado', params.estado);
+    if (params.q) queryParams.set('q', params.q);
+
+    const query = queryParams.toString();
+    const endpoint = `/api/metrics/quality${query ? `?${query}` : ''}`;
+
+    return get<MetricsQualityResponse>(endpoint);
 }

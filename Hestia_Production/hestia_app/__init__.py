@@ -57,6 +57,7 @@ def create_app():
     from .blueprints.tecnico import bp as tecnico_bp
     from .blueprints.tickets import bp as tickets_bp
     from .blueprints.initialization import bp as initialization_bp
+    from .blueprints.metrics import bp as metrics_bp
 
 
     app.register_blueprint(admin_bp)
@@ -68,6 +69,7 @@ def create_app():
     app.register_blueprint(tecnico_bp)
     app.register_blueprint(tickets_bp)
     app.register_blueprint(initialization_bp)
+    app.register_blueprint(metrics_bp)
 
 
     # --- Require login globally (except public endpoints) ---
@@ -80,6 +82,7 @@ def create_app():
             "auth.index",        # /
             "auth.demo_tecnico", # optional demo
             "healthz",           # health check
+            "auth.api_me",  # session API
         }
         if ep in public or ep.startswith("static"):
             return

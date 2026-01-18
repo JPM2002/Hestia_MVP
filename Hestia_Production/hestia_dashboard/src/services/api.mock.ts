@@ -14,7 +14,11 @@ import type {
     Ticket,
     TicketEvent,
     User,
+    MetricsParams,
+    MetricsSummaryResponse,
+    MetricsQualityResponse,
 } from '../types/api';
+
 
 // Simulate async delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -376,3 +380,181 @@ export async function updateTicketState(
         new_estado: ticket.estado,
     };
 }
+
+// ==================== Metrics (Mock) ====================
+
+function parseISO(d?: string | null) {
+    return d ? new Date(d) : null;
+}
+
+function isOpenEstado(estado: Ticket['estado']) {
+    return estado !== 'RESUELTO' && estado !== 'ELIMINADO';
+}
+
+function applyPeriodFilter(tickets: Ticket[], params: MetricsParams) {
+    // Soportamos from/to o period (simple)
+    let from: Date | null = null;
+    let to: Date | null = null;
+
+    if (params.from) from = new Date(`${params.from}T00:00:00`);
+    if (params.to) to = new Date(`${params.to}T23:59:59`);
+
+    if (!from && !to && params.period && params.period !== 'all') {
+        const now = new Date();
+        from = new Date(now);
+
+        if (params.period === 'today') {
+            from.setHours(0, 0, 0, 0);
+        } else if (params.period === 'yesterday') {
+            from.setDate(from.getDate() - 1);
+            from.setHours(0, 0, 0, 0);
+            to = new Date(from);
+            to.setHours(23, 59, 59, 999);
+        } else if (params.period === '7d') {
+            from.setDate(from.getDate() - 7);
+        } else if (params.period === '30d') {
+            from.setDate(from.getDate() - 30);
+        }
+    }
+
+    // filtros simples extra
+    let filtered = [...tickets];
+    if (params.area) filtered = filtered.filter(t => t.area === params.area);
+    if (params.prioridad) filtered = filtered.filter(t => t.prioridad === params.prioridad);
+    if (params.estado) filtered = filtered.filter(t => t.estado === params.estado);
+    if (params.q) {
+        const q = params.q.toLowerCase();
+        filtered = filtered.filter(t =>
+            (t.detalle || '').toLowerCase().includes(q) ||
+            (t.ubicacion || '').toLowerCase().includes(q)
+        );
+    }
+
+    // rango fecha por created_at (simple)
+    if (from) filtered = filtered.filter(t => new Date(t.created_at) >= from!);
+    if (to) filtered = filtered.filter(t => new Date(t.created_at) <= to!);
+
+    return filtered;
+}
+
+export async function getMetricsSummary(
+    params: MetricsParams = {}
+): Promise<MetricsSummaryResponse> {
+    await delay(250);
+
+    const now = new Date();
+    const in1h = new Date(now.getTime() + 60 * 60 * 1000);
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const tickets = applyPeriodFilter(MOCK_TICKETS, params);
+
+    const openTickets = tickets.filter(t => isOpenEstado(t.estado));
+    const open_count = openTickets.length;
+
+    const overdue_count = openTickets.filter(t => {
+        const due = parseISO(t.due_at);
+        return !!due && due < now;
+    }).length;
+
+    const at_risk_count = openTickets.filter(t => {
+        const due = parseISO(t.due_at);
+        return !!due && due >= now && due <= in1h;
+    }).length;
+
+    const resolved7 = tickets.filter(t => {
+        const fin = parseISO(t.finished_at);
+        return !!fin && fin >= since7d;
+    });
+
+    const resolved_7d = resolved7.length;
+
+    const durationsMin = resolved7
+        .map(t => {
+            const c = parseISO(t.created_at);
+            const f = parseISO(t.finished_at);
+            if (!c || !f) return null;
+            return Math.max(0, Math.round((f.getTime() - c.getTime()) / 60000));
+        })
+        .filter((x): x is number => x !== null);
+
+    const avg_resolution_minutes_7d =
+        durationsMin.length > 0
+            ? Math.round(durationsMin.reduce((a, b) => a + b, 0) / durationsMin.length)
+            : 0;
+
+    return {
+        open_count,
+        overdue_count,
+        at_risk_count,
+        resolved_7d,
+        avg_resolution_minutes_7d,
+        at: now.toISOString(),
+    };
+}
+
+export async function getMetricsQuality(
+    params: MetricsParams = {}
+): Promise<MetricsQualityResponse> {
+    await delay(250);
+
+    const now = new Date();
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const tickets = applyPeriodFilter(MOCK_TICKETS, params);
+
+    const areas = Array.from(new Set(tickets.map(t => t.area)));
+
+    const breakdown = areas.map(area => {
+        const areaTickets = tickets.filter(t => t.area === area);
+        const open = areaTickets.filter(t => isOpenEstado(t.estado)).length;
+
+        const overdue = areaTickets.filter(t => {
+            if (!isOpenEstado(t.estado)) return false;
+            const due = parseISO(t.due_at);
+            return !!due && due < now;
+        }).length;
+
+        const resolved7 = areaTickets.filter(t => {
+            const fin = parseISO(t.finished_at);
+            return !!fin && fin >= since7d;
+        });
+
+        const durationsMin = resolved7
+            .map(t => {
+                const c = parseISO(t.created_at);
+                const f = parseISO(t.finished_at);
+                if (!c || !f) return null;
+                return Math.max(0, Math.round((f.getTime() - c.getTime()) / 60000));
+            })
+            .filter((x): x is number => x !== null);
+
+        const avg_resolution_minutes_7d =
+            durationsMin.length > 0
+                ? Math.round(durationsMin.reduce((a, b) => a + b, 0) / durationsMin.length)
+                : 0;
+
+        // SLA% simple: resueltos en <= due_at (si existe)
+        const resolved7WithDue = resolved7.filter(t => t.due_at);
+        const sla_ok = resolved7WithDue.filter(t => {
+            const fin = parseISO(t.finished_at);
+            const due = parseISO(t.due_at);
+            return !!fin && !!due && fin <= due;
+        }).length;
+        const sla_pct =
+            resolved7WithDue.length > 0
+                ? Math.round((sla_ok / resolved7WithDue.length) * 1000) / 10
+                : undefined;
+
+        return {
+            area,
+            open,
+            overdue,
+            avg_resolution_minutes_7d,
+            resolved_7d: resolved7.length,
+            sla_pct,
+        };
+    });
+
+    return { breakdown, at: now.toISOString() };
+}
+

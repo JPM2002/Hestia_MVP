@@ -1,0 +1,255 @@
+/* Metrics Page Styles */
+
+.metricsPage {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.metricsHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.metricsHeader h1 {
+    margin: 0;
+    font-size: 2rem;
+    color: #1a1a1a;
+}
+
+.metricsFilters {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.metricsFilters label {
+    font-weight: 500;
+    color: #555;
+}
+
+.periodSelect {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    background-color: white;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.periodSelect:hover {
+    border-color: #999;
+}
+
+.periodSelect:focus {
+    outline: none;
+    border-color: #4a90e2;
+}
+
+/* Tabs */
+
+.metricsTabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid #e0e0e0;
+    margin-bottom: 2rem;
+}
+
+.tabButton {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tabButton:hover {
+    color: #333;
+}
+
+.tabButton.active {
+    color: #4a90e2;
+    border-bottom-color: #4a90e2;
+}
+
+/* Content */
+
+.metricsContent {
+    min-height: 400px;
+}
+
+/* States */
+
+.metricsState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    text-align: center;
+    color: #666;
+}
+
+.metricsState p {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.metricsError {
+    color: #d32f2f;
+}
+
+.retryButton {
+    padding: 0.6rem 1.5rem;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.retryButton:hover {
+    background-color: #357abd;
+}
+
+/* Summary Tab */
+
+.summaryTab {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.kpiCards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+}
+
+.kpiCard {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.2s;
+}
+
+.kpiCard:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.kpiValue {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #4a90e2;
+    margin-bottom: 0.5rem;
+}
+
+.kpiLabel {
+    font-size: 0.9rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.summaryFooter {
+    padding: 1rem;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+}
+
+.summaryInfo {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+/* Quality Tab */
+
+.qualityTab {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.qualityTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.qualityTable thead {
+    background-color: #f5f5f5;
+}
+
+.qualityTable th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.qualityTable td {
+    padding: 1rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.qualityTable tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+.areaCell {
+    font-weight: 500;
+    color: #1a1a1a;
+}
+
+.overdueCell {
+    color: #d32f2f;
+    font-weight: 600;
+}
+
+.qualityFooter {
+    padding: 1rem;
+    text-align: right;
+    font-size: 0.85rem;
+    color: #666;
+    background-color: #f9f9f9;
+}
+
+/* Responsive */
+
+@media (max-width: 768px) {
+    .metricsPage {
+        padding: 1rem;
+    }
+
+    .metricsHeader {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .kpiCards {
+        grid-template-columns: 1fr;
+    }
+
+    .qualityTable {
+        font-size: 0.9rem;
+    }
+
+    .qualityTable th,
+    .qualityTable td {
+        padding: 0.75rem 0.5rem;
+    }
+}

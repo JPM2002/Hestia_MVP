@@ -1,3 +1,4 @@
+// hestia_dashboard/src/types/api.ts
 // API Response Types based on Flask backend structure
 export interface ApiResponse<T> {
   ok: boolean;
@@ -10,7 +11,7 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'RECEPCION' | 'TECNICO' | 'SUPERVISOR' | 'GERENTE';
+  role: 'RECEPCION' | 'TECNICO' | 'SUPERVISOR' | 'GERENTE' | 'SUPERADMIN';
   area?: 'MANTENCION' | 'HOUSEKEEPING' | 'ROOMSERVICE';
   is_superadmin: boolean;
 }
@@ -116,3 +117,43 @@ export interface TicketActionResponse extends ApiResponse<unknown> {
 }
 
 export type TicketActionType = 'accept' | 'start' | 'pause' | 'resume' | 'finish';
+
+// ---------------- Metrics API (React dashboard) ----------------
+
+export type MetricsPeriod = 'today' | 'yesterday' | '7d' | '30d' | 'all';
+
+export interface MetricsParams {
+  from?: string; // YYYY-MM-DD
+  to?: string;   // YYYY-MM-DD
+  period?: MetricsPeriod;
+  area?: TicketArea | '';
+  prioridad?: TicketPrioridad | '';
+  estado?: TicketEstado | '';
+  q?: string;
+}
+
+export interface MetricsSummaryResponse {
+  open_count: number;
+  overdue_count: number;
+  at_risk_count: number;
+  resolved_7d: number;
+  avg_resolution_minutes_7d: number;
+  at?: string; // timestamp
+  // opcionales (si el backend los manda)
+  critical_by_priority?: { labels: string[]; values: number[] };
+  resolved_trend_7d?: Array<{ day: string; resolved: number }>;
+}
+
+export interface MetricsQualityRow {
+  area: string;
+  open: number;
+  overdue: number;
+  avg_resolution_minutes_7d: number;
+  resolved_7d?: number;
+  sla_pct?: number;
+}
+
+export interface MetricsQualityResponse {
+  breakdown: MetricsQualityRow[];
+  at?: string;
+}
