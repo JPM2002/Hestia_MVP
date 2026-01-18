@@ -74,7 +74,7 @@ def notify_supervisors_ticket_created(ticket_id: int, payload: Dict[str, Any]) -
 
     for sup_phone in supervisors:
         try:
-            send_whatsapp_text(to=sup_phone, body=body)
+            send_whatsapp_text(sup_phone, body)
             logger.info("SUP_NOTIFY sent ticket_id=%s to=%s", ticket_id, sup_phone)
         except Exception as e:
             logger.warning("SUP_NOTIFY failed ticket_id=%s to=%s err=%s", ticket_id, sup_phone, e)
