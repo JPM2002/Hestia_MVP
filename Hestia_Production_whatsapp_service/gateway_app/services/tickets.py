@@ -33,8 +33,8 @@ def create_ticket(
         due_at = None
 
     # IDs configurables vía payload o config (fallback a valores por defecto)
-    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", 4)))
-    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", 3)))
+    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", )))
+    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", )))
 
     is_pg = using_pg()
     ph = "%s" if is_pg else "?"

@@ -16,8 +16,8 @@ from gateway_app.services import notify
 logger = logging.getLogger(__name__)
 
 # IDs para tu backend de tickets (configurable vía environment variables)
-ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "4"))
-HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "3"))
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", ""))
+HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", ""))
 
 # Import real ticket creator if available; otherwise fall back to a stub.
 try:
