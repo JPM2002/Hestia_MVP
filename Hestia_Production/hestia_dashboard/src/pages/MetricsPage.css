@@ -227,6 +227,134 @@
     background-color: #f9f9f9;
 }
 
+/* Performance Tab */
+
+.performanceTab {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.performanceTable,
+.workerTicketsTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.performanceTable thead,
+.workerTicketsTable thead {
+    background-color: #f5f5f5;
+}
+
+.performanceTable th,
+.workerTicketsTable th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.performanceTable td,
+.workerTicketsTable td {
+    padding: 1rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.clickableRow {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.clickableRow:hover {
+    background-color: #f0f7ff;
+}
+
+.workerDetail {
+    padding: 1.5rem;
+}
+
+.detailHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.detailHeader h3 {
+    margin: 0;
+    color: #1a1a1a;
+}
+
+.backButton {
+    padding: 0.5rem 1rem;
+    background-color: #f5f5f5;
+    color: #333;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.backButton:hover {
+    background-color: #e0e0e0;
+}
+
+.mono {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+}
+
+/* Recurring Tab */
+
+.recurringTab {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.recurringTable,
+.recurringTicketsTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.recurringTable thead,
+.recurringTicketsTable thead {
+    background-color: #f5f5f5;
+}
+
+.recurringTable th,
+.recurringTicketsTable th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.recurringTable td,
+.recurringTicketsTable td {
+    padding: 1rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.recurringDetail {
+    padding: 1.5rem;
+}
+
+.detailCell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Responsive */
 
 @media (max-width: 768px) {

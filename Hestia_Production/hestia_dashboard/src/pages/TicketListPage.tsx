@@ -24,24 +24,7 @@ export function TicketListPage() {
     const [filterTo, setFilterTo] = useState('');
     const [filterSearch, setFilterSearch] = useState('');
 
-    // Helpers
-    const getTodayInputValue = () => {
-        const now = new Date();
-        const y = now.getFullYear();
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`; // yyyy-mm-dd para input date
-    };
 
-    const isToday = (iso: string) => {
-        const d = new Date(iso);
-        const now = new Date();
-        return (
-            d.getFullYear() === now.getFullYear() &&
-            d.getMonth() === now.getMonth() &&
-            d.getDate() === now.getDate()
-        );
-    };
 
     // Load tickets
     const loadTickets = async () => {
@@ -80,8 +63,8 @@ export function TicketListPage() {
             return;
         }
 
-        // ON -> setea las 3 condiciones
-        const today = getTodayInputValue();
+
+        // ON -> setea solo 2 condiciones: estado + prioridad
         setCriticalOnly(true);
 
         // 1) Pendientes
@@ -89,15 +72,12 @@ export function TicketListPage() {
 
         // 2) Alta prioridad (incluiremos URGENTE en el filtrado)
         setFilterPrioridad('ALTA');
-
-        // 3) Hoy
-        setFilterFrom(today);
-        setFilterTo(today);
-
         // opcional: limpiar otros filtros para que sea “rápido y claro”
         setFilterArea('');
         setFilterAsignado('');
         setFilterSearch('');
+        setFilterFrom(''); // Clear date filters
+        setFilterTo('');
     };
 
     // Client-side filtering
@@ -137,12 +117,13 @@ export function TicketListPage() {
             }
         }
 
-        if (filterFrom) {
+        // Date filters: only apply if NOT in critical mode
+        if (!criticalOnly && filterFrom) {
             const fromDate = new Date(`${filterFrom}T00:00:00`);
             filtered = filtered.filter((t) => new Date(t.created_at) >= fromDate);
         }
 
-        if (filterTo) {
+        if (!criticalOnly && filterTo) {
             const toDate = new Date(`${filterTo}T23:59:59`);
             filtered = filtered.filter((t) => new Date(t.created_at) <= toDate);
         }
@@ -156,13 +137,12 @@ export function TicketListPage() {
             );
         }
 
-        // Extra garantía: si críticos ON, forzar las 3 condiciones aunque alguien intente tocar algo
+        // Extra garantía: si críticos ON, forzar las 2 condiciones (estado + prioridad)
         if (criticalOnly) {
             filtered = filtered.filter((t) => {
                 const pending = t.estado === 'PENDIENTE' || t.estado === 'PENDIENTE_APROBACION';
                 const high = t.prioridad === 'ALTA' || t.prioridad === 'URGENTE';
-                const today = isToday(t.created_at);
-                return pending && high && today;
+                return pending && high;
             });
         }
 
@@ -277,14 +257,14 @@ export function TicketListPage() {
                     />
                 </div>
 
-                {/* NEW: Critical button */}
+                {/* Critical button */}
                 <button
                     type="button"
                     className={`btnCritical ${criticalOnly ? 'active' : ''}`}
                     onClick={toggleCritical}
-                    title="Pendiente + Alta/Urgente + Hoy"
+                    title="Pendiente + Alta/Urgente"
                 >
-                    CRITICOS
+                    CRÍTICOS
                 </button>
 
                 <button className="btnClearFilters" onClick={clearFilters}>
