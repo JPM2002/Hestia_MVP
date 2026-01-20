@@ -1,0 +1,172 @@
+.adminPage {
+    width: 100%;
+}
+
+.adminHeader {
+    margin-bottom: 2rem;
+}
+
+.adminHeader h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+}
+
+/* Selectors */
+.adminSelectors {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.selectorGroup {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.selectorGroup label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+.adminSelect {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 200px;
+}
+
+.adminSelect:hover {
+    border-color: #9ca3af;
+}
+
+.adminSelect:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Stats Cards */
+.adminStats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.statCard {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.statCard:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+}
+
+.statValue {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+}
+
+.statLabel {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* Quick Access */
+.quickAccess {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.quickAccess h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0 0 1rem 0;
+}
+
+.accessCards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.accessCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+}
+
+.accessCard:hover {
+    background: #fff;
+    border-color: #2563eb;
+    transform: translateX(4px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+}
+
+.accessIcon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.accessLabel {
+    flex: 1;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.accessArrow {
+    font-size: 1.5rem;
+    color: #9ca3af;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.accessCard:hover .accessArrow {
+    transform: translateX(4px);
+    color: #2563eb;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .adminSelectors {
+        flex-direction: column;
+    }
+
+    .adminStats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .accessCards {
+        grid-template-columns: 1fr;
+    }
+}

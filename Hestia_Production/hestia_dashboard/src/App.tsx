@@ -4,9 +4,13 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorToast } from './components/ErrorToast';
 import { LoginPage } from './pages/LoginPage';
+import { OverviewPage } from './pages/OverviewPage';
 import { TicketListPage } from './pages/TicketListPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
 import { MetricsPage } from './pages/MetricsPage';
+import { AdminPage } from './pages/AdminPage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
+import { AdminOrgsHotelsPage } from './pages/AdminOrgsHotelsPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { APIClientError } from './api/client';
 import './App.css';
@@ -64,6 +68,21 @@ function AppContent() {
 
         {/* Protected routes with Layout */}
         <Route
+          path="/overview"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              userRole={user?.role}
+              allowedRoles={['GERENTE', 'SUPERADMIN']}
+            >
+              <Layout user={user} onLogout={handleLogout}>
+                <OverviewPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/tickets"
           element={
             <ProtectedRoute isAuthenticated={isAuthenticated}>
@@ -88,9 +107,58 @@ function AppContent() {
         <Route
           path="/metrics"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated}>
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              userRole={user?.role}
+              allowedRoles={['GERENTE', 'SUPERADMIN']}
+            >
               <Layout user={user} onLogout={handleLogout}>
                 <MetricsPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              userRole={user?.role}
+              allowedRoles={['SUPERADMIN']}
+            >
+              <Layout user={user} onLogout={handleLogout}>
+                <AdminPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              userRole={user?.role}
+              allowedRoles={['SUPERADMIN']}
+            >
+              <Layout user={user} onLogout={handleLogout}>
+                <AdminUsersPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/orgs-hotels"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              userRole={user?.role}
+              allowedRoles={['SUPERADMIN']}
+            >
+              <Layout user={user} onLogout={handleLogout}>
+                <AdminOrgsHotelsPage />
               </Layout>
             </ProtectedRoute>
           }
@@ -101,7 +169,11 @@ function AppContent() {
           path="/"
           element={
             isAuthenticated ? (
-              <Navigate to="/tickets" replace />
+              user?.role === 'GERENTE' || user?.role === 'SUPERADMIN' ? (
+                <Navigate to="/overview" replace />
+              ) : (
+                <Navigate to="/tickets" replace />
+              )
             ) : (
               <Navigate to="/login" replace />
             )

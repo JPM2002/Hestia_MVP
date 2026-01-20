@@ -1,6 +1,6 @@
 // hestia_dashboard/src/types/api.ts
 // API Response Types based on Flask backend structure
-export interface ApiResponse<T> {
+export interface ApiResponse {
   ok: boolean;
   error?: string;
   [key: string]: unknown;
@@ -83,7 +83,7 @@ export interface TicketEvent {
 // API request/response types
 
 // GET /api/me
-export interface MeResponse extends ApiResponse<User> {
+export interface MeResponse extends ApiResponse {
   user?: User;
 }
 
@@ -100,17 +100,17 @@ export interface TicketsListParams {
 }
 
 // GET /api/tickets/<id> (MOCK)
-export interface TicketDetailResponse extends ApiResponse<Ticket> {
+export interface TicketDetailResponse extends ApiResponse {
   ticket?: Ticket;
 }
 
 // GET /api/tickets/<id>/events (MOCK)
-export interface TicketEventsResponse extends ApiResponse<TicketEvent[]> {
+export interface TicketEventsResponse extends ApiResponse {
   events?: TicketEvent[];
 }
 
 // POST /tickets/<id>/{action}
-export interface TicketActionResponse extends ApiResponse<unknown> {
+export interface TicketActionResponse extends ApiResponse {
   message?: string;
   ticket_id?: number;
   new_estado?: TicketEstado;

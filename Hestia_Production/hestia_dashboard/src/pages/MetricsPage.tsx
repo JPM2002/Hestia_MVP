@@ -188,7 +188,7 @@ export function MetricsPage() {
         });
     }, [allTickets]);
 
-    // Get tickets for selected worker (sorted: open first, then resolved)
+    // Get tickets for selected worker (sorted: open first by created_at desc, then resolved by finished_at desc)
     const workerTickets = useMemo(() => {
         if (selectedWorker === null) return [];
         const tickets = allTickets.filter((t) => t.assigned_to === selectedWorker);
@@ -200,7 +200,17 @@ export function MetricsPage() {
 
             if (aOpen && !bOpen) return -1;
             if (!aOpen && bOpen) return 1;
-            return 0; // same status, keep original order
+
+            // Same type: order by date
+            if (aOpen && bOpen) {
+                // Both open: order by created_at desc (most recent first)
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            } else {
+                // Both resolved: order by finished_at desc
+                const aFinished = a.finished_at ? new Date(a.finished_at).getTime() : 0;
+                const bFinished = b.finished_at ? new Date(b.finished_at).getTime() : 0;
+                return bFinished - aFinished;
+            }
         });
     }, [allTickets, selectedWorker]);
 
@@ -211,13 +221,14 @@ export function MetricsPage() {
 
         allTickets.forEach((ticket) => {
             const type = ticket.area; // fallback: usar area como tipo
-            const location = ticket.ubicacion || '-';
+            // Normalizar ubicación: trim + toLowerCase
+            const location = (ticket.ubicacion || '-').trim().toLowerCase();
             const key = `${type}||${location}`;
 
             if (!groupMap.has(key)) {
                 groupMap.set(key, {
                     type,
-                    location,
+                    location: ticket.ubicacion || '-', // mantener original para display
                     count: 0,
                     lastCreated: ticket.created_at,
                     ticketIds: [],
@@ -280,6 +291,7 @@ export function MetricsPage() {
                         value={period}
                         onChange={(e) => setPeriod(e.target.value as MetricsPeriod)}
                         className="periodSelect"
+                        disabled={activeTab === 'performance' || activeTab === 'recurring'}
                     >
                         <option value="today">Hoy</option>
                         <option value="yesterday">Ayer</option>
@@ -287,6 +299,9 @@ export function MetricsPage() {
                         <option value="30d">Últimos 30 días</option>
                         <option value="all">Todo el tiempo</option>
                     </select>
+                    {(activeTab === 'performance' || activeTab === 'recurring') && (
+                        <span className="fixedWindowLabel">Ventana fija: 30 días</span>
+                    )}
                 </div>
             </header>
 

@@ -49,6 +49,24 @@
     border-color: #4a90e2;
 }
 
+.periodSelect:disabled {
+    background-color: #f5f5f5;
+    color: #999;
+    cursor: not-allowed;
+    border-color: #e0e0e0;
+}
+
+.periodSelect:disabled:hover {
+    border-color: #e0e0e0;
+}
+
+.fixedWindowLabel {
+    font-size: 0.875rem;
+    color: #666;
+    font-style: italic;
+    margin-left: 0.5rem;
+}
+
 /* Tabs */
 
 .metricsTabs {

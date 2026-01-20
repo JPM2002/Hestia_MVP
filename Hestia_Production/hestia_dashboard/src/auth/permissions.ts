@@ -12,6 +12,13 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   {
+    path: '/overview',
+    label: 'Overview',
+    icon: '🏠',
+    allowedRoles: ['GERENTE', 'SUPERADMIN'],
+    end: true,
+  },
+  {
     path: '/tickets',
     label: 'Tickets',
     icon: '🎫',
@@ -25,19 +32,13 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ['GERENTE', 'SUPERADMIN'],
     end: true,
   },
-  // Future routes (uncomment when implemented):
-  // {
-  //   path: '/reportes',
-  //   label: 'Reportes',
-  //   icon: '📈',
-  //   allowedRoles: ['GERENTE', 'SUPERADMIN'],
-  // },
-  // {
-  //   path: '/admin',
-  //   label: 'Admin',
-  //   icon: '⚙️',
-  //   allowedRoles: ['SUPERADMIN'],
-  // },
+  {
+    path: '/admin',
+    label: 'Admin',
+    icon: '⚙️',
+    allowedRoles: ['SUPERADMIN'],
+    end: true,
+  },
 ];
 
 export function filterNavByRole(items: NavItem[], role: Role): NavItem[] {
