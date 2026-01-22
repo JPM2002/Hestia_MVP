@@ -1,7 +1,7 @@
 .ticketsPage {
-    padding: 2rem;
     max-width: 1400px;
     margin: 0 auto;
+    padding: 2rem;
 }
 
 .pageHeader {
@@ -9,108 +9,58 @@
 }
 
 .pageHeader h1 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.5rem;
     font-size: 2rem;
-    color: #1a1a1a;
+    font-weight: 600;
+    color: var(--text);
 }
 
 .pageHeader p {
     margin: 0;
-    color: #666;
+    opacity: 0.7;
+    color: var(--text);
 }
 
-/* Filters Bar */
-
-.filtersBar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    padding: 1.5rem;
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
+.filtersCard {
     margin-bottom: 1.5rem;
 }
 
-.filterGroup {
+.filtersBar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.filtersActions {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
 }
 
-.filterGroupWide {
-    grid-column: span 2;
+.filtersActions .divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
 }
 
-.filterGroup label {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #555;
-}
-
-.filterGroup select,
-.filterGroup input {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    background: white;
-}
-
-.filterGroup select:focus,
-.filterGroup input:focus {
-    outline: none;
-    border-color: #4a90e2;
-}
-
-.btnClearFilters {
-    grid-column: span 2;
-    padding: 0.6rem 1rem;
-    background-color: #e0e0e0;
-    color: #333;
-    border: none;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    font-weight: 500;
+.autoRefreshLabel {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    user-select: none;
 }
 
-.btnClearFilters:hover {
-    background-color: #d0d0d0;
-}
-
-/* Critical button */
-
-.btnCritical {
-    padding: 0.6rem 1rem;
-    background-color: #fff;
-    color: #333;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    font-weight: 600;
+.autoRefreshLabel input[type="checkbox"] {
     cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-    height: fit-content;
 }
-
-.btnCritical:hover {
-    background-color: #f7f7f7;
-}
-
-.btnCritical.active {
-    border-color: #d32f2f;
-    background-color: rgba(211, 47, 47, 0.10);
-    color: #b71c1c;
-}
-
-/* Table Card */
 
 .tableCard {
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
     overflow: hidden;
 }
 
@@ -124,101 +74,76 @@
 }
 
 .ticketsTable thead {
-    background-color: #f5f5f5;
+    background: var(--bg);
 }
 
 .ticketsTable th {
-    padding: 1rem;
+    padding: 0.875rem 1.25rem;
     text-align: left;
     font-weight: 600;
-    color: #333;
-    border-bottom: 2px solid #e0e0e0;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
 }
 
 .ticketsTable td {
-    padding: 1rem;
-    border-bottom: 1px solid #f0f0f0;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9375rem;
 }
 
-.clickableRow {
+.ticketsTable tbody tr {
+    transition: background 0.15s ease;
+}
+
+.ticketsTable tbody tr.clickableRow {
     cursor: pointer;
-    transition: background-color 0.15s;
 }
 
-.clickableRow:hover {
-    background-color: #f9f9f9;
+.ticketsTable tbody tr.clickableRow:hover {
+    background: var(--bg);
+}
+
+.ticketsTable tbody tr:last-child td {
+    border-bottom: none;
 }
 
 .mono {
     font-family: 'Courier New', monospace;
     font-weight: 600;
-    color: #4a90e2;
+    color: var(--primary);
 }
 
-/* States */
-
 .stateMessage {
-    padding: 3rem;
+    padding: 3rem 2rem;
     text-align: center;
-    color: #666;
+    color: var(--text);
 }
 
 .stateMessage p {
-    font-size: 1.1rem;
-    margin-bottom: 1rem;
+    margin: 0 0 1rem;
+    font-size: 1rem;
 }
 
 .stateError {
-    color: #d32f2f;
+    color: #dc2626;
 }
 
-.btnRetry {
-    padding: 0.6rem 1.5rem;
-    background-color: #4a90e2;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
+.paginationBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
 }
 
-.btnRetry:hover {
-    background-color: #357abd;
-}
-
-/* Responsive */
-
-@media (max-width: 768px) {
-    .ticketsPage {
-        padding: 1rem;
-    }
-
-    .filtersBar {
-        grid-template-columns: 1fr;
-    }
-
-    .filterGroupWide {
-        grid-column: span 1;
-    }
-
-    .btnClearFilters {
-        grid-column: span 1;
-    }
-
-    .btnCritical {
-        width: 100%;
-    }
-
-    .ticketsTable {
-        font-size: 0.85rem;
-    }
-
-    .ticketsTable th,
-    .ticketsTable td {
-        padding: 0.75rem 0.5rem;
-    }
+.paginationInfo {
+    font-size: 0.875rem;
+    color: var(--text);
+    opacity: 0.8;
 }

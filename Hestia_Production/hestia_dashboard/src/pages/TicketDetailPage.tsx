@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getTicketById, getTicketEvents, updateTicketState } from '../services/api';
 import type { Ticket, TicketEvent, TicketActionType } from '../types/api';
-import { Badge } from '../components/Badge';
+import { Badge } from '../ui/Badge';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Skeleton } from '../ui/Skeleton';
 import { Modal } from '../components/Modal';
 import { formatDate, getUserName, getSLAStatus } from '../utils/formatters';
 import './TicketDetailPage.css';
@@ -132,9 +135,9 @@ export function TicketDetailPage() {
         <div className="ticketDetailPage">
             {/* Header with Back Button */}
             <div className="detailHeader">
-                <button className="btnBack" onClick={() => navigate('/tickets')}>
+                <Button variant="ghost" onClick={() => navigate('/tickets')}>
                     ← Volver
-                </button>
+                </Button>
                 <h1>Ticket #{ticketId}</h1>
             </div>
 
@@ -147,23 +150,31 @@ export function TicketDetailPage() {
 
             {/* Ticket Info */}
             {isLoadingTicket && (
-                <div className="stateMessage">
-                    <p>Cargando ticket...</p>
-                </div>
+                <Card>
+                    <div style={{ padding: '1rem' }}>
+                        <Skeleton width="60%" height={24} style={{ marginBottom: '1rem' }} />
+                        <Skeleton width="100%" height={16} style={{ marginBottom: '0.5rem' }} />
+                        <Skeleton width="100%" height={16} style={{ marginBottom: '0.5rem' }} />
+                        <Skeleton width="80%" height={16} style={{ marginBottom: '1rem' }} />
+                        <Skeleton width="100%" height={100} />
+                    </div>
+                </Card>
             )}
 
             {!isLoadingTicket && errorTicket && (
-                <div className="stateMessage stateError">
-                    <p>{errorTicket}</p>
-                    <button className="btnRetry" onClick={loadTicket}>
-                        Reintentar
-                    </button>
-                </div>
+                <Card>
+                    <div className="stateMessage stateError">
+                        <p>{errorTicket}</p>
+                        <Button variant="primary" onClick={loadTicket}>
+                            Reintentar
+                        </Button>
+                    </div>
+                </Card>
             )}
 
             {!isLoadingTicket && !errorTicket && ticket && (
                 <div className="ticketInfo">
-                    <div className="infoCard">
+                    <Card>
                         <div className="infoHeader">
                             <h2>{ticket.ubicacion || 'Sin ubicación'}</h2>
                             <div className="badges">
@@ -207,53 +218,57 @@ export function TicketDetailPage() {
                         {availableActions.length > 0 && (
                             <div className="actionButtons">
                                 {availableActions.includes('accept') && (
-                                    <button
-                                        className="btnAction btnAccept"
+                                    <Button
+                                        variant="primary"
                                         onClick={() => handleAction('accept')}
                                         disabled={isProcessing}
+                                        loading={isProcessing}
                                     >
                                         Aceptar
-                                    </button>
+                                    </Button>
                                 )}
                                 {availableActions.includes('start') && (
-                                    <button
-                                        className="btnAction btnStart"
+                                    <Button
+                                        variant="primary"
                                         onClick={() => handleAction('start')}
                                         disabled={isProcessing}
+                                        loading={isProcessing}
                                     >
                                         Iniciar
-                                    </button>
+                                    </Button>
                                 )}
                                 {availableActions.includes('pause') && (
-                                    <button
-                                        className="btnAction btnPause"
+                                    <Button
+                                        variant="secondary"
                                         onClick={handlePauseClick}
                                         disabled={isProcessing}
                                     >
                                         Pausar
-                                    </button>
+                                    </Button>
                                 )}
                                 {availableActions.includes('resume') && (
-                                    <button
-                                        className="btnAction btnResume"
+                                    <Button
+                                        variant="primary"
                                         onClick={() => handleAction('resume')}
                                         disabled={isProcessing}
+                                        loading={isProcessing}
                                     >
                                         Reanudar
-                                    </button>
+                                    </Button>
                                 )}
                                 {availableActions.includes('finish') && (
-                                    <button
-                                        className="btnAction btnFinish"
+                                    <Button
+                                        variant="primary"
                                         onClick={() => handleAction('finish')}
                                         disabled={isProcessing}
+                                        loading={isProcessing}
                                     >
                                         Finalizar
-                                    </button>
+                                    </Button>
                                 )}
                             </div>
                         )}
-                    </div>
+                    </Card>
                 </div>
             )}
 
@@ -262,17 +277,25 @@ export function TicketDetailPage() {
                 <h2>Timeline</h2>
 
                 {isLoadingEvents && (
-                    <div className="stateMessage">
-                        <p>Cargando eventos...</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {[...Array(3)].map((_, i) => (
+                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                                <Skeleton width={12} height={12} style={{ borderRadius: '50%', marginTop: '0.25rem' }} />
+                                <div style={{ flex: 1 }}>
+                                    <Skeleton width="30%" height={16} style={{ marginBottom: '0.5rem' }} />
+                                    <Skeleton width="60%" height={14} />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 
                 {!isLoadingEvents && errorEvents && (
                     <div className="stateMessage stateError">
                         <p>{errorEvents}</p>
-                        <button className="btnRetry" onClick={loadEvents}>
+                        <Button variant="primary" onClick={loadEvents}>
                             Reintentar
-                        </button>
+                        </Button>
                     </div>
                 )}
 

@@ -32,6 +32,10 @@ npm run preview       # Preview del build
 - `eslint.config.js` configuración ESLint (flat config)
 - `.prettierrc` / `.prettierignore` configuración Prettier
 
+## Docs
+
+- [API Contract v1](docs/API_CONTRACT_v1.md) - Especificación de endpoints REST
+
 ## Notas
 
 - Se ajustó `src/index.css` para remover estilos por defecto del template de Vite que limitaban el ancho del layout.

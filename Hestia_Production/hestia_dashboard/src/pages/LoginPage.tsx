@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import type { User } from '../types/api';
 import { APIClientError } from '../api/client';
+import { Card } from '../ui/Card';
+import { Input } from '../ui/Input';
+import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
 import './LoginPage.css';
 
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
@@ -46,6 +50,14 @@ export function LoginPage() {
         }
     };
 
+    const roleOptions = [
+        { value: 'RECEPCION', label: 'Recepción' },
+        { value: 'TECNICO', label: 'Técnico' },
+        { value: 'SUPERVISOR', label: 'Supervisor' },
+        { value: 'GERENTE', label: 'Gerente' },
+        { value: 'SUPERADMIN', label: 'Superadmin' },
+    ];
+
     return (
         <div className="login-page">
             <div className="login-container">
@@ -56,72 +68,65 @@ export function LoginPage() {
 
                 {USE_MOCKS ? (
                     // Mock Mode: Role selector
-                    <form onSubmit={handleMockLogin} className="login-form">
-                        <div className="mode-badge">Modo: DEMO</div>
+                    <Card>
+                        <form onSubmit={handleMockLogin} className="login-form">
+                            <div className="mode-badge">Modo: DEMO</div>
 
-                        <div className="form-group">
-                            <label htmlFor="role">Seleccionar Rol:</label>
-                            <select
-                                id="role"
+                            <Select
+                                label="Seleccionar Rol:"
                                 value={selectedRole}
                                 onChange={(e) => setSelectedRole(e.target.value as User['role'])}
-                                className="form-select"
-                            >
-                                <option value="RECEPCION">Recepción</option>
-                                <option value="TECNICO">Técnico</option>
-                                <option value="SUPERVISOR">Supervisor</option>
-                                <option value="GERENTE">Gerente</option>
-                                <option value="SUPERADMIN">Superadmin</option>
-                            </select>
-                        </div>
+                                options={roleOptions}
+                            />
 
-                        <button type="submit" className="btn-login">
-                            Entrar como Demo
-                        </button>
+                            <Button type="submit" variant="primary" style={{ width: '100%', marginTop: '1rem' }}>
+                                Entrar como Demo
+                            </Button>
 
-                        <p className="login-hint">
-                            💡 Cambia el rol para ver diferentes permisos en el Sidebar
-                        </p>
-                    </form>
+                            <p className="login-hint">
+                                💡 Cambia el rol para ver diferentes permisos en el Sidebar
+                            </p>
+                        </form>
+                    </Card>
                 ) : (
                     // Real Mode: Email/Password
-                    <form onSubmit={handleRealLogin} className="login-form">
-                        <div className="mode-badge mode-real">Modo: PRODUCCIÓN</div>
+                    <Card>
+                        <form onSubmit={handleRealLogin} className="login-form">
+                            <div className="mode-badge mode-real">Modo: PRODUCCIÓN</div>
 
-                        {error && <div className="error-message">{error}</div>}
+                            {error && <div className="error-message">{error}</div>}
 
-                        <div className="form-group">
-                            <label htmlFor="email">Email:</label>
-                            <input
-                                id="email"
+                            <Input
+                                label="Email:"
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="form-input"
                                 placeholder="usuario@hotel.com"
                                 required
                                 disabled={loading}
                             />
-                        </div>
 
-                        <div className="form-group">
-                            <label htmlFor="password">Contraseña:</label>
-                            <input
-                                id="password"
+                            <Input
+                                label="Contraseña:"
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="form-input"
                                 placeholder="••••••••"
                                 required
                                 disabled={loading}
                             />
-                        </div>
 
-                        <button type="submit" className="btn-login" disabled={loading}>
-                            {loading ? 'Ingresando...' : 'Ingresar'}
-                        </button>
-                    </form>
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                disabled={loading}
+                                loading={loading}
+                                style={{ width: '100%', marginTop: '1rem' }}
+                            >
+                                Ingresar
+                            </Button>
+                        </form>
+                    </Card>
                 )}
             </div>
         </div>

@@ -1,8 +1,36 @@
 // Centralized API client with environment-based configuration
 // Handles fetch requests, error parsing, and credential management
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+// If BASE_URL is empty, we rely on Vite proxy prefixes like /auth and /ops.
+// If BASE_URL is set (production), we strip those prefixes so the backend
+// receives the real paths (e.g. /auth/login -> /login, /ops/tickets -> /tickets).
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
+
+/**
+ * Normalize paths so the same frontend code works both:
+ * - Dev (same origin): uses Vite proxies (/auth/*, /ops/*)
+ * - Prod (different origin via BASE_URL): strips proxy prefixes
+ */
+export function normalizeApiPath(path: string): string {
+    if (!path.startsWith('/')) path = `/${path}`;
+
+    // Only strip proxy prefixes when we are pointing at a real backend base URL.
+    if (BASE_URL) {
+        if (path === '/ops') return '';
+        if (path.startsWith('/ops/')) path = path.slice('/ops'.length);
+
+        if (path === '/auth') return '';
+        if (path.startsWith('/auth/')) path = path.slice('/auth'.length);
+    }
+
+    return path;
+}
+
+export function buildApiUrl(path: string): string {
+    const normalized = normalizeApiPath(path);
+    return USE_MOCKS ? path : `${BASE_URL}${normalized}`;
+}
 
 export interface APIError {
     status: number;
@@ -43,7 +71,7 @@ export async function request<T = unknown>(
     path: string,
     options: RequestInit = {}
 ): Promise<T> {
-    const url = USE_MOCKS ? path : `${BASE_URL}${path}`;
+    const url = buildApiUrl(path);
 
     try {
         const response = await fetch(url, {
@@ -138,7 +166,7 @@ export async function loginRequest(
     email: string,
     password: string
 ): Promise<{ ok: boolean }> {
-    const url = USE_MOCKS ? '/auth/login' : `${BASE_URL}/auth/login`;
+    const url = buildApiUrl('/auth/login');
     const formData = new URLSearchParams({ email, password });
 
     try {
@@ -173,7 +201,7 @@ export async function loginRequest(
  * Logout request
  */
 export async function logoutRequest(): Promise<void> {
-    const url = USE_MOCKS ? '/auth/logout' : `${BASE_URL}/auth/logout`;
+    const url = buildApiUrl('/auth/logout');
 
     await fetch(url, {
         credentials: 'include',

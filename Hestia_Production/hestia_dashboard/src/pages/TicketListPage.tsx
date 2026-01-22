@@ -4,7 +4,15 @@ import { getTickets } from '../services/api';
 import type { Ticket, TicketEstado, TicketPrioridad, TicketArea } from '../types/api';
 import { Badge } from '../components/Badge';
 import { formatDateShort, getUserName, getSLAStatus } from '../utils/formatters';
+import { exportToCSV, exportToJSON } from '../utils/export';
+import { Card } from '../ui/Card';
+import { Input } from '../ui/Input';
+import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
+import { Skeleton } from '../ui/Skeleton';
 import './TicketListPage.css';
+
+const PAGE_SIZE = 20;
 
 export function TicketListPage() {
     const navigate = useNavigate();
@@ -12,7 +20,13 @@ export function TicketListPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // NEW: Critical toggle
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+
+    // Auto-refresh
+    const [autoRefresh, setAutoRefresh] = useState(false);
+
+    // Critical toggle
     const [criticalOnly, setCriticalOnly] = useState(false);
 
     // Filter states
@@ -23,8 +37,6 @@ export function TicketListPage() {
     const [filterFrom, setFilterFrom] = useState('');
     const [filterTo, setFilterTo] = useState('');
     const [filterSearch, setFilterSearch] = useState('');
-
-
 
     // Load tickets
     const loadTickets = async () => {
@@ -44,6 +56,17 @@ export function TicketListPage() {
         loadTickets();
     }, []);
 
+    // Auto-refresh effect
+    useEffect(() => {
+        if (!autoRefresh) return;
+
+        const interval = setInterval(() => {
+            loadTickets();
+        }, 45000); // 45 seconds
+
+        return () => clearInterval(interval);
+    }, [autoRefresh]);
+
     const clearFilters = () => {
         setFilterEstado('');
         setFilterPrioridad('');
@@ -53,9 +76,10 @@ export function TicketListPage() {
         setFilterTo('');
         setFilterSearch('');
         setCriticalOnly(false);
+        setCurrentPage(1);
     };
 
-    // NEW: toggle críticos (setea filtros)
+    // Toggle críticos (setea filtros)
     const toggleCritical = () => {
         if (criticalOnly) {
             // OFF -> vuelve a vacío
@@ -63,21 +87,16 @@ export function TicketListPage() {
             return;
         }
 
-
         // ON -> setea solo 2 condiciones: estado + prioridad
         setCriticalOnly(true);
-
-        // 1) Pendientes
         setFilterEstado('PENDIENTE');
-
-        // 2) Alta prioridad (incluiremos URGENTE en el filtrado)
         setFilterPrioridad('ALTA');
-        // opcional: limpiar otros filtros para que sea “rápido y claro”
         setFilterArea('');
         setFilterAsignado('');
         setFilterSearch('');
-        setFilterFrom(''); // Clear date filters
+        setFilterFrom('');
         setFilterTo('');
+        setCurrentPage(1);
     };
 
     // Client-side filtering
@@ -159,9 +178,64 @@ export function TicketListPage() {
         criticalOnly,
     ]);
 
+    // Pagination
+    const totalPages = Math.ceil(filteredTickets.length / PAGE_SIZE);
+    const paginatedTickets = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        return filteredTickets.slice(start, start + PAGE_SIZE);
+    }, [filteredTickets, currentPage]);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterEstado, filterPrioridad, filterArea, filterAsignado, filterFrom, filterTo, filterSearch, criticalOnly]);
+
     const handleRowClick = (id: number) => {
         navigate(`/tickets/${id}`);
     };
+
+    const handleExportCSV = () => {
+        exportToCSV(filteredTickets, `tickets_${new Date().toISOString().split('T')[0]}.csv`);
+    };
+
+    const handleExportJSON = () => {
+        exportToJSON(filteredTickets, `tickets_${new Date().toISOString().split('T')[0]}.json`);
+    };
+
+    const estadoOptions = [
+        { value: '', label: 'Todos' },
+        { value: 'PENDIENTE', label: 'Pendiente' },
+        { value: 'PENDIENTE_APROBACION', label: 'Pend. Aprobación' },
+        { value: 'ASIGNADO', label: 'Asignado' },
+        { value: 'ACEPTADO', label: 'Aceptado' },
+        { value: 'EN_CURSO', label: 'En Curso' },
+        { value: 'PAUSADO', label: 'Pausado' },
+        { value: 'RESUELTO', label: 'Resuelto' },
+    ];
+
+    const prioridadOptions = [
+        { value: '', label: 'Todas' },
+        { value: 'BAJA', label: 'Baja' },
+        { value: 'MEDIA', label: 'Media' },
+        { value: 'ALTA', label: 'Alta' },
+        { value: 'URGENTE', label: 'Urgente' },
+    ];
+
+    const areaOptions = [
+        { value: '', label: 'Todas' },
+        { value: 'MANTENCION', label: 'Mantención' },
+        { value: 'HOUSEKEEPING', label: 'Housekeeping' },
+        { value: 'ROOMSERVICE', label: 'Room Service' },
+    ];
+
+    const asignadoOptions = [
+        { value: '', label: 'Todos' },
+        { value: 'unassigned', label: 'Sin asignar' },
+        { value: '5', label: 'Juan Técnico' },
+        { value: '6', label: 'Carlos Técnico' },
+        { value: '7', label: 'Ana Roomservice' },
+        { value: '8', label: 'María Housekeeping' },
+    ];
 
     return (
         <div className="ticketsPage">
@@ -171,85 +245,56 @@ export function TicketListPage() {
             </div>
 
             {/* Filters */}
-            <div className="filtersBar">
-                <div className="filterGroup">
-                    <label>Estado:</label>
-                    <select
+            <Card className="filtersCard">
+                <div className="filtersBar">
+                    <Select
+                        label="Estado:"
                         value={filterEstado}
-                        disabled={criticalOnly}
                         onChange={(e) => setFilterEstado(e.target.value as TicketEstado | '')}
-                    >
-                        <option value="">Todos</option>
-                        <option value="PENDIENTE">Pendiente</option>
-                        <option value="PENDIENTE_APROBACION">Pend. Aprobación</option>
-                        <option value="ASIGNADO">Asignado</option>
-                        <option value="ACEPTADO">Aceptado</option>
-                        <option value="EN_CURSO">En Curso</option>
-                        <option value="PAUSADO">Pausado</option>
-                        <option value="RESUELTO">Resuelto</option>
-                    </select>
-                </div>
-
-                <div className="filterGroup">
-                    <label>Prioridad:</label>
-                    <select
-                        value={filterPrioridad}
+                        options={estadoOptions}
                         disabled={criticalOnly}
+                    />
+
+                    <Select
+                        label="Prioridad:"
+                        value={filterPrioridad}
                         onChange={(e) => setFilterPrioridad(e.target.value as TicketPrioridad | '')}
-                    >
-                        <option value="">Todas</option>
-                        <option value="BAJA">Baja</option>
-                        <option value="MEDIA">Media</option>
-                        <option value="ALTA">Alta</option>
-                        <option value="URGENTE">Urgente</option>
-                    </select>
-                </div>
+                        options={prioridadOptions}
+                        disabled={criticalOnly}
+                    />
 
-                <div className="filterGroup">
-                    <label>Área:</label>
-                    <select value={filterArea} onChange={(e) => setFilterArea(e.target.value as TicketArea | '')}>
-                        <option value="">Todas</option>
-                        <option value="MANTENCION">Mantención</option>
-                        <option value="HOUSEKEEPING">Housekeeping</option>
-                        <option value="ROOMSERVICE">Room Service</option>
-                    </select>
-                </div>
+                    <Select
+                        label="Área:"
+                        value={filterArea}
+                        onChange={(e) => setFilterArea(e.target.value as TicketArea | '')}
+                        options={areaOptions}
+                    />
 
-                <div className="filterGroup">
-                    <label>Asignado:</label>
-                    <select value={filterAsignado} onChange={(e) => setFilterAsignado(e.target.value)}>
-                        <option value="">Todos</option>
-                        <option value="unassigned">Sin asignar</option>
-                        <option value="5">Juan Técnico</option>
-                        <option value="6">Carlos Técnico</option>
-                        <option value="7">Ana Roomservice</option>
-                        <option value="8">María Housekeeping</option>
-                    </select>
-                </div>
+                    <Select
+                        label="Asignado:"
+                        value={filterAsignado}
+                        onChange={(e) => setFilterAsignado(e.target.value)}
+                        options={asignadoOptions}
+                    />
 
-                <div className="filterGroup">
-                    <label>Desde:</label>
-                    <input
+                    <Input
+                        label="Desde:"
                         type="date"
                         value={filterFrom}
-                        disabled={criticalOnly}
                         onChange={(e) => setFilterFrom(e.target.value)}
+                        disabled={criticalOnly}
                     />
-                </div>
 
-                <div className="filterGroup">
-                    <label>Hasta:</label>
-                    <input
+                    <Input
+                        label="Hasta:"
                         type="date"
                         value={filterTo}
-                        disabled={criticalOnly}
                         onChange={(e) => setFilterTo(e.target.value)}
+                        disabled={criticalOnly}
                     />
-                </div>
 
-                <div className="filterGroup filterGroupWide">
-                    <label>Buscar:</label>
-                    <input
+                    <Input
+                        label="Buscar:"
                         type="text"
                         placeholder="Habitación o palabra clave..."
                         value={filterSearch}
@@ -257,45 +302,48 @@ export function TicketListPage() {
                     />
                 </div>
 
-                {/* Critical button */}
-                <button
-                    type="button"
-                    className={`btnCritical ${criticalOnly ? 'active' : ''}`}
-                    onClick={toggleCritical}
-                    title="Pendiente + Alta/Urgente"
-                >
-                    CRÍTICOS
-                </button>
+                <div className="filtersActions">
+                    <Button
+                        variant={criticalOnly ? 'danger' : 'secondary'}
+                        onClick={toggleCritical}
+                    >
+                        CRÍTICOS
+                    </Button>
 
-                <button className="btnClearFilters" onClick={clearFilters}>
-                    Limpiar filtros
-                </button>
-            </div>
+                    <Button variant="ghost" onClick={clearFilters}>
+                        Limpiar filtros
+                    </Button>
+
+                    <div className="divider" />
+
+                    <Button variant="secondary" onClick={loadTickets} disabled={isLoading}>
+                        🔄 Actualizar
+                    </Button>
+
+                    <label className="autoRefreshLabel">
+                        <input
+                            type="checkbox"
+                            checked={autoRefresh}
+                            onChange={(e) => setAutoRefresh(e.target.checked)}
+                        />
+                        <span>Auto (45s)</span>
+                    </label>
+
+                    <div className="divider" />
+
+                    <Button variant="ghost" onClick={handleExportCSV} disabled={filteredTickets.length === 0}>
+                        📥 CSV
+                    </Button>
+
+                    <Button variant="ghost" onClick={handleExportJSON} disabled={filteredTickets.length === 0}>
+                        📥 JSON
+                    </Button>
+                </div>
+            </Card>
 
             {/* Content */}
-            <div className="tableCard">
+            <Card className="tableCard">
                 {isLoading && (
-                    <div className="stateMessage">
-                        <p>Cargando tickets...</p>
-                    </div>
-                )}
-
-                {!isLoading && error && (
-                    <div className="stateMessage stateError">
-                        <p>{error}</p>
-                        <button className="btnRetry" onClick={loadTickets}>
-                            Reintentar
-                        </button>
-                    </div>
-                )}
-
-                {!isLoading && !error && filteredTickets.length === 0 && (
-                    <div className="stateMessage">
-                        <p>No se encontraron tickets</p>
-                    </div>
-                )}
-
-                {!isLoading && !error && filteredTickets.length > 0 && (
                     <div className="tableWrapper">
                         <table className="ticketsTable">
                             <thead>
@@ -311,34 +359,111 @@ export function TicketListPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredTickets.map((ticket) => {
-                                    const slaStatus = getSLAStatus(ticket);
-                                    return (
-                                        <tr
-                                            key={ticket.id}
-                                            onClick={() => handleRowClick(ticket.id)}
-                                            className="clickableRow"
-                                        >
-                                            <td className="mono">#{ticket.id}</td>
-                                            <td>
-                                                <Badge type="estado" value={ticket.estado} />
-                                            </td>
-                                            <td>
-                                                <Badge type="prioridad" value={ticket.prioridad} />
-                                            </td>
-                                            <td>{ticket.ubicacion || '-'}</td>
-                                            <td>{ticket.area}</td>
-                                            <td>{getUserName(ticket.assigned_to)}</td>
-                                            <td>{formatDateShort(ticket.created_at)}</td>
-                                            <td>{slaStatus && <Badge type="sla" value={slaStatus} />}</td>
-                                        </tr>
-                                    );
-                                })}
+                                {[...Array(5)].map((_, i) => (
+                                    <tr key={i}>
+                                        <td><Skeleton width={60} /></td>
+                                        <td><Skeleton width={80} /></td>
+                                        <td><Skeleton width={70} /></td>
+                                        <td><Skeleton width={50} /></td>
+                                        <td><Skeleton width={100} /></td>
+                                        <td><Skeleton width={120} /></td>
+                                        <td><Skeleton width={90} /></td>
+                                        <td><Skeleton width={70} /></td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 )}
-            </div>
+
+                {!isLoading && error && (
+                    <div className="stateMessage stateError">
+                        <p>{error}</p>
+                        <Button variant="primary" onClick={loadTickets}>
+                            Reintentar
+                        </Button>
+                    </div>
+                )}
+
+                {!isLoading && !error && filteredTickets.length === 0 && (
+                    <div className="stateMessage">
+                        <p>No se encontraron tickets</p>
+                    </div>
+                )}
+
+                {!isLoading && !error && paginatedTickets.length > 0 && (
+                    <>
+                        <div className="tableWrapper">
+                            <table className="ticketsTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Estado</th>
+                                        <th>Prioridad</th>
+                                        <th>Habitación</th>
+                                        <th>Área</th>
+                                        <th>Asignado</th>
+                                        <th>Creado</th>
+                                        <th>SLA</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginatedTickets.map((ticket) => {
+                                        const slaStatus = getSLAStatus(ticket);
+                                        return (
+                                            <tr
+                                                key={ticket.id}
+                                                onClick={() => handleRowClick(ticket.id)}
+                                                className="clickableRow"
+                                            >
+                                                <td className="mono">#{ticket.id}</td>
+                                                <td>
+                                                    <Badge type="estado" value={ticket.estado} />
+                                                </td>
+                                                <td>
+                                                    <Badge type="prioridad" value={ticket.prioridad} />
+                                                </td>
+                                                <td>{ticket.ubicacion || '-'}</td>
+                                                <td>{ticket.area}</td>
+                                                <td>{getUserName(ticket.assigned_to)}</td>
+                                                <td>{formatDateShort(ticket.created_at)}</td>
+                                                <td>{slaStatus && <Badge type="sla" value={slaStatus} />}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div className="paginationBar">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    ← Anterior
+                                </Button>
+
+                                <span className="paginationInfo">
+                                    Página {currentPage} de {totalPages} ({filteredTickets.length} tickets)
+                                </span>
+
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Siguiente →
+                                </Button>
+                            </div>
+                        )}
+                    </>
+                )}
+            </Card>
         </div>
     );
 }

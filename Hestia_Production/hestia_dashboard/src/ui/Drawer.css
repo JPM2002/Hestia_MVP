@@ -1,0 +1,58 @@
+.uiDrawerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.35);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 1000;
+}
+
+.uiDrawer {
+  height: 100%;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -20px 0 60px rgba(16, 24, 40, 0.18);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 140ms ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(12px); opacity: 0.75; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.uiDrawer__head {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.uiDrawer__title {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.uiDrawer__close {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+}
+
+.uiDrawer__close:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+
+.uiDrawer__body {
+  padding: 16px;
+  overflow: auto;
+  flex: 1;
+}
+
+.uiDrawer__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}

@@ -1,0 +1,48 @@
+.uiCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.06);
+  overflow: hidden;
+}
+
+.uiCard__head {
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.uiCard__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uiCard__title {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.uiCard__subtitle {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.uiCard__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uiCard__body {
+  padding: 16px;
+}
+
+.uiCard__footer {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card-bg) 85%, var(--bg));
+}

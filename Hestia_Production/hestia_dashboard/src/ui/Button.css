@@ -1,0 +1,111 @@
+.uiBtn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--fg);
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  user-select: none;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.uiBtn--sm {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.uiBtn--md {
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.uiBtn--primary {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--primary) 92%, white 8%), var(--primary));
+  border-color: color-mix(in oklab, var(--primary) 70%, black 30%);
+  color: white;
+}
+
+.uiBtn--secondary {
+  background: var(--card-bg);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.uiBtn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.uiBtn--danger {
+  background: color-mix(in oklab, var(--danger) 90%, black 10%);
+  border-color: color-mix(in oklab, var(--danger) 70%, black 30%);
+  color: white;
+}
+
+.uiBtn:hover {
+  transform: translateY(-1px);
+}
+
+.uiBtn:active {
+  transform: translateY(0);
+}
+
+.uiBtn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.uiBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.uiBtn__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in oklab, white 25%, transparent 75%);
+  border-top-color: white;
+  animation: uiSpin 900ms linear infinite;
+}
+
+.uiBtn--secondary .uiBtn__spinner {
+  border: 2px solid color-mix(in oklab, var(--fg) 20%, transparent 80%);
+  border-top-color: var(--fg);
+}
+
+.uiBtn--ghost .uiBtn__spinner {
+  border: 2px solid color-mix(in oklab, var(--muted) 25%, transparent 75%);
+  border-top-color: var(--muted);
+}
+
+.uiBtn__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.uiBtn__right {
+  display: inline-flex;
+}
+
+@keyframes uiSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

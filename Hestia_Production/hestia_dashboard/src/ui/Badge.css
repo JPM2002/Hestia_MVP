@@ -1,0 +1,96 @@
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Estado badges */
+.badge-estado-pendiente,
+.badge-estado-pendiente-aprobacion {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.badge-estado-asignado {
+    background-color: #cfe2ff;
+    color: #084298;
+}
+
+.badge-estado-aceptado {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.badge-estado-en-curso {
+    background-color: #cff4fc;
+    color: #055160;
+}
+
+.badge-estado-pausado {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+.badge-estado-resuelto {
+    background-color: #d1e7dd;
+    color: #0a3622;
+}
+
+.badge-estado-derivado {
+    background-color: #e2d9f3;
+    color: #432874;
+}
+
+.badge-estado-eliminado {
+    background-color: #e9ecef;
+    color: #495057;
+}
+
+/* Prioridad badges */
+.badge-prioridad-baja {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.badge-prioridad-media {
+    background-color: #cfe2ff;
+    color: #084298;
+}
+
+.badge-prioridad-alta {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.badge-prioridad-urgente {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+/* SLA badges */
+.badge-sla-overdue {
+    background-color: #dc3545;
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+.badge-sla-at-risk {
+    background-color: #ffc107;
+    color: #000;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}

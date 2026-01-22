@@ -1,0 +1,37 @@
+.uiSelectWrap {
+  position: relative;
+}
+
+.uiSelect {
+  width: 100%;
+  padding: 12px 34px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--fg);
+  outline: none;
+  appearance: none;
+}
+
+.uiSelect:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 25%, transparent);
+}
+
+.uiSelect--error {
+  border-color: var(--danger);
+}
+
+.uiSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.uiSelectChevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
