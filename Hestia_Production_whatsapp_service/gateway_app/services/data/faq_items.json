@@ -22,12 +22,12 @@
   {
     "key": "fast_checkout",
     "q": "¿Cómo puedo hacer el check-out rápido?",
-    "a": "Puede hacer Fast check-out dejando la tarjeta de la habitación dentro de la caja que se encuentra frente al mesón de recepción, en caso de haber dejado su cuenta cerrada (pagando al Check-In)."
+    "a": "Puede hacer Fast check-out dejando la tarjeta de la habitación dentro de la caja que se encuentra frente al mesón de recepción, en caso de haber dejado su cuenta cerrada, pagando al Check In."
   },
   {
     "key": "late_checkout_payment",
     "q": "¿Puedo pagar el late check-out?",
-    "a": "Sí, previa coordinación con recepción del hotel por temas de disponibilidad."
+    "a": "Sí, puede previa coordinación con recepción hotel por temas de disponibilidad."
   },
   {
     "key": "key_drop",
@@ -37,7 +37,7 @@
   {
     "key": "luggage_after_checkout",
     "q": "¿Puedo dejar mi equipaje después del check-out?",
-    "a": "Sí, no tiene costo. Debe acercarse a recepción para que le entreguen un ticket de registro para su equipaje."
+    "a": "Sí puede, no tiene costo. Debe acercarse a recepción para que le entreguen un ticket de registro para su equipaje."
   },
   {
     "key": "early_checkin_cost",
@@ -47,7 +47,7 @@
   {
     "key": "online_checkin",
     "q": "¿Se puede hacer el check-in online?",
-    "a": "Puede adelantar los datos que solicitarán al check-in con el enlace que le llega a través de su correo o aplicación. Al ingresar en recepción debe dejar garantizada o pagada su estadía."
+    "a": "Puede adelantar los datos que solicitaran al check In con el enlace que le llega a través de su correo o aplicación. Al ingresar en recepción debe dejar garantizada o pagada su estadía."
   },
   {
     "key": "luggage_storage_place",
@@ -67,17 +67,17 @@
   {
     "key": "luggage_to_airport",
     "q": "¿Pueden enviarme mi maleta al aeropuerto?",
-    "a": "No contamos con servicio de traslado de maletas."
+    "a": "No contamos con servicio de trasladado de maletas."
   },
   {
     "key": "airport_transfer",
     "q": "¿Tienen servicio de transporte al aeropuerto?",
-    "a": "No contamos con servicio de traslado del hotel directo. Igualmente, recepción puede ayudarles a contratar un servicio privado entre varias alternativas disponibles."
+    "a": "No contamos con servicio de trasladado del hotel directo. Igualmente recepción puede ayudarles a contratar un servicio privado entre varias alternativas disponibles."
   },
   {
     "key": "transfer_cost",
     "q": "¿Cuánto cuesta el transfer?",
-    "a": "Depende. Al no ser un servicio del hotel debe consultar directamente o, con recepción, coordinar la cotización de un servicio privado."
+    "a": "Depende. Al no ser un servicio del hotel debe consultar directamente o bien con recepción, coordinar la cotización de un servicio privado."
   },
   {
     "key": "taxi_booking",
@@ -112,32 +112,12 @@
   {
     "key": "rooms_with_city_view",
     "q": "¿Tienen vista a la ciudad?",
-    "a": "Sí, puede indicarlo como preferencia al generar la reserva o al check-in en recepción."
+    "a": "Sí, puede indicarlo como preferencia al generar la reserva o al Check-In en recepción."
   },
   {
     "key": "quiet_room",
     "q": "¿Puedo pedir una habitación más silenciosa?",
-    "a": "Sí, puede indicarlo como preferencia al generar la reserva o al check-in en recepción."
-  },
-  {
-    "key": "extra_pillows",
-    "q": "¿Puedo pedir almohadas extra?",
-    "a": "Sí, puede pedirlo en recepción o marcando al número 0."
-  },
-  {
-    "key": "bathrobe_request",
-    "q": "¿Puedo solicitar bata?",
-    "a": "Sí, puede solicitarlo directamente en la recepción marcando al número 0 mediante el teléfono de la habitación."
-  },
-  {
-    "key": "slippers_request",
-    "q": "¿Puedo solicitar pantuflas?",
-    "a": "Sí, puede solicitarlo directamente en la recepción marcando al número 0 mediante el teléfono de la habitación."
-  },
-  {
-    "key": "iron_service",
-    "q": "¿Tienen plancha o servicio de planchado/tintorería?",
-    "a": "Puede solicitar una plancha directamente en la recepción marcando al número 0 mediante el teléfono de la habitación. En caso de necesitar servicio de tintorería, puede encontrar un sobre donde dejar su ropa junto al formulario que debe rellenar, para que la ropa sea entregada."
+    "a": "Sí, puede indicarlo como preferencia al generar la reserva o al Check-In en recepción."
   },
   {
     "key": "ac_control_location",
@@ -157,7 +137,7 @@
   {
     "key": "safe_open_instructions",
     "q": "¿Cómo se abre la caja fuerte?",
-    "a": "La puede configurar con una contraseña personal durante su estadía con las instrucciones que se encuentran fuera de esta misma caja fuerte. Pulsar R, teclear un código de 4 dígitos, volver a teclear un código de 4 dígitos. Para abrir/cerrar: teclear su código de 4 dígitos."
+    "a": "La puede configurar con una contraseña personal durante su estadía con las instrucciones que se encuentran fuera de esta misma caja fuerte. Pulsar R. Teclear un código de 4 dígitos. Volver a teclear un código de 4 dígitos. Para abrir/cerrar: teclear su código de 4 dígitos."
   },
   {
     "key": "safe_code",
@@ -167,7 +147,7 @@
   {
     "key": "safe_change_code",
     "q": "¿Cómo puedo cambiar la clave de la caja fuerte?",
-    "a": "La puede configurar con una contraseña personal durante su estadía con las instrucciones que se encuentran fuera de esta misma. Pulsar R, teclear un código de 4 dígitos, volver a teclear un código de 4 dígitos. Para abrir/cerrar: teclear su código de 4 dígitos."
+    "a": "La puede configurar con una contraseña personal durante su estadía con las instrucciones que se encuentran fuera de esta misma. Pulsar R. Teclear un código de 4 dígitos. Volver a teclear un código de 4 dígitos. Para abrir/cerrar: teclear su código de 4 dígitos."
   },
   {
     "key": "safe_forgot_code_help",
@@ -180,19 +160,9 @@
     "a": "Puede abrir la caja fuerte al teclear el código de 4 dígitos establecido inicialmente. En caso de no recordar el código, dar aviso a recepción llamando al 0 mediante el teléfono de la habitación."
   },
   {
-    "key": "baby_cot",
-    "q": "¿Puedo pedir una cuna para mi bebé?",
-    "a": "Puede ser solicitado en su reserva o bien en la recepción del hotel marcando 0 desde el teléfono de la habitación."
-  },
-  {
     "key": "connecting_rooms",
     "q": "¿Tienen habitaciones conectadas?",
-    "a": "Sí, contamos con habitaciones interconectadas. Para disponibilidad puede consultar directamente en la recepción o solicitar en su reserva."
-  },
-  {
-    "key": "extra_bed",
-    "q": "¿Puedo pedir una cama adicional?",
-    "a": "Sí, puede pedirlo directamente en la recepción o marcando 0 en el teléfono de su habitación. Sujeto a disponibilidad y con un cargo de 60 USD + IVA por noche."
+    "a": "Sí, contamos con habitaciones interconectadas. Para disponibilidad de ellas puede consultar directamente en la recepción o solicitar en su reserva."
   },
   {
     "key": "smoking_in_room",
@@ -212,7 +182,7 @@
   {
     "key": "tv_channels",
     "q": "¿Qué canales de televisión tienen?",
-    "a": "Contamos con una variedad de canales (Deportes, Internacional, Series/Películas, Infantil, Abiertos, Cine, Variedades, Noticias y Música). El número de cada canal lo puede encontrar en la guía física de canales en el velador junto a la cama."
+    "a": "Contamos con una variedad de canales. Tal como lo son Deportes, Internacional, Series/Películas, Infantil, Abiertos, Cine, Variedades, Noticias y Música. El número de cada canal lo puede encontrar en la guía física de canales en el velador junto a la cama."
   },
   {
     "key": "smart_tv",
@@ -232,12 +202,12 @@
   {
     "key": "need_room_change",
     "q": "Necesito que me cambien la habitación",
-    "a": "Puede solicitarlo directamente en la recepción o marcando el número 0 en el teléfono de su habitación."
+    "a": "Puede solicitarlos directamente en la recepción o marcando el número 0 en el teléfono de su habitación."
   },
   {
     "key": "wrong_bed_type",
     "q": "Compré una habitación doble, pero me dieron una con una cama",
-    "a": "Por favor acercarse a recepción con su respaldo o comprobante de reserva para solicitar que nuestros ejecutivos de Front Office revisen el caso y gestionen el cambio."
+    "a": "Por favor acercarse a recepción con su respaldo o comprobante de reserva para solicitar que nuestros ejecutivos de Front Office revisen el caso y gestione el cambio."
   },
   {
     "key": "room_error",
@@ -252,12 +222,12 @@
   {
     "key": "complaints_book",
     "q": "Donde puedo dejar un reclamo",
-    "a": "Puede acercarse a recepción para que nuestros ejecutivos puedan ayudarlo. También contamos con un libro de reclamos y sugerencias."
+    "a": "Puede acercarse a recepción para que nuestros ejecutivos puedan ayudarlo, también contamos con un libro de reclamos y sugerencias."
   },
   {
     "key": "suggestions_book",
     "q": "Donde puedo dejar una sugerencia",
-    "a": "Puede acercarse a recepción para que nuestros ejecutivos puedan ayudarlo. También contamos con un libro de reclamos y sugerencias."
+    "a": "Puede acercarse a recepción para que nuestros ejecutivos puedan ayudarlo, también contamos con un libro de reclamos y sugerencias."
   },
   {
     "key": "cleaning_hours",
@@ -267,32 +237,12 @@
   {
     "key": "cleaning_later",
     "q": "¿Puedo pedir que limpien más tarde?",
-    "a": "Sí, tiene que indicarlo directamente en la recepción o marcando el número 0 en el teléfono de su habitación."
+    "a": "Sí, tiene que indicar directamente en la recepción o marcando el número 0 en el teléfono de su habitación."
   },
   {
     "key": "no_cleaning",
     "q": "¿Puedo pedir que no entren a limpiar?",
     "a": "Sí, puede dejar el cartel de \"No Molestar\" instalado en la manilla exterior de la puerta de la habitación para que las mucamas no limpien su habitación."
-  },
-  {
-    "key": "new_towels",
-    "q": "¿Cómo pido toallas nuevas?",
-    "a": "Puede solicitarlas directamente marcando el 0 desde la habitación al comunicarse con recepción."
-  },
-  {
-    "key": "more_amenities",
-    "q": "¿Puedo pedir más jabón o shampoo?",
-    "a": "Sí. Puede solicitarlas directamente marcando el 0 desde la habitación al comunicarse con recepción."
-  },
-  {
-    "key": "sheets_change",
-    "q": "¿Pueden cambiar las sábanas hoy?",
-    "a": "Sí. Puede solicitarlas directamente marcando el 0 desde la habitación al comunicarse con recepción."
-  },
-  {
-    "key": "extra_blanket",
-    "q": "¿Puedo pedir una frazada extra?",
-    "a": "Sí. Puede solicitarlas directamente marcando el 0 desde la habitación al comunicarse con recepción."
   },
   {
     "key": "laundry_service",
@@ -317,7 +267,7 @@
   {
     "key": "request_not_arrived",
     "q": "Solicité algo y aún no han venido, ¿pueden revisar el estado?",
-    "a": "Claro, puede llamar al 0 mediante el teléfono de la habitación para dar aviso y nuestro equipo buscará una solución."
+    "a": "Claro, puede llamar al 0 mediante el teléfono de la habitación para dar aviso y nuestro equipo busque una solución."
   },
   {
     "key": "breakfast_time",
@@ -347,12 +297,12 @@
   {
     "key": "vegetarian_vegan",
     "q": "¿Tienen opciones vegetarianas o veganas?",
-    "a": "Sí, consultar con nuestro equipo de restaurante."
+    "a": "Sí, consultar con nuestro equipo de Restaurante."
   },
   {
     "key": "gluten_free",
     "q": "¿Tienen menú sin gluten?",
-    "a": "Sí, tenemos algunas opciones sin gluten. Consultar con nuestro equipo de restaurante."
+    "a": "Sí, tenemos algunas opciones sin gluten. Consultar con nuestro equipo de Restaurante."
   },
   {
     "key": "restaurant_hours",
@@ -377,7 +327,7 @@
   {
     "key": "kitchen_hours",
     "q": "¿Hasta qué hora sirven comida?",
-    "a": "La comida se sirve hasta las 23:00hrs, siendo la última orden a las 22:30hrs dentro de nuestro restaurante, al igual que las solicitudes para room service."
+    "a": "La comida se sirve hasta las 23:00hrs siendo la última orden a las 22:30 horas dentro de nuestro restaurante, al igual que las solicitudes para room service."
   },
   {
     "key": "room_service",
@@ -402,7 +352,7 @@
   {
     "key": "free_bottled_water",
     "q": "¿Tienen agua embotellada gratuita?",
-    "a": "Sí, en su habitación. Además, contamos con agua filtrada las 24hrs del día de manera gratuita en el primer piso. Podrá encontrar vasos de cartón o rellenar su botella las veces que sea necesario."
+    "a": "Sí en su habitación y contamos con agua filtrada las 24hrs del día de manera gratuita en el primer piso. Podrá encontrar vasos de cartón o con su botella rellenar con agua las veces que sea necesario."
   },
   {
     "key": "tea_coffee_in_room",
@@ -412,17 +362,17 @@
   {
     "key": "wifi_password",
     "q": "¿Cuál es la clave del wifi?",
-    "a": "El wifi es de alta velocidad y gratuito en todo el hotel mediante la red \"Novotel_Las_Condes\". La contraseña es: \"novotel2025\", en el apartado de \"Wi-Fi Estándar: Pase 24H\". En caso de wifi ilimitado de alta velocidad, puede conectarse con su usuario o registrarse en el apartado \"Wi-Fi de alta velocidad ilimitado\"."
+    "a": "El wifi es de alta velocidad y gratuito en todo el Hotel mediante la red \"Novotel_Las_Condes\", la contraseña es: \"novotel2025\", en el apartado de \"Wi-Fi Estándar: Pase 24H\". En caso de wifi ilimitado de alta velocidad, puede conectarse con su usuario, o registrarte, a nuestra red mediante el apartado \"Wi-Fi de alta velocidad ilimitado\"."
   },
   {
     "key": "wifi_free",
     "q": "¿El wifi es gratuito?",
-    "a": "Sí, el wifi es gratuito en todo el hotel mediante la red \"Novotel_Las_Condes\". La contraseña es \"novotel2025\" en el apartado \"Wi-Fi Estándar: Pase 24H\". Para wifi ilimitado de alta velocidad, puede conectarse con su usuario o registrarse en \"Wi-Fi de alta velocidad ilimitado\"."
+    "a": "El wifi es gratuito en todo el Hotel mediante la red \"Novotel_Las_Condes\", la contraseña es: \"novotel2025\", en el apartado de \"Wi-Fi Estándar: Pase 24H\". En caso de wifi ilimitado de alta velocidad, puede conectarse con su usuario, o registrarse, a nuestra red mediante el apartado \"Wi-Fi de alta velocidad ilimitado\"."
   },
   {
     "key": "wifi_signal_best",
     "q": "¿Dónde llega mejor la señal?",
-    "a": "En todo el hotel cubre nuestro wifi de alta velocidad. Si tiene algún problema con la velocidad de descarga, avise en recepción o llame al 0 desde el teléfono de su habitación para que nuestro equipo contacte al proveedor."
+    "a": "En todo el hotel cubre nuestro wifi de alta velocidad. Si tiene algún problema por la velocidad de descarga, avisar directamente en la recepción o llamar al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "guest_computers",
@@ -432,7 +382,7 @@
   {
     "key": "printing_docs",
     "q": "¿Puedo imprimir un documento?",
-    "a": "Sí, puede enviar una copia en formato PDF a nuestro equipo de recepción o a través de su correo a HB469-FO1@accor.com."
+    "a": "Sí, puede enviar una copia en formato pdf a nuestro equipo de recepción o a través de su correo HB469-FO1@accor.com."
   },
   {
     "key": "videocalls_lobby",
@@ -442,7 +392,7 @@
   {
     "key": "usb_adapters",
     "q": "¿Tienen puertos USB o adaptadores?",
-    "a": "Sí. Tenemos puertos USB de carga y adaptadores que puede prestar recepción."
+    "a": "Sí. Tenemos puertos USB de carga y adaptadores que puede prestar Recepción."
   },
   {
     "key": "fast_charging",
@@ -457,27 +407,27 @@
   {
     "key": "wifi_problem",
     "q": "Tengo problemas con la red wifi",
-    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo contacte a nuestro proveedor."
+    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "no_internet",
     "q": "No tengo acceso a Internet",
-    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo contacte a nuestro proveedor."
+    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "wifi_slow",
     "q": "La conexión wifi está muy lenta",
-    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo contacte a nuestro proveedor."
+    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "wifi_down",
     "q": "Se cayó la conexión del wifi",
-    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo contacte a nuestro proveedor."
+    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "wifi_connection_issue",
     "q": "Tengo problemas con la conexión wifi",
-    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo contacte a nuestro proveedor."
+    "a": "Puede avisar a recepción marcando al número 0 en el teléfono de su habitación para que nuestro equipo pueda avisar a nuestro proveedor."
   },
   {
     "key": "pool",
@@ -497,12 +447,12 @@
   {
     "key": "gym",
     "q": "¿Tienen gimnasio?",
-    "a": "Sí, contamos con gimnasio ubicado en el tercer piso, frente a la habitación 302. Disponible las 24hrs del día."
+    "a": "Sí, contamos con gimnasio ubicado en el tercer piso, frente a la habitación 302. Disponible las 24 Hrs. del día."
   },
   {
     "key": "gym_opening",
     "q": "¿A qué hora abre el gimnasio?",
-    "a": "El gimnasio se encuentra abierto las 24hrs del día. Está ubicado en el tercer piso."
+    "a": "El gimnasio se encuentra abierto las 24 Hrs. del día. Está ubicado en el tercer piso."
   },
   {
     "key": "spa",
@@ -562,7 +512,7 @@
   {
     "key": "bank_transfer",
     "q": "¿Aceptan transferencias?",
-    "a": "Sí, solo con anticipación a la reserva por 24hrs, en días hábiles. Comunicarse con HB469-FO1@accor.com o ReservasNLC@accor.com."
+    "a": "Sí, solo con anticipación a la reserva por 24 Hrs., en días hábiles. Comunicarse con HB469-FO1@accor.com o ReservasNLC@accor.com."
   },
   {
     "key": "pay_in_dollars",
@@ -577,7 +527,7 @@
   {
     "key": "invoice_or_receipt",
     "q": "¿Entregan boleta o factura?",
-    "a": "Podemos emitir boletas, facturas nacionales y facturas de exportación. Para más detalles puede consultar directamente con recepción al hacer el pago."
+    "a": "Podemos emitir boletas, facturas Nacionales y facturas de Exportación. Para más detalles puede consultar directamente con Recepción al hacer el pago."
   },
   {
     "key": "invoice_by_email",
@@ -587,17 +537,17 @@
   {
     "key": "deposit_required",
     "q": "¿Cobran depósito o garantía?",
-    "a": "Al momento de su check-in se tomará una garantía que cubra la reserva y posibles consumos o incidentes."
+    "a": "Al momento de su Check In se tomará una garantía que cubra la reserva y posibles consumos o incidentes."
   },
   {
     "key": "deposit_return",
     "q": "¿Cuándo devuelven la garantía?",
-    "a": "La garantía se devuelve automáticamente una vez que recepción la anule. Dependiendo del banco puede tardar hasta 72hrs hábiles."
+    "a": "La garantía se devuelve automáticamente una vez que recepción la anule. Dependiendo del banco puede tardar hasta 72 Hrs. hábiles."
   },
   {
     "key": "tax_foreigners",
     "q": "¿Cobran impuesto adicional a extranjeros?",
-    "a": "No hay impuestos adicionales. El IVA deben pagarlo los residentes de Chile o quien no tenga su tarjeta única migratoria al momento de hacer el check-in."
+    "a": "No hay impuestos adicionales. El IVA deben pagarlos los residentes de Chile o quien no tenga su tarjeta única migratoria al momento de hacer el Check In."
   },
   {
     "key": "lost_key",
@@ -612,7 +562,7 @@
   {
     "key": "room_charge_alt",
     "q": "¿Se puede cargar el consumo de Restaurante a la habitación?",
-    "a": "Sí, debe asegurarse de dejar una garantía que cubra los extras al momento de hacer el check-in."
+    "a": "Sí, debe asegurarse de dejar una garantía que cubra los extras al momento de hacer el Check In."
   },
   {
     "key": "contact_reception",
@@ -627,12 +577,12 @@
   {
     "key": "talk_to_manager",
     "q": "¿Puedo hablar con el gerente?",
-    "a": "Si necesita hablar con algún gerente, por favor comuníquese con recepción directamente o llame marcando el número 0 desde el teléfono de su habitación."
+    "a": "Si necesita hablar con algún gerente por favor comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación."
   },
   {
     "key": "help_other_language",
     "q": "¿Puedo pedir asistencia en otro idioma?",
-    "a": "Sí, puede acercarse a recepción; nuestro equipo habla diversos idiomas."
+    "a": "Sí, puede acercarse a recepción, quienes hablan diversos idiomas."
   },
   {
     "key": "comments_complaints",
@@ -642,27 +592,27 @@
   {
     "key": "itinerary_help",
     "q": "¿Puedo pedir ayuda con mi itinerario?",
-    "a": "Sí, por favor comuníquese con recepción directamente o llame marcando el número 0 desde el teléfono de su habitación."
+    "a": "Sí, por favor comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación."
   },
   {
     "key": "wake_up_service",
     "q": "¿Tienen servicio de despertador?",
-    "a": "Sí, para solicitarlo por favor comuníquese con recepción directamente o llame marcando el número 0 desde el teléfono de su habitación."
+    "a": "Sí, para solicitarlo por favor comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación."
   },
   {
     "key": "doctor_available",
     "q": "¿Tienen médico disponible?",
-    "a": "No tenemos servicio médico del hotel. Nuestro equipo puede ayudarle a buscar servicios médicos privados; para solicitarlo, comuníquese con recepción o llame al 0 desde el teléfono de su habitación."
+    "a": "No tenemos servicio médico del hotel. Nuestro equipo puede ayudarle a buscar servicios médicos privados. Para solicitarlo, comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación."
   },
   {
     "key": "first_aid",
     "q": "¿Tienen botiquín o primeros auxilios?",
-    "a": "Sí, para solicitarlo por favor comuníquese con recepción directamente o llame marcando el número 0 desde el teléfono de su habitación."
+    "a": "Sí, para solicitarlo por favor comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación."
   },
   {
     "key": "umbrellas",
     "q": "¿Tienen paraguas para prestar?",
-    "a": "Sí, para solicitarlo por favor comuníquese con recepción directamente o llame marcando el número 0 desde el teléfono de su habitación. Sujeto a disponibilidad."
+    "a": "Sí, para solicitarlo por favor comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Sujeto a disponibilidad."
   },
   {
     "key": "tourist_places",
@@ -672,7 +622,7 @@
   {
     "key": "tours_tickets",
     "q": "¿Dónde puedo comprar entradas a tours?",
-    "a": "Puede acercarse a recepción para preguntar por catálogos de agencias que ofrecen tours."
+    "a": "Puede acercarse a recepción para preguntar por catálogos de agencias que ofrecen Tours."
   },
   {
     "key": "agencies_deals",
@@ -712,22 +662,22 @@
   {
     "key": "where_to_run",
     "q": "¿Dónde puedo salir a caminar o trotar?",
-    "a": "Cerca del hotel está el Parque Araucano, el cual cuenta con extensas áreas verdes perfectas para caminar o trotar."
+    "a": "Cerca del hotel está el Parque Araucano, el cual cuenta con extensas áreas verdes perfectos para caminar o trotar."
   },
   {
     "key": "bank_nearby",
     "q": "¿Dónde hay un banco cercano?",
-    "a": "Sí. Al frente del hotel y a 10 minutos cerca al Parque Araucano hay otros dos bancos. Para más información, acercarse a la recepción por indicaciones de cómo llegar."
+    "a": "Sí. Al frente del hotel y a 10 minutos cerca al Parque Araucano hay otros dos bancos. Para más información acercarse a la recepción por indicaciones de cómo llegar."
   },
   {
     "key": "atm_nearby",
     "q": "¿Dónde hay un cajero automático cerca?",
-    "a": "Los cajeros automáticos más cercanos están frente al hotel y otros a 10 minutos; el principal está ubicado en la estación de Metro Manquehue. Para más información, acercarse a la recepción por indicaciones de cómo llegar."
+    "a": "Los cajeros automáticos más cercanos están frente al hotel y otros a 10 minutos; el principal está ubicado en la estación de Metro Manquehue. Para más información acercarse a la recepción por indicaciones de cómo llegar."
   },
   {
     "key": "withdraw_money",
     "q": "¿Dónde puedo sacar dinero?",
-    "a": "Los cajeros automáticos más cercanos están frente al hotel y otros a 10 minutos; el principal está ubicado en la estación de Metro Manquehue. Para más información, acercarse a la recepción por indicaciones de cómo llegar."
+    "a": "Los cajeros automáticos más cercanos están frente al hotel y otros a 10 minutos; el principal está ubicado en la estación de Metro Manquehue. Para más información acercarse a la recepción por indicaciones de cómo llegar."
   },
   {
     "key": "mall_nearby",
@@ -737,12 +687,12 @@
   {
     "key": "mall",
     "q": "¿Dónde hay un mall?",
-    "a": "Tenemos dos centros comerciales cercanos, ambos a 10 minutos caminando de distancia: Mall Parque Arauco y Mall Apumanque. Además, a 15 minutos en vehículo se encuentra el mall Costanera Center, al cual se puede acceder en metro desde Metro Manquehue. También puede encontrar el Mercado Urbano Tobalaba (MUT) a 10 minutos en vehículo."
+    "a": "Tenemos dos centros comerciales cercanos, ambos a 10 minutos caminando de distancia: Mall Parque Arauco y Mall Apumanque. Además, a 15 minutos en vehículo se encuentra el mall costanera center, al cual se puede acceder en metro desde el Metro Manquehue. También, puede encontrar el Mercado Urbano Tobalaba (MUT) a 10 minutos en vehículo."
   },
   {
     "key": "shopping",
     "q": "¿Dónde hay un shopping?",
-    "a": "Tenemos dos centros comerciales cercanos, ambos a 10 minutos caminando de distancia: Mall Parque Arauco y Mall Apumanque. Además, a 15 minutos en vehículo se encuentra el mall Costanera Center, al cual se puede acceder en metro desde Metro Manquehue. También puede encontrar el Mercado Urbano Tobalaba (MUT) a 10 minutos en vehículo."
+    "a": "Tenemos dos centros comerciales cercanos, ambos a 10 minutos caminando de distancia: Mall Parque Arauco y Mall Apumanque. Además, a 15 minutos en vehículo se encuentra el mall costanera center, al cual se puede acceder en metro desde el Metro Manquehue. También, puede encontrar el Mercado Urbano Tobalaba (MUT) a 10 minutos en vehículo."
   },
   {
     "key": "bar_nearby",
@@ -752,22 +702,22 @@
   {
     "key": "park_nearby",
     "q": "¿Dónde hay un parque cerca?",
-    "a": "Puede encontrar el Parque Araucano a 5 minutos caminando desde el hotel, y el Parque Bicentenario ubicado a 10 minutos en vehículo desde el hotel."
+    "a": "Puede encontrar el Parque Araucano a 5 minutos caminando desde el hotel, y el parque bicentenario ubicado a 10 minutos en vehículo desde el hotel."
   },
   {
     "key": "ice",
     "q": "¿Dónde puedo obtener hielo?",
-    "a": "Puede pedir hielo en nuestro restaurante. Si necesita comprar bolsas de hielo puede hacerlo por aplicaciones de compra online o en el supermercado más cercano."
+    "a": "Puede pedir hielo en nuestro restaurante. Si necesita comprar bolsas de hielo puede hacerlo por aplicaciones de compra online o en supermercado más cercano."
   },
   {
     "key": "parque_arauco_location",
     "q": "¿Dónde queda el Parque Arauco?",
-    "a": "El Parque Arauco se encuentra saliendo del hotel, cruzando la calle y caminando 5 minutos."
+    "a": "El Parque Arauco se encuentra saliendo del hotel cruzando la calle caminando 5 minutos."
   },
   {
     "key": "pets_allowed",
     "q": "¿Aceptan mascotas?",
-    "a": "Sí, Novotel Las Condes es un hotel \"Pet Friendly\". Se acepta 1 mascota por habitación (perro) con un costo adicional. El peso de su mascota no puede ser mayor a 15 kg. Cualquier daño en la habitación será cargado a su cuenta."
+    "a": "Sí, Novotel Las condes es un hotel \"Pet Friendly\". Se acepta 1 mascota por habitación (perro) con un costo adicional. Hay que considerar que el peso de su mascota no puede ser mayor a 15 kg. Cualquier daño en la habitación será cargado a su cuenta."
   },
   {
     "key": "pets_size",
@@ -797,7 +747,7 @@
   {
     "key": "modify_reservation",
     "q": "¿Puedo modificar mi reserva?",
-    "a": "Si su reserva es flexible y fue hecha directamente por Accor, puede modificarla preguntando en la recepción."
+    "a": "Si su reserva es flexible y fue hecha directamente por ACCOR puede modificarla preguntando en la recepción."
   },
   {
     "key": "cancel_reservation",
@@ -812,12 +762,12 @@
   {
     "key": "change_room_type",
     "q": "¿Puedo cambiar el tipo de habitación?",
-    "a": "Sí. Puede preguntar en la recepción si hay disponibilidad para hacer el cambio."
+    "a": "Sí. Puede preguntar en la recepción si es que hay disponibilidad para hacer el cambio."
   },
   {
     "key": "pay_at_hotel",
     "q": "¿Puedo pagar la reserva directamente en el hotel?",
-    "a": "Sí, puede pagarlo directamente en la recepción al check-in o al check-out si deja una garantía."
+    "a": "Sí, puede pagarlo directamente en la recepción al Check In o al Check Out si es que deja una garantía."
   },
   {
     "key": "reservation_received",
@@ -832,111 +782,41 @@
   {
     "key": "reserve_by_phone",
     "q": "¿Puedo reservar por teléfono o WhatsApp?",
-    "a": "Por motivos de seguridad solo puede reservar por teléfono al +56224227958 o +562242279850, o escribiendo al correo ReservasNLC@accor.com."
+    "a": "Por motivos de seguridad solo puede reservar por teléfono al +56224227958 o +562242279850. O escribiendo al correo ReservasNLC@accor.com."
   },
   {
     "key": "special_room_occasion",
     "q": "¿Puedo pedir una habitación especial para aniversario o luna de miel?",
-    "a": "Sí, dependiendo de la disponibilidad y la fecha puede preguntar por este tipo de ofertas y planes existentes."
+    "a": "Sí, dependiendo de la disponibilidad y la fecha puede preguntar por este tipo ofertas y planes existentes."
   },
   {
     "key": "loyalty_program",
     "q": "¿Existe algún programa de beneficios/Fidelización dentro del hotel?",
-    "a": "Sí, tenemos nuestro programa de membresía por puntos de estadía All Accor. Puede ingresar por nuestro sitio web all.accor.com o acercándose a la recepción para que le envíen una invitación."
+    "a": "Sí, tenemos nuestro programa de membresía por puntos de estadía All Accor. Puede ingresar por nuestro sitio web all.accor.com o acerándose a la recepción para que le envíen una invitación."
   },
   {
     "key": "reserve_with_points",
     "q": "¿Puedo reservar con puntos o beneficios?",
-    "a": "Sí, bajo nuestra plataforma o app móvil puede generar reservas usando puntos como parte del pago. Nuestras membresías tienen categorías que otorgan más beneficios; puede revisar los detalles en all.accor.com."
-  },
-  {
-    "key": "no_hot_water",
-    "q": "No tengo agua caliente, ¿qué hago?",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "ac_not_working",
-    "q": "No funciona el aire acondicionado, ¿pueden revisarlo?",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "tv_not_working",
-    "q": "No funciona la televisión",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "no_power_in_room",
-    "q": "No hay luz en mi habitación",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "lights_not_working_only",
-    "q": "Las luces no funcionan, pero todo lo eléctrico sí",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "lights_and_ac_not_working",
-    "q": "No funcionan las luces ni el aire acondicionado",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "remote_not_working",
-    "q": "El control remoto no funciona",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "no_tv_remote",
-    "q": "No tengo control remoto de la TV",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "noise_issue",
-    "q": "Tengo un problema con el ruido",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "wifi_down_ticket",
-    "q": "Se cayó la conexión del wifi",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "bad_smell_room",
-    "q": "Hay mal olor en la habitación",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "key_not_open",
-    "q": "La llave no abre la puerta",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "water_leak_bathroom",
-    "q": "Hay una fuga de agua en el baño",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "insect_in_room",
-    "q": "Encontré un insecto o algo extraño en la habitación",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "minibar_not_cooling",
-    "q": "El minibar no enfría",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "cleaning_not_arrived",
-    "q": "No llega la limpieza que pedí",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
-  },
-  {
-    "key": "sink_clogged",
-    "q": "El lavatorio está tapado",
-    "a": "Puede comunicarse con recepción directamente o llamar marcando el número 0 desde el teléfono de su habitación. Nuestros ejecutivos se comunicarán con el área encargada para que revisen la situación."
+    "a": "Sí, bajo nuestra plataforma o App móvil puede generar reservas quemando puntos como parte del pago. Así también nuestras membresías tienen categorías que le otorgan más beneficios; puede revisar los detalles en all.accor.com."
   },
   {
     "key": "lost_and_found",
     "q": "Dejé algo olvidado en el hotel, ¿pueden ayudarme?",
     "a": "Debe comunicarse por teléfono al +56224227900 o +56224227958. También puede escribir un correo a HB469-FO1@accor.com o ReservasNLC@accor.com. Nuestro equipo revisará si hay algún objeto perdido en nuestros registros y le dirá los pasos a seguir en caso de ser encontrado."
+  },
+  {
+    "key": "dry_cleaning_service",
+    "q": "¿Tienen servicio de planchado/tintorería?",
+    "a": "En caso de necesitar servicio de tintorería, puede encontrar un sobre donde dejar su ropa junto al formulario que debe rellenar, para que la ropa sea entregada."
+  },
+  {
+    "key": "baby_cot",
+    "q": "¿Puedo pedir una cuna para mi bebé?",
+    "a": "Puede ser solicitado en su reserva o bien en la recepción del hotel marcando 0 desde el teléfono de la habitación."
+  },
+  {
+    "key": "extra_bed",
+    "q": "¿Puedo pedir una cama adicional?",
+    "a": "Sí, puede pedirlo directamente en la recepción o marcando 0 en el teléfono de su habitación. Sujeto a disponibilidad y con un cargo de 60 USD + IVA por noche."
   }
 ]
