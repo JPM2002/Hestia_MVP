@@ -14,7 +14,7 @@ def get_reception_fallback_message() -> str:
         Formatted message to contact reception
     """
     return (
-        "Para resolver esta duda te pedimos llamar a recepción al *100 o 101+OK* "
+        " TestPara resolver esta duda te pedimos llamar a recepción al *100 o 101+OK* "
         "desde el teléfono de tu habitación.\n\n"
         "Si necesitas que gestionemos algo (ej. pedir algo a la habitación), "
         "dime 'Necesito...' y lo registramos. 😊"
