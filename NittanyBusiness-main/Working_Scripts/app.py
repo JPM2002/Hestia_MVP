@@ -378,8 +378,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SQLITE_PATH = os.getenv("DATABASE_PATH", "hestia_V2.db")
 
 # Org/Hotel fallback (used when creating tickets)
-ORG_ID_DEFAULT = int(os.getenv("DEMO_ORG_ID", "2"))
-HOTEL_ID_DEFAULT = int(os.getenv("DEMO_HOTEL_ID", "1"))
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", ""))
+HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", ""))
 
 # WhatsApp Cloud (outbound)
 META_TOKEN = os.getenv("WHATSAPP_CLOUD_TOKEN", "")

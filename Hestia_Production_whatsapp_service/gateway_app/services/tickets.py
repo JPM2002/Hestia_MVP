@@ -10,9 +10,8 @@ from gateway_app.services.db import (
     table_has_column,
 )
 from gateway_app.services.sla import compute_due
-from gateway_app.services.notify import _auto_assign_and_notify
+# from gateway_app.services.notify import _auto_assign_and_notify
 from gateway_app.services.triage import notify_triage
-from gateway_app.services.notifications.supervisor_notify import notify_supervisors_ticket_created
 
 
 
@@ -35,8 +34,8 @@ def create_ticket(
         due_at = None
 
     # IDs configurables vía payload o config (fallback a valores por defecto)
-    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", 4)))
-    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", 3)))
+    org_id = int(payload.get("org_id", getattr(cfg, "ORG_ID_DEFAULT", )))
+    hotel_id = int(payload.get("hotel_id", getattr(cfg, "HOTEL_ID_DEFAULT", )))
 
     is_pg = using_pg()
     ph = "%s" if is_pg else "?"
@@ -145,41 +144,33 @@ def create_ticket(
             commit=True,
         )
 
-    # Auto-asignación y notificación (best effort)
-    try:
-        _auto_assign_and_notify(
-            ticket_id=ticket_id,
-            area=payload.get("area"),
-            prioridad=payload.get("prioridad"),
-            detalle=payload.get("detalle"),
-            ubicacion=payload.get("ubicacion"),
-            org_id=org_id,
-            hotel_id=hotel_id,
-        )
-    except Exception as e:
-        print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
+    # # Auto-asignación y notificación (best effort)
+    # Phase 3
+    # try:
+    #     _auto_assign_and_notify(
+    #         ticket_id=ticket_id,
+    #         area=payload.get("area"),
+    #         prioridad=payload.get("prioridad"),
+    #         detalle=payload.get("detalle"),
+    #         ubicacion=payload.get("ubicacion"),
+    #         org_id=org_id,
+    #         hotel_id=hotel_id,
+    #     )
+    # except Exception as e:
+    #     print(f"[WARN] auto-assign/notify failed: {e}", flush=True)
 
     # Send to triage channel (WhatsApp notification to triage team)
-    try:
-        notify_triage(
-            ticket_id=ticket_id,
-            payload={
-                **payload,
-                "org_id": org_id,
-                "hotel_id": hotel_id,
-            },
-        )
-    except Exception as e:
-        print(f"[WARN] triage notification failed: {e}", flush=True)
-
-    # Notify supervisors (best effort)
-    try:
-        notify_supervisors_ticket_created(
-            ticket_id=ticket_id,
-            payload={**payload, "org_id": org_id, "hotel_id": hotel_id},
-        )
-    except Exception as e:
-        print(f"[WARN] supervisor notification failed: {e}", flush=True)
+    # try:
+    #     notify_triage(
+    #         ticket_id=ticket_id,
+    #         payload={
+    #             **payload,
+    #             "org_id": org_id,
+    #             "hotel_id": hotel_id,
+    #         },
+    #     )
+    # except Exception as e:
+    #     print(f"[WARN] triage notification failed: {e}", flush=True)
 
 
     return ticket_id
