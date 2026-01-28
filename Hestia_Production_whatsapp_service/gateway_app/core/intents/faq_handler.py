@@ -11,11 +11,12 @@ from typing import Any, Dict, List
 
 from gateway_app.core.intents.base import text_action
 from gateway_app.services import faq_llm
+from gateway_app.services.i18n import get_phrase, detect_language
 
 logger = logging.getLogger(__name__)
 
 
-def get_reception_fallback_message() -> str:
+def get_reception_fallback_message(lang: str = "es") -> str:
     """
     Generate fallback message for questions without FAQ answer.
 
@@ -24,12 +25,7 @@ def get_reception_fallback_message() -> str:
     Returns:
         Formatted message to contact reception
     """
-    return (
-        "Para resolver esta duda te pedimos llamar a recepción al *100 o 101+OK* "
-        "desde el teléfono de tu habitación.\n\n"
-        "Si necesitas que gestionemos algo (ej. pedir algo a la habitación), "
-        "dime 'Necesito...' y lo registramos. 😊"
-    )
+    return get_phrase("reception_fallback", lang)
 
 
 def handle_faq_fallback(
@@ -57,6 +53,7 @@ def handle_faq_fallback(
 
     # Intenta FAQ antes del mensaje genérico de "no entendí"
     faq_answer, token_usage = faq_llm.answer_faq(msg)
+    lang = session.get("language") or detect_language(msg)
 
     if faq_answer:
         logger.info(
@@ -78,7 +75,7 @@ def handle_faq_fallback(
 
         actions = [
             text_action(faq_answer),
-            text_action("¿Puedo ayudarte con algo más durante tu estadía?")
+            text_action(get_phrase("faq_more_help", lang))
         ]
 
         return True, actions
@@ -95,7 +92,7 @@ def handle_faq_fallback(
     )
 
     actions = [
-        text_action(get_reception_fallback_message())
+        text_action(get_reception_fallback_message(lang))
     ]
 
     session["state"] = "GH_S0_INIT"

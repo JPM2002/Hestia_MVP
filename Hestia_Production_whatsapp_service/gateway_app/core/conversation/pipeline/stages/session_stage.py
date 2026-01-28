@@ -9,6 +9,7 @@ from gateway_app.core.conversation.pipeline.stages.base import PipelineStage
 from gateway_app.core.conversation.pipeline.context import PipelineContext
 from gateway_app.core.conversation.session import new_session
 from gateway_app.core.timefmt import utcnow
+from gateway_app.services.i18n import detect_language
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,13 @@ class SessionStage(PipelineStage):
 
         # Update last message timestamp
         context.session["last_message_at"] = utcnow().isoformat()
+
+        # Store detected language in session (best-effort)
+        if context.message:
+            context.session["language"] = detect_language(
+                context.message,
+                default=context.session.get("language") or "es",
+            )
 
         # Ensure state exists
         if "state" not in context.session:

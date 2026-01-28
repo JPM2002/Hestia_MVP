@@ -35,6 +35,7 @@ from openai import OpenAI
 from gateway_app.services.ai.prompt_loader import get_faq_system_prompt
 from gateway_app.services.data.faq_loader import load_faq_items
 from gateway_app.services.token_tracker import extract_token_usage, TokenUsage
+from gateway_app.services.i18n import detect_language, is_language_match, normalize_lang
 
 logger = logging.getLogger(__name__)
 
@@ -252,11 +253,16 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Tuple[Optional[st
             }
         )
         return None, None
+    
+    target_lang = normalize_lang(detect_language(user_text))
+    lang_label = {"es": "Spanish (ES)", "en": "English (EN)", "pt": "Portuguese (PT)"}[target_lang]
 
     user_prompt = (
+        f"Guest language: {lang_label}. IMPORTANT: Respond ONLY in {lang_label}.\n\n"
         f"FAQs:\n{faq_block}\n\n"
         f"Mensaje del huésped:\n{user_text}\n\n"
         "Responde solo con la respuesta final o NO_MATCH."
+        
     )
 
     logger.info(
@@ -345,6 +351,76 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any]) -> Tuple[Optional[st
     return text, token_usage
 
 
+def _translate_answer(text: str, target_lang: str) -> Optional[str]:
+    """
+    Best-effort translation (used only when the FAQ answer is not in guest language).
+    Uses the same model and strict instructions: translate only, no new facts.
+    """
+    if not text:
+        return None
+    tgt = normalize_lang(target_lang)
+    lang_label = {"es": "Spanish", "en": "English", "pt": "Portuguese"}[tgt]
+
+    system = (
+        "You are a precise translation engine.\n"
+        "Translate the user-provided text to {LANG}.\n"
+        "Rules:\n"
+        "- Preserve meaning and facts exactly.\n"
+        "- Do NOT add new information.\n"
+        "- Keep numbers, times, and names unchanged.\n"
+        "- Return ONLY the translated text.\n"
+    ).replace("{LANG}", lang_label)
+
+    try:
+        resp = _client.responses.create(
+            model=FAQ_LLM_MODEL,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+            max_output_tokens=256,
+        )
+        out = resp.output[0].content[0].text.strip()
+        return out or None
+    except Exception:
+        logger.exception("[FAQ TRANSLATE] Translation failed")
+        return None
+
+def _translate_answer(text: str, target_lang: str) -> Optional[str]:
+    """
+    Best-effort translation (used only when the FAQ answer is not in guest language).
+    Uses the same model and strict instructions: translate only, no new facts.
+    """
+    if not text:
+        return None
+    tgt = normalize_lang(target_lang)
+    lang_label = {"es": "Spanish", "en": "English", "pt": "Portuguese"}[tgt]
+
+    system = (
+        "You are a precise translation engine.\n"
+        "Translate the user-provided text to {LANG}.\n"
+        "Rules:\n"
+        "- Preserve meaning and facts exactly.\n"
+        "- Do NOT add new information.\n"
+        "- Keep numbers, times, and names unchanged.\n"
+        "- Return ONLY the translated text.\n"
+    ).replace("{LANG}", lang_label)
+
+    try:
+        resp = _client.responses.create(
+            model=FAQ_LLM_MODEL,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+            max_output_tokens=256,
+        )
+        out = resp.output[0].content[0].text.strip()
+        return out or None
+    except Exception:
+        logger.exception("[FAQ TRANSLATE] Translation failed")
+        return None
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -374,7 +450,7 @@ def answer_faq(
             "location": "gateway_app/services/faq_llm.py"
         }
     )
-
+    target_lang = normalize_lang(detect_language(user_text))
     items = list(faq_items) if faq_items is not None else FAQ_ITEMS
 
     # 1) Static match (ONLY if almost identical).
@@ -395,6 +471,11 @@ def answer_faq(
             },
         )
         answer = static_item.get("a") if isinstance(static_item, dict) else getattr(static_item, "a", None)
+        # If guest is EN/PT but static answer is ES (from JSON), translate.
+        if answer and target_lang != "es":
+            translated = _translate_answer(answer, target_lang)
+            if translated:
+                answer = translated
         return answer, None  # No token usage for static match
 
     logger.info(
@@ -410,6 +491,15 @@ def answer_faq(
     # 2) LLM fallback for all fuzzy / paraphrased / misspelled cases.
     if use_llm_fallback:
         llm_answer, token_usage = _call_faq_llm(user_text, items)
+        # Safety net: if model answered in wrong language, translate-only fix.
+        if llm_answer and not is_language_match(llm_answer, target_lang):
+            logger.warning(
+                "[FAQ] LLM answered in wrong language; applying translate-only fix",
+                extra={"target_lang": target_lang, "answer_preview": llm_answer[:80]},
+            )
+            fixed = _translate_answer(llm_answer, target_lang)
+            if fixed:
+                llm_answer = fixed
         if llm_answer:
             logger.info(
                 "[FAQ] ✅ LLM fallback FOUND answer",
