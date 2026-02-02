@@ -51,9 +51,10 @@ def handle_faq_fallback(
         }
     )
 
-    # Intenta FAQ antes del mensaje genérico de "no entendí"
-    faq_answer, token_usage = faq_llm.answer_faq(msg)
     lang = session.get("language") or detect_language(msg)
+    faq_answer, token_usage = faq_llm.answer_faq(msg, session_lang=lang)
+
+
 
     if faq_answer:
         logger.info(

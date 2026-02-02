@@ -82,6 +82,40 @@ class IntentRoutingStage(PipelineStage):
         elif context.nlu.is_smalltalk:
             intent = "general_chat"
 
+        # ✅ SAFETY NET: If NLU returned a language switch command, handle it here.
+        detail = getattr(context.nlu, "detail", None) or ""
+        if intent == "help" and isinstance(detail, str) and detail.startswith("LANGUAGE_SWITCH_"):
+            from gateway_app.services.i18n import get_phrase, normalize_lang
+
+            mapping = {
+                "LANGUAGE_SWITCH_EN": "en",
+                "LANGUAGE_SWITCH_ES": "es",
+                "LANGUAGE_SWITCH_PT": "pt",
+            }
+            lang = mapping.get(detail.strip())
+            if lang:
+                prev = context.session.get("language")
+
+                context.session["language"] = normalize_lang(lang)
+                context.session["language_source"] = "explicit"
+                context.session["language_override_source"] = "nlu"
+
+                logger.info(
+                    "[LANG] Language switch from NLU detail",
+                    extra={
+                        "wa_id": context.wa_id,
+                        "previous_language": prev,
+                        "new_language": context.session["language"],
+                        "nlu_detail": detail,
+                    }
+                )
+
+                context.add_action(text_action(get_phrase("language_switch_confirm", context.session["language"])))
+                context.mark_handled()
+                self.log_exit(context)
+                return context
+
+
         # 🔥 PRIORITY: Handle state-specific flows that need NLU
         current_state = context.session.get("state")
 
@@ -189,7 +223,8 @@ class IntentRoutingStage(PipelineStage):
 
     def _handle_help(self, context: PipelineContext) -> None:
         """Show help message."""
-        context.add_action(text_action(get_help_message()))
+        context.add_action(text_action(get_help_message(context.session)))
+
         context.session["state"] = STATE_INIT
         context.mark_handled()
 

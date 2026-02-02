@@ -34,11 +34,11 @@ class FallbackStage(PipelineStage):
             extra={"wa_id": context.wa_id, "user_message": context.message}  # Changed from 'message'
         )
 
-        context.add_action(text_action(
-            "Gracias por tu mensaje. Si quieres, puedes contarme si "
-            "necesitas reportar un problema, pedir algo a la habitación "
-            "o hacer una pregunta sobre el hotel."
-        ))
+        from gateway_app.services.i18n import get_phrase
+
+        lang = context.session.get("language") or "es"
+        context.add_action(text_action(get_phrase("fallback_generic", lang)))
+
 
         self.log_exit(context)
         return context

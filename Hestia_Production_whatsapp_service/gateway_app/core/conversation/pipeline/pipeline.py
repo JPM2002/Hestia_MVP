@@ -15,6 +15,8 @@ from gateway_app.core.conversation.pipeline.stages.state_routing_stage import St
 from gateway_app.core.conversation.pipeline.stages.nlu_stage import NLUStage
 from gateway_app.core.conversation.pipeline.stages.intent_routing_stage import IntentRoutingStage
 from gateway_app.core.conversation.pipeline.stages.fallback_stage import FallbackStage
+from gateway_app.core.conversation.pipeline.stages.language_stage import LanguageStage
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ class ConversationPipeline:
     def __init__(self):
         self.stages: List[PipelineStage] = [
             SessionStage(),
+            LanguageStage(),   
             CancellationStage(),
             ShortcutStage(),
             StateRoutingStage(),

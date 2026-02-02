@@ -50,12 +50,24 @@ class SessionStage(PipelineStage):
         # Update last message timestamp
         context.session["last_message_at"] = utcnow().isoformat()
 
-        # Store detected language in session (best-effort)
+        # Store detected language in session (best-effort) — but keep session language sticky
         if context.message:
-            context.session["language"] = detect_language(
+            detected = detect_language(
                 context.message,
                 default=context.session.get("language") or "es",
             )
+            context.session["detected_language_last"] = detected
+
+            # Sticky session language:
+            # - If user explicitly changed language, do NOT override it.
+            # - Otherwise set it only once (first message) and keep consistent.
+            if context.session.get("language_source") == "explicit":
+                pass
+            else:
+                if not context.session.get("language"):
+                    context.session["language"] = detected
+                    context.session["language_source"] = "auto"
+
 
         # Ensure state exists
         if "state" not in context.session:

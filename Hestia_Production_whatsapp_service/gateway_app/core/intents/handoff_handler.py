@@ -52,9 +52,8 @@ def handle_handoff_request(
         },
     )
 
-    return [
-        text_action(
-            "De acuerdo, te pongo en contacto con recepción humana. "
-            "Un momento por favor."
-        )
-    ]
+    from gateway_app.services.i18n import get_phrase
+
+    lang = session.get("language") or "es"
+    return [text_action(get_phrase("handoff_confirm", lang))]
+
