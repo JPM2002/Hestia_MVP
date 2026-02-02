@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Tuple
 
 from gateway_app.core.intents.base import text_action
 from gateway_app.services.db import fetchall, fetchone, using_pg
+from gateway_app.services.i18n import normalize_lang, area_name
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,65 @@ STATUS_MESSAGES = {
     # "COMPLETADO": "ya está completado ✅",
     # "CANCELADO": "fue cancelado",
 }
+
+# Localized templates (ES/EN/PT)
+_T = {
+    "not_found_specific": {
+        "es": "No encontré la solicitud #{ticket_id} asociada a tu cuenta. ¿Seguro que ese es el número correcto?",
+        "en": "I couldn’t find ticket #{ticket_id} linked to your account. Are you sure that’s the correct number?",
+        "pt": "Não encontrei o ticket #{ticket_id} associado à sua conta. Tem certeza de que esse é o número correto?",
+    },
+    "no_tickets": {
+        "es": "No encontré solicitudes anteriores asociadas a tu cuenta. Si necesitas reportar algo, solo cuéntame qué necesitas.",
+        "en": "I couldn’t find previous requests linked to your account. If you need something, tell me what you need.",
+        "pt": "Não encontrei solicitações anteriores associadas à sua conta. Se precisar de algo, me diga o que você precisa.",
+    },
+    "single_ticket": {
+        "es": "Tu solicitud \"{detail}\" {status_msg}.\n\nTe notificaremos cuando haya novedades.",
+        "en": "Your request \"{detail}\" {status_msg}.\n\nI’ll message you when there’s an update.",
+        "pt": "Sua solicitação \"{detail}\" {status_msg}.\n\nVou te avisar quando houver novidades.",
+    },
+    "specific_ticket": {
+        "es": "Tu solicitud #{ticket_id} ({detail}) {status_msg}.\n\nTe avisaremos cuando sea aprobada y asignada al equipo.",
+        "en": "Your ticket #{ticket_id} ({detail}) {status_msg}.\n\nI’ll message you when it’s approved and assigned to the team.",
+        "pt": "Seu ticket #{ticket_id} ({detail}) {status_msg}.\n\nVou te avisar quando for aprovado e atribuído à equipe.",
+    },
+    "multi_header": {
+        "es": "Tienes {n} solicitudes pendientes de aprobación:\n\n",
+        "en": "You have {n} requests pending approval:\n\n",
+        "pt": "Você tem {n} solicitações pendentes de aprovação:\n\n",
+    },
+    "multi_footer": {
+        "es": "\nTodas están esperando ser aprobadas y asignadas. Te avisaremos cuando haya novedades.",
+        "en": "\nAll of them are waiting to be approved and assigned. I’ll message you when there’s an update.",
+        "pt": "\nTodas estão aguardando aprovação e atribuição. Vou te avisar quando houver novidades.",
+    },
+    "more_count": {
+        "es": "\n... y {more} más.\n",
+        "en": "\n... and {more} more.\n",
+        "pt": "\n... e mais {more}.\n",
+    },
+}
+
+def _lang(session: Dict[str, Any]) -> str:
+    return normalize_lang(session.get("language"))
+
+def _status_msg(status: str, lang: str) -> str:
+    # Current STATUS_MESSAGES are Spanish; we localize the text.
+    # Only PENDIENTE_APROBACION exists now.
+    if status == "PENDIENTE_APROBACION":
+        return {
+            "es": "aún no ha sido asignado",
+            "en": "has not been assigned yet",
+            "pt": "ainda não foi atribuído",
+        }[lang]
+    # fallback
+    return {
+        "es": "está en revisión",
+        "en": "is under review",
+        "pt": "está em revisão",
+    }[lang]
+
 
 
 def get_guest_tickets(wa_id: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -145,11 +206,10 @@ def handle_ticket_status_query(
                 }
             )
 
-            actions = [text_action(
-                f"No encontré la solicitud #{ticket_id} asociada a tu cuenta. "
-                "¿Seguro que ese es el número correcto?"
-            )]
+            lang = _lang(session)
+            actions = [text_action(_T["not_found_specific"][lang].format(ticket_id=ticket_id))]
             return True, actions
+
 
         # Responder con estado del ticket específico
         estado_msg = STATUS_MESSAGES.get(ticket["estado"], "en revisión")
@@ -185,11 +245,10 @@ def handle_ticket_status_query(
             }
         )
 
-        actions = [text_action(
-            "No encontré solicitudes anteriores asociadas a tu cuenta. "
-            "Si necesitas reportar algo, solo cuéntame qué necesitas."
-        )]
+        lang = _lang(session)
+        actions = [text_action(_T["no_tickets"][lang])]
         return True, actions
+
 
     # 3️⃣ Si solo hay 1 ticket → responder directamente
     if len(tickets) == 1:
@@ -197,8 +256,12 @@ def handle_ticket_status_query(
         estado_msg = STATUS_MESSAGES.get(ticket["estado"], "en revisión")
         detalle_corto = ticket['detalle'][:60] + "..." if len(ticket['detalle']) > 60 else ticket['detalle']
 
-        response = f"Tu solicitud \"{detalle_corto}\" {estado_msg}."
-        response += "\n\nTe notificaremos cuando haya novedades."
+        lang = _lang(session)
+        response = _T["specific_ticket"][lang].format(
+            ticket_id=ticket["id"],
+            detail=detalle_corto,
+            status_msg=_status_msg(ticket["estado"], lang),
+        )
 
         logger.info(
             "[TICKET_STATUS] Responded with single ticket status",
@@ -215,16 +278,17 @@ def handle_ticket_status_query(
 
     # 4️⃣ Si hay múltiples tickets → listar
     # 📌 Como todos están en PENDIENTE_APROBACION, simplemente listarlos
-    response = f"Tienes {len(tickets)} solicitudes pendientes de aprobación:\n\n"
+    lang = _lang(session)
+    response = _T["multi_header"][lang].format(n=len(tickets))
 
-    for i, t in enumerate(tickets[:3], 1):  # Máximo 3
+    for i, t in enumerate(tickets[:3], 1):
         detalle_corto = t['detalle'][:40] + "..." if len(t['detalle']) > 40 else t['detalle']
         response += f"{i}. {detalle_corto}\n"
 
     if len(tickets) > 3:
-        response += f"\n... y {len(tickets) - 3} más.\n"
+        response += _T["more_count"][lang].format(more=(len(tickets) - 3))
 
-    response += "\nTodas están esperando ser aprobadas y asignadas. Te avisaremos cuando haya novedades."
+    response += _T["multi_footer"][lang]
 
     logger.info(
         "[TICKET_STATUS] Responded with multiple tickets list",
