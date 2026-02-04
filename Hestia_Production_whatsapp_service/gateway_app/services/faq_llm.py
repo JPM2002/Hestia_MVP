@@ -256,7 +256,8 @@ def _call_faq_llm(user_text: str, faq_items: Iterable[Any], target_lang: str) ->
         return None, None
     
     tgt = normalize_lang(target_lang)
-    lang_label = {"es": "Spanish (ES)", "en": "English (EN)", "pt": "Portuguese (PT)"}[tgt]
+    lang_label = {"es": "Spanish (ES)", "en": "English (EN)", "pt": "Portuguese (PT)"}.get(tgt, "English (EN)")
+
 
 
     user_prompt = (
@@ -427,6 +428,18 @@ def answer_faq(
 
     target_lang = normalize_lang(session_lang or detect_language(user_text))
 
+    logger.info(
+    "[FAQ] 🌍 Language decision",
+    extra={
+        "user_text": user_text,
+        "session_lang": session_lang,
+        "detected_lang_raw": detect_language(user_text),
+        "target_lang_normalized": target_lang,
+        "location": "gateway_app/services/faq_llm.py::answer_faq"
+    }
+)
+
+
     items = list(faq_items) if faq_items is not None else FAQ_ITEMS
 
     # 1) Static match (ONLY if almost identical).
@@ -467,6 +480,18 @@ def answer_faq(
     # 2) LLM fallback for all fuzzy / paraphrased / misspelled cases.
     if use_llm_fallback:
         llm_answer, token_usage = _call_faq_llm(user_text, items, target_lang)
+
+        if llm_answer:
+            logger.info(
+                "[FAQ] 🧪 Language match check",
+                extra={
+                    "target_lang": target_lang,
+                    "answer_preview": llm_answer[:120],
+                    "is_language_match": is_language_match(llm_answer, target_lang),
+                    "location": "gateway_app/services/faq_llm.py::answer_faq"
+                }
+            )
+
 
         # Safety net: if model answered in wrong language, translate-only fix.
         if llm_answer and not is_language_match(llm_answer, target_lang):

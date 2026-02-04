@@ -280,25 +280,52 @@ def detect_language_command(text: str) -> Optional[Lang]:
 # ---------------------------------------------------------------------
 # Language detection (heuristic, no external deps)
 # ---------------------------------------------------------------------
-
 _EN_MARKERS = {
+    # greetings / common
     "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
-    "how", "what", "where", "when", "why", "please", "thanks", "thank",
-    "room", "key", "password", "wifi", "tv", "remote", "does", "doesn't", "not",
-    "hotel", "pet", "pets", "pet-friendly", "allowed", "allow",
-    "check-in", "check-out", "breakfast",
+    "please", "thanks", "thank",
+
+    # common assistant / hotel words
+    "how", "what", "where", "when", "why",
+    "room", "key", "password", "wifi", "tv", "remote",
+    "hotel", "breakfast", "check-in", "check-out",
+    "allowed", "allow", "pet", "pets", "pet-friendly",
+
+    # common model answer words (IMPORTANT for your bug)
+    "you", "your", "can",
+    "pay", "payment", "card", "cards",
+    "bank", "transfer", "transfers",
+    "dollar", "dollars",
+    "possible", "split", "between", "among",
+    "several", "people", "also", "yes",
 }
+
 _ES_MARKERS = {
-    "¿", "¡", "qué", "que", "cómo", "como", "dónde", "donde", "cuándo", "cuando",
-    "cuál", "cual", "habitación", "habitacion", "clave", "prendo", "enciende",
-    "recepción", "recepcion", "gracias", "hola", "buenos dias", "buenas tardes", "buenas noches",
+    "¿", "¡",
+    "qué", "que", "cómo", "como", "dónde", "donde", "cuándo", "cuando",
+    "cuál", "cual",
+    "habitación", "habitacion",
+    "clave",
+    "recepción", "recepcion",
+    "gracias", "hola", "buenos dias", "buenas tardes", "buenas noches",
     "mascota", "mascotas", "aceptan",
+    "pago", "pagos", "pagar", "tarjeta", "tarjetas", "transferencia",
 }
+
 _PT_MARKERS = {
     "oi", "olá", "ola", "bom dia", "boa tarde", "boa noite",
-    "como", "quarto", "senha", "ligo", "ligar", "desligar", "recepção", "recepcao",
     "você", "voce", "não", "nao", "obrigado", "obrigada", "por favor",
-    "animal", "animais", "pet", "aceitam",
+    "quarto", "senha", "ligo", "ligar", "desligar",
+    "recepção", "recepcao",
+
+    # IMPORTANT: words from your failing PT question
+    "quais", "qual", "forma", "formas",
+    "pagamento", "pagar",
+    "aceita", "aceitam", "aceitar",
+    "cartão", "cartao", "cartões", "cartoes",
+    "transferência", "transferencia",
+    "dólar", "dolar", "dividir", "entre", "pessoas",
+    "hotel",
 }
 
 _PT_DIACRITICS_RE = re.compile(r"[ãõç]")   # strong PT hints
@@ -306,12 +333,13 @@ _ES_DIACRITICS_RE = re.compile(r"[ñ¡¿]")   # strong ES hints
 
 _EN_START_RE = re.compile(r"^\s*(is|are|do|does|can|could|would|should|may|might)\b", re.IGNORECASE)
 
-def detect_language(text: str, default: Lang = "es") -> Lang:
+def detect_language_strict(text: str) -> Optional[Lang]:
     """
-    Best-effort language detection for ES/EN/PT.
+    Returns detected Lang if there is evidence; otherwise None.
+    (Same heuristics as detect_language, but does NOT fall back to a default.)
     """
     if not text:
-        return default
+        return None
 
     t = text.strip().lower()
 
@@ -321,7 +349,7 @@ def detect_language(text: str, default: Lang = "es") -> Lang:
     if _ES_DIACRITICS_RE.search(t):
         return "es"
 
-    # Single-word greeting heuristics (fixes: "Hi" -> English)
+    # Single-word greeting heuristics
     t_simple = re.sub(r"[^a-záéíóúñãõç\s\-]", "", t).strip()
     if t_simple in {"hi", "hello", "good morning", "good afternoon", "good evening"}:
         return "en"
@@ -330,27 +358,45 @@ def detect_language(text: str, default: Lang = "es") -> Lang:
     if t_simple in {"hola", "buenos dias", "buenas tardes", "buenas noches"}:
         return "es"
 
-    # count marker hits
+    # count marker hits (substring-based, consistent with your existing approach)
     en_score = sum(1 for w in _EN_MARKERS if w in t)
     es_score = sum(1 for w in _ES_MARKERS if w in t)
     pt_score = sum(1 for w in _PT_MARKERS if w in t)
 
-    # English question structure (fixes: "Is the hotel pet-friendly?")
+    # English question structure
     if "?" in t and _EN_START_RE.search(t):
         en_score += 3
 
-    best = max((("en", en_score), ("es", es_score), ("pt", pt_score)), key=lambda x: x[1])
-    if best[1] == 0:
-        return default
+    best_lang, best_score = max(
+        (("en", en_score), ("es", es_score), ("pt", pt_score)),
+        key=lambda x: x[1],
+    )
 
-    return best[0]  # type: ignore[return-value]
+    if best_score == 0:
+        return None
+
+    return best_lang  # type: ignore[return-value]
+
+
+def detect_language(text: str, default: Lang = "es") -> Lang:
+    """
+    Backwards-compatible: returns ES/EN/PT, falls back to default when uncertain.
+    """
+    detected = detect_language_strict(text)
+    return detected or default
+
 
 def is_language_match(text: str, target: Optional[str]) -> bool:
     """
     True if `text` appears to be in target language OR too ambiguous.
+    Fix: avoid using default=tgt in detection because it hides unknowns.
     """
     tgt = normalize_lang(target)
     if len((text or "").strip()) < 12:
         return True
-    detected = detect_language(text, default=tgt)
+
+    detected = detect_language_strict(text)
+    if detected is None:
+        return True  # ambiguous => don't force translate
+
     return detected == tgt
