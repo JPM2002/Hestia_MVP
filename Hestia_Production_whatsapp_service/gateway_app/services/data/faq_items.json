@@ -808,5 +808,10 @@
     "key": "extra_bed",
     "q": "¿Puedo pedir una cama adicional?",
     "a": "Si, puede pedirlo directamente en la recepción o marcando 0 en el teléfono de su habitación. Sujeto a disponibilidad y con un cargo de 60 USD + IVA por noche."
+  },
+  {
+  "key": "payment_methods",
+  "q": "¿Qué formas de pago aceptan?",
+  "a": "Puede pagar con tarjeta (crédito o débito), transferencias (con anticipación) y también en dólares. En recepción puede solicitar dividir el pago entre varias personas."
   }
 ]
