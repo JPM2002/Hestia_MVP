@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, Callable
 
+from gateway_app.services.i18n import normalize_lang, area_name
 from gateway_app.core.conversation.pipeline.stages.base import PipelineStage
 from gateway_app.core.conversation.pipeline.context import PipelineContext
 from gateway_app.core.conversation.utils.constants import STATE_INIT, STATE_NEW, CONFIDENCE_THRESHOLD
@@ -81,6 +82,40 @@ class IntentRoutingStage(PipelineStage):
             intent = "cancel"
         elif context.nlu.is_smalltalk:
             intent = "general_chat"
+
+        # ✅ SAFETY NET: If NLU returned a language switch command, handle it here.
+        detail = getattr(context.nlu, "detail", None) or ""
+        if intent == "help" and isinstance(detail, str) and detail.startswith("LANGUAGE_SWITCH_"):
+            from gateway_app.services.i18n import get_phrase, normalize_lang
+
+            mapping = {
+                "LANGUAGE_SWITCH_EN": "en",
+                "LANGUAGE_SWITCH_ES": "es",
+                "LANGUAGE_SWITCH_PT": "pt",
+            }
+            lang = mapping.get(detail.strip())
+            if lang:
+                prev = context.session.get("language")
+
+                context.session["language"] = normalize_lang(lang)
+                context.session["language_source"] = "explicit"
+                context.session["language_override_source"] = "nlu"
+
+                logger.info(
+                    "[LANG] Language switch from NLU detail",
+                    extra={
+                        "wa_id": context.wa_id,
+                        "previous_language": prev,
+                        "new_language": context.session["language"],
+                        "nlu_detail": detail,
+                    }
+                )
+
+                context.add_action(text_action(get_phrase("language_switch_confirm", context.session["language"])))
+                context.mark_handled()
+                self.log_exit(context)
+                return context
+
 
         # 🔥 PRIORITY: Handle state-specific flows that need NLU
         current_state = context.session.get("state")
@@ -189,7 +224,8 @@ class IntentRoutingStage(PipelineStage):
 
     def _handle_help(self, context: PipelineContext) -> None:
         """Show help message."""
-        context.add_action(text_action(get_help_message()))
+        context.add_action(text_action(get_help_message(context.session)))
+
         context.session["state"] = STATE_INIT
         context.mark_handled()
 
@@ -263,18 +299,21 @@ class IntentRoutingStage(PipelineStage):
         context.session["state"] = "GH_AREA_CLARIFICATION"
         context.session["pending_detail"] = getattr(context.nlu, "detail", None)
 
+        lang = normalize_lang(context.session.get("language"))
+
         # Multi-request handling
         if multiple_requests and isinstance(multiple_requests, list) and len(multiple_requests) >= 2:
             context.session["pending_requests"] = multiple_requests
 
-            # Build requests list
+            # Build requests list (localized area names)
             requests_text = ""
             for i, req in enumerate(multiple_requests, 1):
-                area_name = req.get("area", "")
-                detail = req.get("detail", "")
-                requests_text += f"{i}. *{detail}* ({area_name})\n"
+                req_area = req.get("area", "")
+                req_detail = req.get("detail", "")
+                req_area_local = area_name(req_area, lang)
+                requests_text += f"{i}. *{req_detail}* ({req_area_local})\n"
 
-            # Get detected areas
+            # Get detected areas for options
             detected_areas = []
             seen = set()
             for req in multiple_requests:
@@ -283,32 +322,66 @@ class IntentRoutingStage(PipelineStage):
                     detected_areas.append(req_area)
                     seen.add(req_area)
 
-            # Sort by area order
+            # Sort by canonical order
             area_order = {"MANTENCION": 1, "HOUSEKEEPING": 2, "RECEPCION": 3, "GERENCIA": 4}
             detected_areas.sort(key=lambda a: area_order.get(a, 99))
 
-            # Build options
-            options_text = build_area_options_text(detected_areas)
+            options_text = build_area_options_text(detected_areas, lang=lang)
 
-            clarification_text = (
-                f"Veo que tienes {len(multiple_requests)} necesidades diferentes:\n\n"
-                f"{requests_text}\n"
-                f"Voy a crear solicitudes separadas para cada una.\n\n"
-                f"¿Con cuál quieres empezar?\n\n"
-                f"{options_text}\n"
-                f"Responde con el número."
-            )
+            if lang == "en":
+                clarification_text = (
+                    f"I see you have {len(multiple_requests)} different needs:\n\n"
+                    f"{requests_text}\n"
+                    f"I’ll create separate requests for each one.\n\n"
+                    f"Which one would you like to start with?\n\n"
+                    f"{options_text}\n"
+                    f"Reply with the number."
+                )
+            elif lang == "pt":
+                clarification_text = (
+                    f"Vejo que você tem {len(multiple_requests)} necessidades diferentes:\n\n"
+                    f"{requests_text}\n"
+                    f"Vou criar solicitações separadas para cada uma.\n\n"
+                    f"Com qual você quer começar?\n\n"
+                    f"{options_text}\n"
+                    f"Responda com o número."
+                )
+            else:
+                clarification_text = (
+                    f"Veo que tienes {len(multiple_requests)} necesidades diferentes:\n\n"
+                    f"{requests_text}\n"
+                    f"Voy a crear solicitudes separadas para cada una.\n\n"
+                    f"¿Con cuál quieres empezar?\n\n"
+                    f"{options_text}\n"
+                    f"Responde con el número."
+                )
+
         else:
             detail = getattr(context.nlu, "detail", "tu solicitud")
-            clarification_text = (
-                f"Entiendo que necesitas ayuda con: *{detail}*\n\n"
-                "Para asignarlo correctamente, ¿es sobre:\n\n"
-                f"{build_area_options_text()}\n\n"
-                "Responde con el número (1-4)."
-            )
+            options_text = build_area_options_text(lang=lang)
 
-        context.add_action(text_action(clarification_text))
-        context.mark_handled()
+            if lang == "en":
+                clarification_text = (
+                    f"I understand you need help with: *{detail}*\n\n"
+                    f"To assign it correctly, which area is it?\n\n"
+                    f"{options_text}\n\n"
+                    f"Reply with a number (1-4)."
+                )
+            elif lang == "pt":
+                clarification_text = (
+                    f"Entendi que você precisa de ajuda com: *{detail}*\n\n"
+                    f"Para direcionar corretamente, qual área é?\n\n"
+                    f"{options_text}\n\n"
+                    f"Responda com um número (1-4)."
+                )
+            else:
+                clarification_text = (
+                    f"Entiendo que necesitas ayuda con: *{detail}*\n\n"
+                    f"Para asignarlo correctamente, ¿es sobre:\n\n"
+                    f"{options_text}\n\n"
+                    f"Responde con el número (1-4)."
+                )
+
 
     def _handle_smalltalk(self, context: PipelineContext) -> None:
         """Handle general chat."""

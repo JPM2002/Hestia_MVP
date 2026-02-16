@@ -10,6 +10,8 @@ import logging
 from typing import Any, Dict, List
 
 from gateway_app.core.intents.base import text_action
+from gateway_app.services.i18n import get_phrase, normalize_lang
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +39,13 @@ def handle_smalltalk(
         return []
 
     # En conversaciones ya iniciadas, sí respondemos smalltalk normalmente.
-    reply = get_smalltalk_reply(msg)
+    reply = get_smalltalk_reply(msg, session.get("language"))
+
     return [text_action(reply)]
 
 
-def get_smalltalk_reply(original: str) -> str:
+def get_smalltalk_reply(original: str, lang: str | None = None) -> str:
+
     """
     Generate appropriate smalltalk reply based on message content.
 
@@ -52,57 +56,50 @@ def get_smalltalk_reply(original: str) -> str:
         Appropriate reply string
     """
     lower = original.lower()
+    l = normalize_lang(lang)
+
+    lang = normalize_lang(session_lang) if 'session_lang' in locals() else "es"
+
 
     # Detect greetings
     greeting_patterns = ["hola", "buenos días", "buenas tardes", "buenas noches", "buen día", "hey", "hi", "hello"]
     if any(pattern in lower for pattern in greeting_patterns):
-        return "Hola, ¿en qué puedo ayudarte?"
+        return get_phrase("smalltalk_greeting", l)
+
 
     # Detect thanks
     if "gracia" in lower:
-        return "Con gusto, estoy aquí para ayudarte durante tu estadía. ¿Algo más?"
+        return get_phrase("smalltalk_thanks", l)
+
 
     # Detect positive responses
     if "todo bien" in lower or "todo ok" in lower or "estoy bien" in lower:
-        return "Perfecto, me alegra saberlo. Si necesitas algo más, solo escribe por aquí."
+        return get_phrase("smalltalk_ok", l)
+
 
     # Default smalltalk response
-    return "Entendido. Cualquier cosa que necesites, solo escríbeme por aquí."
+    return get_phrase("smalltalk_default", l)
 
 
-def get_help_message() -> str:
-    """Get the help message explaining bot capabilities."""
-    return (
-        "Puedo ayudarte con:\n"
-        "• Reportar problemas en tu habitación (aire, ducha, luz, limpieza, etc.).\n"
-        "• Pedir toallas, almohadas u otros artículos de housekeeping.\n"
-        "• Pedir comida o bebidas a la habitación.\n"
-        "• Responder dudas típicas: horario de desayuno, wifi, check-in / check-out.\n\n"
-        "Escríbeme en una frase qué necesitas y me encargo del resto."
-    )
+
+def get_help_message(session: Dict[str, Any] | None = None) -> str:
+    """Get help message (localized)."""
+    lang = None
+    if session:
+        lang = session.get("language")
+    return get_phrase("help_message", lang)
+
 
 
 def get_initial_greeting(session: Dict[str, Any]) -> str:
-    """Get initial greeting message for new conversations."""
-    name = session.get("guest_name")
-    if name:
-        prefix = f"Hola {name}, "
-    else:
-        prefix = "Hola, "
+    """Get initial greeting message for new conversations (localized)."""
+    lang = normalize_lang(session.get("language"))
+    name = (session.get("guest_name") or "").strip()
+    name_part = f" {name}," if name else ","
+    return get_phrase("initial_greeting", lang, name_part=name_part)
 
-    return (
-        prefix
-        + "Te damos la bienvenida a nuestro servicio de asistencia digital.\n"
-          "Para poder ayudarte rápidamente, por favor indícame tu número de habitación y cuál es tu consulta o solicitud."
-    )
 
 
 def get_menu_message(session: Dict[str, Any]) -> str:
-    """Get menu/help options message."""
-    return (
-        "Menú de ayuda Hestia:\n"
-        "1️⃣ Reportar un problema en la habitación (ej: no funciona el aire, falta limpieza).\n"
-        "2️⃣ Pedir algo al hotel (toallas, almohadas, amenities, room service).\n"
-        "3️⃣ Preguntar información (desayuno, wifi, horarios, etc.).\n\n"
-        "Cuéntame brevemente qué necesitas y yo te ayudo."
-    )
+    """Get menu/help options message (localized)."""
+    return get_phrase("menu_message", session.get("language"))
