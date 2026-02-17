@@ -12,12 +12,14 @@ from typing import Any, Dict, List
 
 from gateway_app.core.intents.base import text_action
 from gateway_app.services import notify
+from gateway_app.services.i18n import get_phrase, normalize_lang, area_name
+
 
 logger = logging.getLogger(__name__)
 
 # IDs para tu backend de tickets (configurable vía environment variables)
-ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", "4"))
-HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", "3"))
+ORG_ID_DEFAULT = int(os.getenv("ORG_ID_DEFAULT", ""))
+HOTEL_ID_DEFAULT = int(os.getenv("HOTEL_ID_DEFAULT", ""))
 
 # Import real ticket creator if available; otherwise fall back to a stub.
 try:
@@ -124,21 +126,21 @@ def _create_ticket_internal(
         "SUPERVISION": "Supervisión",
         "GERENCIA": "Gerencia",
     }
-    area_name = area_map.get(area, area)
+    #area_name = area_map.get(area, area)
     room = payload.get("ubicacion", "")
 
+    lang = normalize_lang(session.get("language"))
+    area_local = area_name(area, lang)
+
     if ticket_id:
-        success_text = (
-            f"¡Listo! Ya notifiqué al equipo de {area_name} sobre tu solicitud "
-            f"en la habitación {room}. Te avisaré cuando esté resuelto. ✅"
+        actions.append(
+            text_action(get_phrase("ticket_created_success", lang, area=area_local, room=room))
         )
-        actions.append(text_action(success_text))
     else:
-        error_text = (
-            "He intentado crear tu ticket, pero hubo un problema con el sistema interno. "
-            "El equipo de recepción ha sido notificado."
+        actions.append(
+            text_action(get_phrase("ticket_created_error", lang))
         )
-        actions.append(text_action(error_text))
+
 
     return ticket_id, actions
 
@@ -232,11 +234,25 @@ def handle_ticket_confirmation_yes_no(
             }
             next_area_name = area_map.get(next_area, next_area)
 
-            # Ask if user wants to create the next ticket
-            prompt_text = (
-                f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_name})\n\n"
-                f"¿Quieres que cree esta solicitud también? (Sí/No)"
-            )
+            lang = normalize_lang(session.get("language"))
+            next_area_local = area_name(next_area, lang)
+
+            if lang == "en":
+                prompt_text = (
+                    f"\n\n📋 You also mentioned: *{next_detail}* ({next_area_local})\n\n"
+                    f"Would you like me to create this request too? (Yes/No)"
+                )
+            elif lang == "pt":
+                prompt_text = (
+                    f"\n\n📋 Você também mencionou: *{next_detail}* ({next_area_local})\n\n"
+                    f"Quer que eu crie essa solicitação também? (Sim/Não)"
+                )
+            else:
+                prompt_text = (
+                    f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_local})\n\n"
+                    f"¿Quieres que cree esta solicitud también? (Sí/No)"
+                )
+
 
             actions.append(text_action(prompt_text))
 
@@ -274,13 +290,9 @@ def handle_ticket_confirmation_yes_no(
 
         session["state"] = "GH_IDENTIFY"
 
-        actions.append(
-            text_action(
-                "Sin problema. Volvamos a empezar:\n\n"
-                "📝 ¿Cuál es tu nombre completo?\n"
-                "🏨 ¿En qué número de habitación te encuentras?"
-            )
-        )
+        lang = normalize_lang(session.get("language"))
+        actions.append(text_action(get_phrase("identity_request", lang)))
+
         return True, actions
 
     # Cualquier otra cosa no se interpreta como confirmación
@@ -307,11 +319,16 @@ def clear_ticket_draft(session: Dict[str, Any]) -> None:
 
 
 # YES/NO detection helpers
-_YES_TOKENS = {"si", "sí", "s", "y", "yes", "ok", "vale", "dale", "de acuerdo"}
+_YES_TOKENS = {
+    "si", "sí", "s", "y", "yes", "ok", "vale", "dale", "de acuerdo",
+    "sim", "claro", "okey"
+}
 _NO_TOKENS = {
     "no", "n", "nop", "nope", "para nada",
     "no gracias", "no, gracias",
+    "nao", "não", "nao obrigado", "não obrigado", "não, obrigado", "nao, obrigado"
 }
+
 
 
 def normalize_yes_no_token(text: str) -> str:

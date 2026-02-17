@@ -8,6 +8,7 @@ from typing import Dict, Callable
 
 from gateway_app.core.conversation.pipeline.stages.base import PipelineStage
 from gateway_app.core.conversation.pipeline.context import PipelineContext
+from gateway_app.services.i18n import normalize_lang, area_name
 from gateway_app.core.conversation.utils.constants import (
     STATE_AREA_CLARIFICATION,
     STATE_DETAIL_CLARIFICATION,
@@ -179,12 +180,27 @@ class StateRoutingStage(PipelineStage):
             next_request = remaining_requests[0]
             next_area = next_request.get("area", "")
             next_detail = next_request.get("detail", "")
-            next_area_name = get_area_name(next_area)
+            lang = normalize_lang(context.session.get("language"))
+            next_area_local = area_name(next_area, lang)
 
-            context.add_action(text_action(
-                f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_name})\n\n"
-                f"¿Quieres que cree esta solicitud también? (Sí/No)"
-            ))
+            if lang == "en":
+                msg = (
+                    f"\n\n📋 You also mentioned: *{next_detail}* ({next_area_local})\n\n"
+                    f"Would you like me to create this request too? (Yes/No)"
+                )
+            elif lang == "pt":
+                msg = (
+                    f"\n\n📋 Você também mencionou: *{next_detail}* ({next_area_local})\n\n"
+                    f"Quer que eu crie essa solicitação também? (Sim/Não)"
+                )
+            else:
+                msg = (
+                    f"\n\n📋 También mencionaste: *{next_detail}* ({next_area_local})\n\n"
+                    f"¿Quieres que cree esta solicitud también? (Sí/No)"
+                )
+
+            context.add_action(text_action(msg))
+
 
             context.session["state"] = STATE_NEXT_TICKET_CONFIRM
             context.session["next_ticket_pending"] = next_request
@@ -203,9 +219,17 @@ class StateRoutingStage(PipelineStage):
         context.session.pop("remaining_requests", None)
         context.session["state"] = STATE_NEW
 
-        context.add_action(text_action(
-            "Perfecto. Si necesitas algo más, escríbeme cuando quieras. 😊"
-        ))
+        lang = normalize_lang(context.session.get("language"))
+
+        if lang == "en":
+            msg = "Perfect. If you need anything else, message me anytime. 😊"
+        elif lang == "pt":
+            msg = "Perfeito. Se precisar de mais alguma coisa, me chame quando quiser. 😊"
+        else:
+            msg = "Perfecto. Si necesitas algo más, escríbeme cuando quieras. 😊"
+
+        context.add_action(text_action(msg))
+
 
         logger.info("[MULTI_TICKET] User declined remaining tickets")
         context.mark_handled()

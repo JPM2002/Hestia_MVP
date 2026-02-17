@@ -100,6 +100,8 @@ def send_whatsapp_text(
     text: str,
     *,
     preview_url: bool = False,
+    source: Optional[str] = None,
+    target_lang: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Enviar un mensaje de texto sencillo a un número de WhatsApp.
@@ -108,10 +110,20 @@ def send_whatsapp_text(
         to: wa_id del destinatario (ej. '56998765432').
         text: cuerpo del mensaje.
         preview_url: si es True, permite previsualización de enlaces (si los hay).
+        source: etiqueta opcional para rastrear desde qué parte del sistema salió este mensaje.
+        target_lang: etiqueta opcional para rastrear el idioma esperado.
 
     Returns:
         dict con el JSON de respuesta de la API.
     """
+    logger.info(
+        "[WA_SEND_TEXT] to=%s source=%s target_lang=%s text=%r",
+        to,
+        source,
+        target_lang,
+        (text or "")[:180],
+    )
+
     payload: Dict[str, Any] = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -128,7 +140,7 @@ def send_whatsapp_template(
     to: str,
     template_name: str,
     *,
-    lang: str = "es",
+    lang: Optional[str] = None,
     components: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
@@ -137,7 +149,8 @@ def send_whatsapp_template(
     Args:
         to: wa_id del destinatario.
         template_name: nombre EXACTO de la plantilla en Meta.
-        lang: código de idioma, por ejemplo 'es', 'es_CL', 'en_US'.
+        lang: código de idioma, por ejemplo 'es', 'es_CL', 'pt_BR', 'en_US'.
+              Si no se entrega, se usa 'es' y se deja un warning en logs.
         components: lista opcional de 'components' para variables de la plantilla.
 
     Ejemplo components:
@@ -151,9 +164,26 @@ def send_whatsapp_template(
             }
         ]
     """
+    lang_code = (lang or "").strip()
+    if not lang_code:
+        lang_code = "es"
+        logger.warning(
+            "[WA_SEND_TEMPLATE] template=%s to=%s lang NOT provided -> defaulting to %s",
+            template_name,
+            to,
+            lang_code,
+        )
+    else:
+        logger.info(
+            "[WA_SEND_TEMPLATE] template=%s to=%s lang=%s",
+            template_name,
+            to,
+            lang_code,
+        )
+
     template: Dict[str, Any] = {
         "name": template_name,
-        "language": {"code": lang},
+        "language": {"code": lang_code},
     }
     if components:
         template["components"] = components
@@ -249,12 +279,20 @@ def send_text_message(
     text: str,
     *,
     preview_url: bool = False,
+    source: Optional[str] = None,
+    target_lang: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Backwards-compatible alias for send_whatsapp_text, so older code that calls
     whatsapp_api.send_text_message() keeps working.
     """
-    return send_whatsapp_text(to=to, text=text, preview_url=preview_url)
+    return send_whatsapp_text(
+        to=to,
+        text=text,
+        preview_url=preview_url,
+        source=source,
+        target_lang=target_lang,
+    )
 
 
 def mark_message_as_read(message_id: str) -> Dict[str, Any]:
