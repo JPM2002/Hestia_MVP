@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Flask
+from flask import Flask, jsonify
 
 from .config import cfg
 from .filters import register_filters
@@ -53,6 +53,26 @@ def create_app() -> Flask:
     # Register blueprints
     from .blueprints.webhook import bp as webhook_bp
     app.register_blueprint(webhook_bp)
+
+# ✅ NUEVA RUTA PRINCIPAL - AGREGAR ESTO
+    @app.route('/')
+    def home():
+        return jsonify({
+            "service": "Hestia WhatsApp Gateway",
+            "status": "running",
+            "version": "1.0",
+            "endpoints": {
+                "webhook": "/webhook/whatsapp",
+                "test": "/webhook/test", 
+                "debug": "/webhook/debug",
+                "health": "/health"
+            }
+        })
+    
+    @app.route('/health')
+    def health():
+        return jsonify({"status": "ok", "service": "hestia-whatsapp"})
+    # FIN DE NUEVAS RUTAS ✅
 
     # Error handlers (404/500 JSON + HTML)
     from .core.errors import register_error_handlers
