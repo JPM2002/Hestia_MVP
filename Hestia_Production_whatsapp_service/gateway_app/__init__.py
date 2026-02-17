@@ -54,7 +54,7 @@ def create_app() -> Flask:
     from .blueprints.webhook import bp as webhook_bp
     app.register_blueprint(webhook_bp)
 
-# ✅ NUEVA RUTA PRINCIPAL - AGREGAR ESTO
+    # ✅ NUEVA RUTA PRINCIPAL - AGREGAR ESTO
     @app.route('/')
     def home():
         return jsonify({
@@ -62,13 +62,13 @@ def create_app() -> Flask:
             "status": "running",
             "version": "1.0",
             "endpoints": {
-                "webhook": "/webhook/whatsapp",
+                "webhook": "/webhook",          # ← CAMBIO AQUÍ
                 "test": "/webhook/test", 
                 "debug": "/webhook/debug",
                 "health": "/health"
             }
         })
-    
+
     @app.route('/health')
     def health():
         return jsonify({"status": "ok", "service": "hestia-whatsapp"})

@@ -65,7 +65,7 @@ def _parse_inbound(payload: Dict[str, Any]) -> Tuple[
     }
 
 
-@bp.route("/whatsapp", methods=["GET", "POST"])
+@bp.route("/", methods=["GET", "POST"])
 def whatsapp_webhook():
     """
     Main WhatsApp Cloud webhook endpoint.
