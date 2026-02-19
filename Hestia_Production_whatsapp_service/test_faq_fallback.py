@@ -29,7 +29,7 @@ def test_reception_fallback_message():
     print(message)
 
     # Verificaciones
-    assert "100 o 101+OK" in message, "Debe incluir el teléfono de recepción"
+    assert "+56 9 2035 5564" in message, "Debe incluir el teléfono de recepción"
     assert "habitación" in message.lower(), "Debe mencionar que es desde la habitación"
     assert "Necesito" in message, "Debe sugerir cómo usar el bot para solicitudes"
 
@@ -101,7 +101,7 @@ def test_faq_answer_missing():
                         print(f"  Acción {i+1}: {text[:100]}...")
 
                         # Verificar que contenga el teléfono de recepción
-                        if "100 o 101+OK" in text:
+                        if "+56 9 2035 5564" in text:
                             print(f"  ✅ Mensaje correcto: Deriva a recepción con teléfono")
                         else:
                             print(f"  ❌ ERROR: No incluye teléfono de recepción")
@@ -150,7 +150,7 @@ def test_full_flow():
                     text = action.get("text", "")
                     print(f"🤖 Bot: {text}")
 
-                    if "100 o 101+OK" in text:
+                    if "+56 9 2035 5564" in text:
                         print("\n✅ CORRECTO: Bot deriva a recepción con teléfono")
                         print("✅ NO crea ticket innecesariamente")
                     else:
