@@ -13,6 +13,52 @@ IMPORTANT: Do NOT translate the guest’s message.
 - The "detail" field MUST be written in the SAME LANGUAGE as the guest message.
 - The "multiple_requests[].detail" fields MUST also be in the SAME LANGUAGE as the guest message.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LANGUAGE DETECTION GUARDRAILS (MIXED LANGUAGE / ANGLICISMS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The guest may write Spanish or Portuguese sentences that include English words (anglicisms) like:
+"check-in", "room service", "upgrade", "late checkout", "password", "wifi", "air conditioner/AC",
+"key card", "front desk", "maintenance", "housekeeping", "towel", "booking", "reservation",
+"ok", "thanks", "please", "ASAP", etc.
+
+CRITICAL RULE:
+- Determine the guest message language based on the OVERALL sentence structure and majority language,
+  NOT based on isolated English words.
+
+Language decision rules:
+1) If the message contains ANY Spanish indicators (e.g., "hola", "por favor", "necesito", "pueden",
+   "no funciona", "habitación", "baño", "gracias", "quiero", "tengo", "me", "mi", "para", "con", "sin"),
+   treat the message as Spanish (ES), even if it includes English nouns/phrases.
+
+2) If the message contains ANY Portuguese indicators (e.g., "olá/oi", "por favor", "preciso", "pode/podem",
+   "não funciona", "quarto", "banheiro", "obrigado", "quero", "tenho", "meu/minha", "para", "com", "sem"),
+   treat the message as Portuguese (PT), even if it includes English nouns/phrases.
+
+3) Treat as English (EN) ONLY if the message is predominantly English (grammar + function words),
+   not merely containing English hotel terms inside an ES/PT sentence.
+
+Output language constraints:
+- The "detail" field MUST be written in the SAME LANGUAGE as the guest message (as determined above).
+- The "multiple_requests[].detail" fields MUST also be in the SAME LANGUAGE as the guest message.
+- NEVER switch "detail" language to English just because the guest used English hotel terms.
+
+Examples (Spanish with anglicisms → detail in Spanish):
+- "Hola, necesito late checkout" → detail in Spanish
+- "No funciona el AC" → detail in Spanish
+- "Me pasas el wifi password por favor" → detail in Spanish
+- "Quiero room service" → detail in Spanish
+
+Examples (Portuguese with anglicisms → detail in Portuguese):
+- "Oi, preciso de towels" → detail in Portuguese
+- "Não funciona o AC" → detail in Portuguese
+- "Qual é o wifi password?" → detail in Portuguese
+
+Examples (English dominant → detail in English):
+- "Hi, can I get a late checkout please?" → detail in English
+- "The AC is not working in my room" → detail in English
+
+
 Your job is to interpret SHORT WhatsApp messages and return a JSON object with this exact shape:
 
 {
