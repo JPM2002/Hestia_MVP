@@ -1,11 +1,15 @@
 # gateway_app/blueprints/webhook/routes.py
 from __future__ import annotations
 
-import json
+
 import logging
+import time
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from gateway_app.core import message_handler
+
+
 
 
 from flask import (
@@ -23,6 +27,103 @@ from gateway_app.core.conversation import session as session_manager
 
 logger = logging.getLogger(__name__)
 
+# WhatsApp retries webhooks if it doesn't get a fast 200 OK.
+# Without idempotency, the same inbound message gets processed multiple times,
+# and we send the reply multiple times.
+_DEDUP_TTL_SECONDS = 60 * 60  # 1 hour
+_seen_inbound_ids: Dict[str, float] = {}
+_seen_lock = threading.Lock()
+
+_user_locks: Dict[str, threading.Lock] = {}
+_user_locks_lock = threading.Lock()
+
+def _get_user_lock(user_key: str) -> threading.Lock:
+    with _user_locks_lock:
+        lock = _user_locks.get(user_key)
+        if lock is None:
+            lock = threading.Lock()
+            _user_locks[user_key] = lock
+        return lock
+
+def _is_duplicate_inbound(msg_id: Optional[str]) -> bool:
+    if not msg_id:
+        return False
+
+    now = time.time()
+    cutoff = now - _DEDUP_TTL_SECONDS
+
+    with _seen_lock:
+        # Opportunistic cleanup to prevent unbounded growth
+        if len(_seen_inbound_ids) > 5000:
+            for k, ts in list(_seen_inbound_ids.items()):
+                if ts < cutoff:
+                    _seen_inbound_ids.pop(k, None)
+
+        ts = _seen_inbound_ids.get(msg_id)
+        if ts is not None and ts >= cutoff:
+            return True
+
+        _seen_inbound_ids[msg_id] = now
+        return False
+    
+def _process_inbound_and_respond(
+    *,
+    wa_id: str,
+    from_number: str,
+    guest_name: Optional[str],
+    msg_type: str,
+    text: str,
+    media_id: Optional[str],
+    timestamp: datetime,
+    raw_payload: Dict[str, Any],
+    msg_id: Optional[str],
+) -> None:
+    """
+    Runs the full pipeline and sends WhatsApp replies.
+    IMPORTANT: Do not touch Flask request context here.
+    """
+    try:
+        # If audio and no text yet, transcribe here (NOT in webhook request thread)
+        if msg_type == "audio" and not text and media_id:
+            try:
+                text = audio_svc.transcribe_whatsapp_audio(media_id, language="es") or ""
+            except Exception:
+                logger.exception("[WEBHOOK_BG] Audio transcription failed")
+
+        # Serialize processing per user to avoid session/state races
+        lock = _get_user_lock(wa_id)
+        with lock:
+            actions = message_handler.process_guest_message(
+                wa_id=wa_id,
+                from_phone=from_number,
+                guest_name=guest_name,
+                msg_type=msg_type,
+                text=text,
+                media_id=media_id,
+                timestamp=timestamp,
+                raw_payload=raw_payload,
+            )
+
+        for act in actions:
+            if act.get("type") == "text":
+                try:
+                    whatsapp_api.send_text_message(
+                        to=from_number,
+                        text=act.get("text", ""),
+                        preview_url=bool(act.get("preview_url", False)),
+                    )
+                except Exception:
+                    logger.exception("[WEBHOOK_BG] Failed to send WhatsApp text message: %r", act)
+
+        # Mark read (optional) - do it at the end
+        if msg_id:
+            try:
+                whatsapp_api.mark_message_as_read(msg_id)
+            except Exception:
+                logger.exception("[WEBHOOK_BG] Failed to mark WhatsApp message as read")
+
+    except Exception:
+        logger.exception("[WEBHOOK_BG] Unhandled error processing inbound message")
 
 def _parse_inbound(payload: Dict[str, Any]) -> Tuple[
     Optional[str],  # wa_id
@@ -117,6 +218,14 @@ def whatsapp_webhook():
     msg_id = msg.get("id")
     timestamp_str = msg.get("timestamp")
 
+    # Idempotency: ignore duplicates (WhatsApp webhook retries)
+    if _is_duplicate_inbound(msg_id):
+        logger.info(
+            "[WEBHOOK] Duplicate inbound message id; ignoring",
+            extra={"wa_id": wa_id, "msg_id": msg_id},
+        )
+        return jsonify({"status": "ignored", "reason": "duplicate_message_id"}), 200
+
     try:
         ts = (
             datetime.fromtimestamp(int(timestamp_str), tz=timezone.utc)
@@ -126,14 +235,15 @@ def whatsapp_webhook():
     except Exception:
         ts = datetime.now(timezone.utc)
 
-    # Text or audio transcription
+    # Text or audio (transcription happens asynchronously)
     text: str = ""
+    media_id: Optional[str] = None
+
     if msg_type == "text":
         text = (msg.get("text") or {}).get("body") or ""
     elif msg_type == "audio":
         media_id = (msg.get("audio") or {}).get("id")
-        if media_id:
-            text = audio_svc.transcribe_whatsapp_audio(media_id, language="es") or ""
+        text = ""  # will be transcribed in background
 
     logger.info(
         "[WEBHOOK] Parsed inbound",
@@ -141,46 +251,30 @@ def whatsapp_webhook():
             "wa_id": wa_id,
             "from": from_number,
             "type": msg_type,
+            "msg_id": msg_id,
             "text": text,
         },
     )
 
-    # Process message using shared logic (same as /test endpoint)
-    media_id = None
-    if msg_type == "audio":
-        media_id = (msg.get("audio") or {}).get("id")
+    # Run processing in background so we can ACK immediately (prevents WhatsApp retries)
+    threading.Thread(
+        target=_process_inbound_and_respond,
+        daemon=True,
+        kwargs={
+            "wa_id": wa_id or from_number,
+            "from_number": from_number,
+            "guest_name": guest_name,
+            "msg_type": msg_type,
+            "text": text,
+            "media_id": media_id,
+            "timestamp": ts,
+            "raw_payload": data,
+            "msg_id": msg_id,
+        },
+    ).start()
 
-    actions = message_handler.process_guest_message(
-        wa_id=wa_id or from_number,
-        from_phone=from_number,
-        guest_name=guest_name,
-        msg_type=msg_type,
-        text=text,
-        media_id=media_id,
-        timestamp=ts,
-        raw_payload=data,
-    )
-
-    # Send responses via WhatsApp API
-    for act in actions:
-        if act.get("type") == "text":
-            try:
-                whatsapp_api.send_text_message(
-                    to=from_number,
-                    text=act.get("text", ""),
-                    preview_url=bool(act.get("preview_url", False)),
-                )
-            except Exception:
-                logger.exception("Failed to send WhatsApp text message: %r", act)
-
-    # Mark as read (optional)
-    if msg_id:
-        try:
-            whatsapp_api.mark_message_as_read(msg_id)
-        except Exception:
-            logger.exception("Failed to mark WhatsApp message as read")
-
-    return jsonify({"status": "ok"}), 200
+    # ACK fast so WhatsApp doesn't retry this delivery
+    return jsonify({"status": "accepted"}), 200
 
 
 @bp.route("/test", methods=["POST"])
