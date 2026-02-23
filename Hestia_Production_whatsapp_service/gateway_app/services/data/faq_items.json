@@ -307,12 +307,12 @@
   {
     "key": "restaurant_hours",
     "q": "¿Cuál es el horario del restaurante?",
-    "a": "El restaurante Olivia está abierto desde las 12:00 hasta las 22:30 horas. El desayuno es de lunes a viernes de 6:00 a 10:00 y fines de semana y festivos de 6:30 a 10:30. El almuerzo es de 12:00 a 15:00 (carta y pizza). Entre las 15:00 y 19:00 solo se sirve pizza. La cena es de 19:00 a 22:30 (carta y pizza)."
+    "a": "El restaurante Olivia está abierto desde las 12:00 hasta las 22:30 horas. El desayuno es de lunes a viernes de 6:00 a 10:00 y fines de semana y festivos de 7:00 a 11:00. El almuerzo es de 12:30 a 15:00 (carta y pizza). Entre las 15:00 y 19:00 solo se sirve pizza. La cena es de 19:00 a 22:30 (carta y pizza)."
   },
   {
     "key": "time_lunch",
     "q": "¿Cual es el horario de almuerzo?",
-    "a": "El horario de almuerzo en el restaurante Olivia es de 12:00 a 15:00 horas (carta y pizza). Fines de semana y festivos de 13:00 a 15:30 horas."
+    "a": "El horario de almuerzo en el restaurante Olivia es de 12:30 a  15:00 horas (carta y pizza). Fines de semana y festivos de 13:00 a 15:00 horas."
   },
   {
     "key": "restaurant_reservation",
@@ -322,7 +322,7 @@
   {
     "key": "bar_cafeteria",
     "q": "¿Tienen bar o cafetería?",
-    "a": "Sí, contamos con bar abierto hasta las 2:00 AM y cafetería en el restaurante Olivia Trattoria, ubicado en el nivel -1 del hotel."
+    "a": "Sí, contamos con bar abierto hasta las 2:00 AM (consumo de licor desde las 12:30 PM) y cafetería en el restaurante Olivia Trattoria, ubicado en el nivel -1 del hotel."
   },
   {
     "key": "kitchen_hours",
@@ -697,7 +697,7 @@
   {
     "key": "bar_nearby",
     "q": "¿Dónde hay un bar cerca?",
-    "a": "En el piso -1 del hotel se encuentra el Olivia Trattoria, que cuenta con bar abierto hasta las 2:00 AM."
+    "a": "En el piso -1 del hotel se encuentra el Olivia Trattoria, que cuenta con bar abierto hasta las 2:00 AM y consumo de licor desde las 12:30 PM."
   },
   {
     "key": "park_nearby",
