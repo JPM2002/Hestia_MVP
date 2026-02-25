@@ -2,507 +2,527 @@
   {
     "key": "checkin_time",
     "q": "¿A qué hora es el check-in?",
-    "a": "El check-in es a partir de las 15:00 horas."
+    "a": "El check-in comienza a las 15:00 hrs."
   },
   {
     "key": "early_checkin",
     "q": "¿Puedo hacer check-in antes de la hora?",
-    "a": "Sí, debe consultar en recepción por disponibilidad."
+    "a": "El early check-in está sujeto a disponibilidad y tiene un costo de 60 dólares + IVA desde las 09:00 hrs."
   },
   {
     "key": "checkout_time",
     "q": "¿A qué hora es el check-out?",
-    "a": "El check-out es hasta las 12:00 horas. En caso de que desee dejar la habitación más tarde, diríjase a recepción para consultar disponibilidad."
+    "a": "El check-out es a las 12:00 hrs."
   },
   {
     "key": "late_checkout",
     "q": "¿Puedo dejar la habitación más tarde?",
-    "a": "Claro que sí, siempre y cuando tengamos disponibilidad. Consulte en recepción."
+    "a": "Sí, el late check-out está sujeto a disponibilidad y tiene un costo de 60 dólares + IVA hasta las 18:00 hrs. Por favor acércate a recepción para solicitarlo."
   },
   {
     "key": "fast_checkout",
     "q": "¿Cómo puedo hacer el check-out rápido?",
-    "a": "El proceso es muy sencillo. Solo debes avisar en recepción que te retiras y luego puedes dejar la llave en la caja acrílica que encontrarás en el mesón de recepción. ¡Que tengas un buen viaje!"
+    "a": "Puede hacer el check-out más rápido solicitando el pago y cierre de su reserva al momento del check-in, para hacer el check-out de forma expedita."
   },
   {
     "key": "late_checkout_payment",
     "q": "¿Puedo pagar el late check-out?",
-    "a": "Claro, el late check-out equivale al 50% de la tarifa de una noche. Puedes quedarte hasta las 17:00 horas, sujeto a disponibilidad. Por favor acércate a recepción para gestionarlo."
+    "a": "Sí. El late check-out tiene un costo de 60 dólares + IVA hasta las 18:00 hrs."
   },
   {
     "key": "key_drop",
     "q": "¿Dónde dejo la llave al salir?",
-    "a": "Debes dejar tu llave en la caja acrílica que encontrarás en el mesón de recepción."
+    "a": "La tarjeta debe ser dejada en recepción al momento del check-out."
   },
   {
     "key": "luggage_after_checkout",
     "q": "¿Puedo dejar mi equipaje después del check-out?",
-    "a": "¡Claro! Puedes dejarlo en el valijero de recepción un máximo de 24 horas después del check-out."
+    "a": "Sí. Puede dejar su equipaje en custodia de recepción hasta que se retire del hotel."
   },
   {
     "key": "early_checkin_cost",
     "q": "¿Cuánto cuesta el early check-in?",
-    "a": "El early check-in tiene un costo del 50% de la noche. Sujeto a disponibilidad, por favor acércate a recepción para gestionarlo."
+    "a": "El early check-in tiene un costo de 60 dólares + IVA desde las 09:00 hrs. Antes de ese horario se cobra la noche completa."
   },
   {
     "key": "online_checkin",
     "q": "¿Se puede hacer el check-in online?",
-    "a": "Sí, pero solo para completar la información del huésped. De todas formas, debe acercarse a recepción a su llegada."
+    "a": "No, no contamos con aplicación para realizar check-in online."
   },
   {
     "key": "luggage_storage_place",
     "q": "¿Dónde puedo guardar mi maleta?",
-    "a": "Puedes guardar tu equipaje en el valijero de recepción durante el día del check-out, con un máximo de 24 horas."
+    "a": "Contamos con custodia de maletas. Puede solicitarlo en recepción."
   },
   {
     "key": "luggage_storage",
     "q": "¿Tienen custodia de equipaje?",
-    "a": "Sí, contamos con valijero en recepción con un máximo de 24 horas después del check-out."
+    "a": "Sí, contamos con custodia de maletas. Puede solicitarlo en recepción."
   },
   {
     "key": "luggage_storage_time",
     "q": "¿Cuánto tiempo pueden guardar mis cosas?",
-    "a": "Podemos guardar tu equipaje durante un máximo de 24 horas."
+    "a": "Podemos guardar tu equipaje durante máximo un mes."
   },
   {
     "key": "luggage_to_airport",
     "q": "¿Pueden enviarme mi maleta al aeropuerto?",
-    "a": "No, lamentablemente no contamos con servicio de envío de equipaje al aeropuerto."
+    "a": "Sí, según disponibilidad puede solicitar el traslado de su maleta al aeropuerto. La entregamos en el punto de recogida (Expreso 1 C22) con nuestro conductor, pero debe ser retirada por el mismo pasajero."
   },
   {
     "key": "airport_transfer",
     "q": "¿Tienen servicio de transporte al aeropuerto?",
-    "a": "Sí, contamos con servicio de taxi externo al hotel. El precio es de $35.000 en auto y $45.000 en van (confirmar precios en recepción)."
+    "a": "Sí, contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos. En caso de urgencia, acérquese a recepción."
   },
   {
     "key": "transfer_cost",
     "q": "¿Cuánto cuesta el transfer?",
-    "a": "El valor lo indica el servicio de taxis externo. Algunas tarifas fijas son:\n• Hotel → Aeropuerto: Auto $35.000 / Van $45.000\n• a Mall Alto las Condes: $8.000\n• a Bellavista: $15.000\n• a Santiago Centro: $15.000\n• a Buenaventura: $25.000\n• a Clínica las Condes: $9.000\n• a San Carlos de Apoquindo: $13.000\n• a Terminal de Buses E. Central: $20.000\nOtros destinos: Farellones, Valle Nevado, Cajón del Maipo, Viña del Mar, Valparaíso, Casinos, etc. Consulte en recepción para más destinos."
+    "a": "Puede consultar el costo del transporte al aeropuerto directamente en recepción o llamando al +56 9 7796 7879."
+  },
+  {
+    "key": "transfer_frequency",
+    "q": "¿Cada cuánto sale el transporte hacia el aeropuerto?",
+    "a": "Contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos."
   },
   {
     "key": "taxi_booking",
     "q": "¿Puedo reservar un taxi desde aquí?",
-    "a": "Sí, el valor lo indica el servicio de taxis externo. Algunas tarifas fijas son:\n• Hotel → Aeropuerto: Auto $35.000 / Van $45.000\n• a Alto las Condes: $8.000\n• a Bellavista: $15.000\n• a Santiago Centro: $15.000\n• a Buenaventura: $25.000\n• a Clínica las Condes: $9.000\n• a San Carlos de Apoquindo: $13.000\n• a Terminal de Buses E. Central: $20.000\nOtros destinos: Farellones, Valle Nevado, Cajón del Maipo, Viña del Mar, Valparaíso, etc. Consulte en recepción."
+    "a": "Sí, puede solicitar un taxi en recepción."
   },
   {
     "key": "parking_available",
     "q": "¿Tienen estacionamiento?",
-    "a": "Sí, contamos con estacionamiento. Debes validar tu ticket en recepción."
+    "a": "Sí, contamos con estacionamiento exterior y subterráneo."
   },
   {
     "key": "parking_included",
     "q": "¿Está incluido el estacionamiento?",
-    "a": "Sí, está incluido para huéspedes. Debes validar tu ticket en recepción."
+    "a": "Sí, el estacionamiento está incluido durante su estadía."
   },
   {
     "key": "ev_chargers",
     "q": "¿Tienen cargadores eléctricos para autos?",
-    "a": "Sí, contamos con cargador eléctrico para vehículos en el nivel -2, en el pasillo ubicado entre los bicicleteros y el ingreso al edificio Manquehue; está demarcado de color verde con flechas."
+    "a": "No contamos con cargadores eléctricos para autos."
   },
   {
     "key": "rooms_with_balcony",
     "q": "¿Tienen habitaciones con balcón?",
-    "a": "No, lamentablemente no contamos con habitaciones con balcón."
+    "a": "No contamos con habitaciones con balcón."
   },
   {
     "key": "room_change",
     "q": "¿Puedo cambiar de habitación?",
-    "a": "Sí, por favor acércate a recepción para poder gestionarlo."
+    "a": "Puede solicitar un cambio de habitación según disponibilidad en recepción."
   },
   {
     "key": "rooms_with_city_view",
     "q": "¿Tienen vista a la ciudad?",
-    "a": "Sí, contamos con vista a los alrededores del hotel."
+    "a": "Las habitaciones cuentan con vista hacia la montaña y la autopista."
   },
   {
     "key": "quiet_room",
     "q": "¿Puedo pedir una habitación más silenciosa?",
-    "a": "Claro que sí, consulte por disponibilidad en recepción. De antemano, pedimos disculpas por cualquier ruido."
+    "a": "Sí, puede solicitar sus preferencias al momento de realizar la reserva o el check-in, sujeto a disponibilidad."
+  },
+  {
+    "key": "robe_request",
+    "q": "¿Puedo solicitar bata?",
+    "a": "No contamos con batas."
+  },
+  {
+    "key": "slippers_request",
+    "q": "¿Puedo solicitar pantuflas?",
+    "a": "No contamos con pantuflas."
   },
   {
     "key": "ac_control_location",
     "q": "¿Dónde puedo encontrar el control del aire acondicionado?",
-    "a": "El aire acondicionado se controla desde la pared de la habitación, donde podrás prenderlo o apagarlo. La temperatura se regula de acuerdo con la temporada (frío en verano, calor en invierno)."
+    "a": "En la pared está el termostato del aire acondicionado. No cuenta con control remoto."
   },
   {
     "key": "temperature_control",
     "q": "¿Puedo regular la temperatura?",
-    "a": "Puedes subir o bajar la intensidad. El aire se regula de acuerdo con la temporada (frío en verano, calor en invierno)."
+    "a": "Sí, puede regular la temperatura de su habitación de manera manual en el termostato ubicado en la pared."
   },
   {
     "key": "minibar_location",
     "q": "¿Tienen minibar?",
-    "a": "No, nuestras habitaciones no cuentan con frigorífico ni minibar."
+    "a": "Contamos con un frigobar vacío para almacenar alimentos. Mantiene la temperatura pero no enfría."
   },
   {
     "key": "safe_open_instructions",
     "q": "¿Cómo se abre la caja fuerte?",
-    "a": "La caja fuerte estará abierta dentro de la habitación cuando hagas el ingreso. Ahí, debes crear un código personal entre 3 y 6 dígitos y pulsar \"C\". Con este código podrás abrir la caja cuando sea necesario."
+    "a": "La caja fuerte ya está abierta al ingresar. El huésped puede configurar su propia clave."
   },
   {
     "key": "safe_code",
     "q": "¿Cuál es la clave de la caja fuerte?",
-    "a": "La caja fuerte estará abierta dentro de la habitación cuando hagas el ingreso. Ahí, debes crear un código personal entre 3 y 6 dígitos y pulsar \"C\". Con este código podrás abrir la caja cuando sea necesario."
+    "a": "La caja fuerte no tiene clave predeterminada. Usted debe configurarla al ingresar."
   },
   {
     "key": "safe_change_code",
     "q": "¿Cómo puedo cambiar la clave de la caja fuerte?",
-    "a": "La caja fuerte estará abierta dentro de la habitación cuando hagas el ingreso. Ahí, debes crear un código personal entre 3 y 6 dígitos y pulsar \"C\". Con este código podrás abrir la caja cuando sea necesario."
+    "a": "Puede configurar o cambiar la clave directamente en la caja fuerte. Si necesita asistencia, contáctese con recepción."
   },
   {
     "key": "safe_forgot_code_help",
     "q": "Olvidé la clave de la caja fuerte, ¿me pueden ayudar?",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda asistirte."
+    "a": "Sí, en caso de que no pueda abrir su caja fuerte puede solicitar ayuda en recepción."
   },
   {
     "key": "safe_not_open",
     "q": "La caja fuerte no abre, ¿qué debo hacer?",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda asistirte."
+    "a": "Si la caja fuerte no abre, por favor avise en recepción para solicitar ayuda."
   },
   {
     "key": "connecting_rooms",
     "q": "¿Tienen habitaciones conectadas?",
-    "a": "No, lamentablemente no contamos con habitaciones conectadas."
+    "a": "Sí, contamos con habitaciones conectadas sujeto a disponibilidad. Consulte en recepción."
+  },
+  {
+    "key": "extra_bed",
+    "q": "¿Puedo pedir una cama adicional?",
+    "a": "Sí, una cama adicional tiene un costo extra de 30 dólares + IVA y está sujeta a disponibilidad."
   },
   {
     "key": "smoking_in_room",
     "q": "¿Puedo fumar en la habitación?",
-    "a": "No está permitido fumar en nuestras habitaciones."
+    "a": "No. Está estrictamente prohibido fumar dentro de las habitaciones. De ser sorprendido, la multa es de 200 USD + IVA. Contamos con áreas públicas como la terraza/jardín para fumar."
   },
   {
     "key": "non_smoking_hotel",
     "q": "¿Tienen habitaciones para no fumadores?",
-    "a": "Todas nuestras habitaciones son para no fumadores."
+    "a": "No contamos con habitaciones para fumadores. Puede usar las áreas públicas designadas: terraza/jardín o frente del hotel."
   },
   {
     "key": "tv_usage",
     "q": "¿Cómo se usa la TV?",
-    "a": "Debes encender la TV con el control remoto que se encuentra dentro de la habitación. Contamos con canales de noticias, deportes, películas, entre otros."
+    "a": "Nuestros televisores cuentan con TV cable y funcionan con control remoto, que se encuentra en el velador."
   },
   {
     "key": "tv_channels",
     "q": "¿Qué canales de televisión tienen?",
-    "a": "Contamos con una variedad de canales deportivos, nacionales, internacionales, infantiles, de películas y de noticias."
+    "a": "Cuenta con canales nacionales e internacionales (español e inglés)."
   },
   {
     "key": "smart_tv",
     "q": "¿Tienen Netflix o Smart TV?",
-    "a": "Contamos con Smart TV y acceso a plataformas de streaming solo en algunas habitaciones."
+    "a": "Sí, contamos con Smart TV y plataformas de streaming, pero funcionan solo si se conecta internet desde un dispositivo externo. Con el wifi del hotel, por políticas, no funcionan."
   },
   {
     "key": "phone_charging",
     "q": "¿Dónde puedo cargar mi celular?",
-    "a": "Puedes cargar tu celular en el enchufe de la habitación o en el lobby del hotel."
+    "a": "Puedes encontrar conectores de corriente y puertos USB dentro de la habitación."
   },
   {
     "key": "windows_openable",
     "q": "¿Se puede abrir la ventana?",
-    "a": "Sí, puedes abrir la ventana de tu habitación."
-  },
-  {
-    "key": "need_room_change",
-    "q": "Necesito que me cambien la habitación",
-    "a": "Por favor acércate a recepción para que puedan gestionar el cambio, sujeto a disponibilidad."
-  },
-  {
-    "key": "wrong_bed_type",
-    "q": "Compré una habitación doble, pero me dieron una con una cama",
-    "a": "Si hubo un error, por favor acércate a recepción para que puedan verificar y solucionar a la brevedad."
-  },
-  {
-    "key": "room_error",
-    "q": "Creo que hay un error con mi habitación",
-    "a": "Por favor indica el posible error en recepción para que puedan verificarlo y solucionarlo a la brevedad."
-  },
-  {
-    "key": "room_error_arrival",
-    "q": "Acabo de llegar y creo que hay un error con mi habitación",
-    "a": "Por favor indica el posible error en recepción para que puedan verificarlo y solucionarlo a la brevedad."
+    "a": "No, las ventanas no se pueden abrir en la habitación."
   },
   {
     "key": "complaints_book",
     "q": "Donde puedo dejar un reclamo",
-    "a": "Puedes acercarte a recepción para dejar tu reclamo. Cada habitación también cuenta con un folleto donde puedes dejar tus comentarios y sugerencias."
+    "a": "En recepción puede solicitar el libro de reclamos, o puede escribir a pia.falcon@hilton.com."
   },
   {
     "key": "suggestions_book",
     "q": "Donde puedo dejar una sugerencia",
-    "a": "Puedes acercarte a recepción para dejar tu sugerencia. Cada habitación también cuenta con un folleto donde puedes dejar tus comentarios."
+    "a": "En recepción puede solicitar el libro de sugerencias, o puede escribir a pia.falcon@hilton.com."
   },
   {
     "key": "cleaning_hours",
     "q": "¿A qué hora limpian las habitaciones?",
-    "a": "Realizamos limpieza de habitaciones entre las 9:00 y las 17:00 horas."
+    "a": "Las mucamas tienen desde las 8:00 AM hasta las 8:00 PM para limpiar habitaciones."
   },
   {
     "key": "cleaning_later",
     "q": "¿Puedo pedir que limpien más tarde?",
-    "a": "Sí, siempre que la solicitud sea dentro del horario de servicio: 9:00 a 17:00 horas."
+    "a": "Sí, puede solicitarlo a recepción dentro del horario de servicio (8:00 AM a 8:00 PM)."
   },
   {
     "key": "no_cleaning",
     "q": "¿Puedo pedir que no entren a limpiar?",
-    "a": "Para solicitar que no realicen la habitación, por favor coloca el cartel de 'No molestar' en tu puerta."
+    "a": "Sí, puede dejar el cartel 'No molestar' en la puerta de su habitación o solicitarlo en recepción."
   },
   {
     "key": "laundry_service",
     "q": "¿Puedo dejar ropa para la lavandería?",
-    "a": "Lamentablemente, no contamos con servicio de lavandería."
+    "a": "Sí, en el clóset encontrará una bolsa y un formulario. Complételo y baje la ropa antes de las 9:00 AM a recepción, de lunes a sábado."
   },
   {
     "key": "laundry_time",
     "q": "¿Cuánto demora el servicio de lavandería?",
-    "a": "Lamentablemente, no contamos con servicio de lavandería."
+    "a": "La ropa debe entregarse antes de las 9:00 AM de lunes a sábado y estará lista al siguiente día hábil después de las 12:00 PM."
   },
   {
     "key": "dry_cleaning_service",
-    "q": "¿Tienen servicio de tintorería?",
-    "a": "No contamos con servicio de tintorería. Sin embargo, disponemos de una sala de planchado gratuito, ubicada en el piso -1, al costado de los baños (costado izquierdo al salir del ascensor)."
-  },
-  {
-    "key": "bathroom_bad_smell",
-    "q": "Hay mal olor en el baño, ¿pueden revisarlo?",
-    "a": "Claro, por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisar y solucionar el problema."
-  },
-  {
-    "key": "request_not_arrived",
-    "q": "Solicité algo y aún no han venido, ¿pueden revisar el estado?",
-    "a": "Claro, por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo revise el estado de tu solicitud."
+    "q": "¿Tienen planchado o tintorería?",
+    "a": "En su habitación encontrará una tabla de planchar y una plancha. También contamos con servicio de lavandería externo disponible de lunes a sábado."
   },
   {
     "key": "breakfast_time",
     "q": "¿Cuál es el horario de desayuno?",
-    "a": "El desayuno se sirve en el restaurante Olivia. De lunes a viernes de 6:00 a 10:00 horas. Fines de semana y feriados de 7:00 a 11:00 horas."
+    "a": "De lunes a viernes de 6:00 AM a 10:00 AM. Fines de semana y festivos de 6:00 AM a 11:00 AM."
   },
   {
     "key": "breakfast_place",
     "q": "¿Dónde se sirve el desayuno?",
-    "a": "El desayuno se sirve en el restaurante Olivia, ubicado en el nivel -1 del hotel."
+    "a": "El desayuno se sirve en nuestro restaurante, ubicado frente al lobby."
   },
   {
     "key": "breakfast_included",
     "q": "¿Está incluido el desayuno?",
-    "a": "Depende de su tarifa. Consulte en recepción."
+    "a": "En el detalle de su reserva estará indicado si está incluido el desayuno o no."
+  },
+  {
+    "key": "breakfast_price",
+    "q": "¿Cuál es el precio del desayuno?",
+    "a": "Nuestro desayuno buffet cuesta USD $20 + IVA para adultos y USD $10 + IVA para niños."
   },
   {
     "key": "breakfast_room_service",
     "q": "¿Puedo pedir el desayuno a la habitación?",
-    "a": "No contamos con servicio a la habitación, pero si lo deseas, puedes llevar el desayuno desde el restaurante Olivia a tu habitación."
+    "a": "No es posible solicitar el desayuno a la habitación, ya que es servicio de buffet."
   },
   {
     "key": "menu_options",
     "q": "¿Qué opciones tiene el menú?",
-    "a": "Puedes consultar el menú del restaurante Olivia en el siguiente enlace: https://gour.media/olivia/?fbclid=PAZXh0bgNhZW0CMTEAAaeDGXEfYsq42_JhbN77cV1VMYHO50fBYHmZoIEOLKZ5swlbQ9Gw2ey5fZAPpw_aem_8DzOMSinabk3W3TNV5KGEw"
+    "a": "Hay una variedad de platos. Puede revisarlos escaneando nuestro código QR o ingresando a https://gour.media/hilton-garden-inn-santiago/restaurant/"
   },
   {
     "key": "vegetarian_vegan",
     "q": "¿Tienen opciones vegetarianas o veganas?",
-    "a": "Sí, nuestro restaurante cuenta con opciones vegetarianas y veganas."
+    "a": "Sí, contamos con opciones vegetarianas y veganas en nuestro menú."
   },
   {
     "key": "gluten_free",
     "q": "¿Tienen menú sin gluten?",
-    "a": "Sí, nuestro restaurante cuenta con opciones con y sin gluten."
+    "a": "Sí, hay opciones sin gluten en la carta de almuerzo/cena. Para el desayuno es necesario avisar con anticipación para la preparación."
+  },
+  {
+    "key": "sugar_free_menu",
+    "q": "¿Tienen opción sin azúcar?",
+    "a": "Sí, contamos con opciones sin azúcar."
   },
   {
     "key": "restaurant_hours",
     "q": "¿Cuál es el horario del restaurante?",
-    "a": "El restaurante Olivia está abierto desde las 12:00 hasta las 22:30 horas. El desayuno es de lunes a viernes de 6:00 a 10:00 y fines de semana y festivos de 7:00 a 11:00. El almuerzo es de 12:30 a 15:00 (carta y pizza). Entre las 15:00 y 19:00 solo se sirve pizza. La cena es de 19:00 a 22:30 (carta y pizza)."
+    "a": "Nuestro restaurante funciona de 6:00 AM a 10:00 AM (11:00 AM festivos y fin de semana) para desayuno, y desde las 12:00 PM a 11:00 PM para almuerzo y cena."
+  },
+  {
+    "key": "restaurant_iva_foreigners",
+    "q": "¿Cobran IVA en el restaurante en caso de ser extranjero?",
+    "a": "Toda la carta de nuestro restaurante tiene el impuesto incluido."
   },
   {
     "key": "time_lunch",
     "q": "¿Cual es el horario de almuerzo?",
-    "a": "El horario de almuerzo en el restaurante Olivia es de 12:30 a  15:00 horas (carta y pizza). Fines de semana y festivos de 13:00 a 15:00 horas."
+    "a": "El almuerzo está disponible desde las 12:00 PM hasta las 11:00 PM."
   },
   {
     "key": "restaurant_reservation",
-    "q": "¿Puedo hacer una reserva?",
-    "a": "Sí, puedes gestionar una reserva directamente en: https://fiweex.com/reservas_portal_bienvenida/aYZ3gg%3D%3D"
+    "q": "¿Puedo hacer una reserva en el restaurante?",
+    "a": "Sí, puede realizarla a través del correo reservas.gardengrillaeropuerto@sh-hotels.cl o llamando al hotel al +56 2 2964 1000 y pidiendo comunicarse con el restaurante."
   },
   {
     "key": "bar_cafeteria",
     "q": "¿Tienen bar o cafetería?",
-    "a": "Sí, contamos con bar abierto hasta las 2:00 AM (consumo de licor desde las 12:30 PM) y cafetería en el restaurante Olivia Trattoria, ubicado en el nivel -1 del hotel."
+    "a": "Sí, contamos con bar y cafetería disponibles desde las 12:00 PM hasta las 11:00 PM."
   },
   {
     "key": "kitchen_hours",
     "q": "¿Hasta qué hora sirven comida?",
-    "a": "En el restaurante Olivia, la cocina está abierta hasta las 22:30 horas."
+    "a": "El restaurante está abierto hasta las 23:00 PM."
   },
   {
     "key": "room_service",
     "q": "¿Tienen servicio a la habitación?",
-    "a": "Lamentablemente, no contamos con servicio a la habitación."
+    "a": "Sí, contamos con servicio a la habitación desde las 16:00 hasta las 22:30 hrs."
   },
   {
     "key": "room_service_how",
     "q": "¿Cómo hago un pedido de Room Service?",
-    "a": "Lamentablemente, no contamos con servicio a la habitación."
+    "a": "Puede hacerlo llamando desde el teléfono de la habitación al número 1035, o llamando a recepción al 0 y pidiendo comunicarse con el restaurante."
   },
   {
     "key": "special_occasions",
     "q": "¿Puedo pedir algo especial para una ocasión?",
-    "a": "Sí, consulte en recepción y con gusto lo coordinamos."
+    "a": "Sí, puede solicitarlo a través del correo hgi_reservasantiago@hilton.com"
   },
   {
     "key": "external_food_apps",
     "q": "¿Se puede pedir comida desde apps externas?",
-    "a": "Sí, puedes pedir desde aplicaciones como Rappi, Uber Eats, Pedidos Ya y más."
+    "a": "Sí, es posible."
   },
   {
     "key": "free_bottled_water",
     "q": "¿Tienen agua embotellada gratuita?",
-    "a": "No contamos con agua embotellada gratuita. Puedes encontrar un dispensador de agua filtrada en el nivel -1, fuera de la sala de planchado."
+    "a": "Al hacer check-in encontrará botellas de agua de cortesía la primera noche. Si desea más, puede comprar en recepción o restaurante."
   },
   {
     "key": "tea_coffee_in_room",
     "q": "¿Podrían traer un té/café a la habitación?",
-    "a": "Lamentablemente no contamos con servicio a la habitación. Puedes disfrutar de té y café en el restaurante Olivia, ubicado en el nivel -1."
+    "a": "Es posible solicitarlo mediante room service, desde las 16:00 hasta las 23:00 hrs, llamando desde el teléfono de la habitación al número 1035."
+  },
+  {
+    "key": "kettle_in_room",
+    "q": "¿Tienen hervidor en la habitación?",
+    "a": "Sí, en la habitación encontrará un hervidor disponible."
+  },
+  {
+    "key": "coffee_machine_room",
+    "q": "¿Tienen máquina de café en la habitación?",
+    "a": "No contamos con máquinas de café en la habitación."
   },
   {
     "key": "wifi_password",
     "q": "¿Cuál es la clave del wifi?",
-    "a": "Nuestro wifi \"Wi-Fi for all\" es abierto y no tiene clave. Solo debes ingresar los datos requeridos para conectarte."
+    "a": "Nuestra red wifi se llama \"Hilton Honors\" y no cuenta con clave."
   },
   {
     "key": "wifi_free",
     "q": "¿El wifi es gratuito?",
-    "a": "Sí, nuestro wi-fi no tiene ningún costo asociado. Solo debes ingresar los datos requeridos para conectarte."
+    "a": "Sí, es gratuito."
   },
   {
     "key": "wifi_signal_best",
     "q": "¿Dónde llega mejor la señal?",
-    "a": "Contamos con buena señal en todo el perímetro del hotel."
+    "a": "La señal funciona bien en todo el hotel."
   },
   {
     "key": "guest_computers",
     "q": "¿Hay computadoras disponibles para huéspedes?",
-    "a": "Lamentablemente, no contamos con computadoras disponibles para huéspedes."
+    "a": "Sí, contamos con business center en el primer piso."
   },
   {
     "key": "printing_docs",
     "q": "¿Puedo imprimir un documento?",
-    "a": "Sí, puedes imprimir un documento directamente en recepción."
+    "a": "Sí, puede solicitar impresión enviando sus archivos a nuestro WhatsApp +56 9 7796 7879 o por correo a recepcionhiltonstgo@sh-hotels.cl"
   },
   {
     "key": "videocalls_lobby",
     "q": "¿Puedo hacer videollamadas desde el lobby?",
-    "a": "Sí, no hay ningún problema en realizar llamadas en el lobby del hotel."
+    "a": "Sí, es posible."
   },
   {
     "key": "usb_adapters",
     "q": "¿Tienen puertos USB o adaptadores?",
-    "a": "Sí, contamos con puertos USB en el lobby y adaptadores en recepción. Para pedir un adaptador se debe dejar una garantía de 10 dólares / $10.000 CLP en recepción."
+    "a": "Sí, todas las habitaciones tienen puertos USB. También contamos con adaptadores para préstamo en recepción, que deben devolverse al check-out."
   },
   {
     "key": "fast_charging",
     "q": "¿Tienen servicio de carga rápida?",
-    "a": "No contamos con servicio de carga rápida."
+    "a": "Nuestros puertos USB son de carga regular."
   },
   {
     "key": "wifi_pool_gym",
     "q": "¿El wifi llega hasta la piscina o gimnasio?",
-    "a": "No contamos con servicios de piscina ni gimnasio en el hotel."
+    "a": "Sí, nuestro wifi de alta velocidad cubre zonas como la piscina y el gimnasio."
   },
   {
     "key": "wifi_problem",
     "q": "Tengo problemas con la red wifi",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisarlo."
+    "a": "Intente olvidar la red y volver a conectarse. También intente reiniciar su dispositivo. Si el problema persiste, por favor acérquese a recepción."
   },
   {
     "key": "no_internet",
     "q": "No tengo acceso a Internet",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisarlo."
+    "a": "Intente olvidar la red y volver a conectarse. También intente reiniciar su dispositivo. Si el problema persiste, por favor acérquese a recepción."
   },
   {
     "key": "wifi_slow",
     "q": "La conexión wifi está muy lenta",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisarlo."
+    "a": "Intente olvidar la red y volver a conectarse. También intente reiniciar su dispositivo. Si el problema persiste, por favor acérquese a recepción."
   },
   {
     "key": "wifi_down",
     "q": "Se cayó la conexión del wifi",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisarlo."
+    "a": "Intente olvidar la red y volver a conectarse. También intente reiniciar su dispositivo. Si el problema persiste, por favor acérquese a recepción."
   },
   {
     "key": "wifi_connection_issue",
     "q": "Tengo problemas con la conexión wifi",
-    "a": "Por favor comunícate con recepción al +56 9 2035 5564 para que nuestro equipo pueda revisarlo."
+    "a": "Intente olvidar la red y volver a conectarse. También intente reiniciar su dispositivo. Si el problema persiste, por favor acérquese a recepción."
   },
   {
     "key": "pool",
     "q": "¿Tienen piscina?",
-    "a": "No contamos con piscina en el hotel."
+    "a": "Sí, tenemos piscina climatizada, abierta desde las 8:00 AM hasta las 22:00 PM."
   },
   {
     "key": "pool_opening",
     "q": "¿A qué hora abre la piscina?",
-    "a": "No contamos con piscina en el hotel."
+    "a": "Está abierta desde las 8:00 AM hasta las 22:00 PM."
   },
   {
     "key": "pool_heated",
-    "q": "¿Está climatizada?",
-    "a": "No contamos con piscina en el hotel. De antemano, le pedimos disculpas."
+    "q": "¿Está climatizada la piscina?",
+    "a": "Sí, nuestra piscina está climatizada."
+  },
+  {
+    "key": "pool_cap",
+    "q": "¿Tienen gorro para la piscina?",
+    "a": "Sí, contamos con gorros para la piscina a la venta en recepción."
   },
   {
     "key": "gym",
     "q": "¿Tienen gimnasio?",
-    "a": "No contamos con gimnasio en el hotel. De antemano, le pedimos disculpas."
+    "a": "Sí, contamos con gimnasio abierto todos los días desde las 5:00 AM hasta las 22:00 PM."
   },
   {
     "key": "gym_opening",
     "q": "¿A qué hora abre el gimnasio?",
-    "a": "No contamos con gimnasio en el hotel. De antemano, le pedimos disculpas."
+    "a": "Está abierto todos los días desde las 5:00 AM hasta las 22:00 PM."
   },
   {
     "key": "spa",
     "q": "¿Tienen spa?",
-    "a": "No contamos con spa en el hotel. De antemano, le pedimos disculpas."
+    "a": "No contamos con spa."
   },
   {
     "key": "massage_booking",
     "q": "¿Cómo puedo reservar un masaje?",
-    "a": "No contamos con masajistas en el hotel. De antemano, le pedimos disculpas."
+    "a": "Trabajamos con una empresa externa de masajes. Consulte disponibilidad en recepción."
   },
   {
     "key": "sauna_jacuzzi",
     "q": "¿Tienen sauna o jacuzzi?",
-    "a": "No contamos con sauna ni jacuzzi en el hotel. De antemano, le pedimos disculpas."
+    "a": "Sí, tenemos ambos servicios disponibles desde las 8:00 AM hasta las 22:00 PM."
   },
   {
     "key": "hair_beauty",
     "q": "¿Tienen servicio de peluquería o estética?",
-    "a": "No contamos con peluquería en el hotel. De antemano, le pedimos disculpas."
+    "a": "No, no tenemos servicio de peluquería o estética."
   },
   {
     "key": "coworking",
     "q": "¿Tienen áreas para trabajar o coworking?",
-    "a": "Sí, contamos con un área de cowork en recepción."
+    "a": "Sí, contamos con Business Center disponible las 24 hrs."
   },
   {
     "key": "events_room",
     "q": "¿Puedo usar el salón de eventos?",
-    "a": "No contamos con salones de eventos en el hotel. De antemano, le pedimos disculpas."
+    "a": "Sí. Consulte por precios y disponibilidad en recepción."
   },
   {
     "key": "terrace_rooftop",
     "q": "¿Tienen terraza o azotea?",
-    "a": "Sí, contamos con una terraza en el nivel -1."
+    "a": "Sí, contamos con terraza a un costado de la recepción."
   },
   {
     "key": "babysitting",
     "q": "¿Tienen servicio de babysitting?",
-    "a": "No contamos con servicio de babysitting en el hotel. De antemano, le pedimos disculpas."
+    "a": "No contamos con servicio de babysitting."
   },
   {
     "key": "kids_games",
     "q": "¿Tienen juegos para niños?",
-    "a": "Sí, contamos con juegos de mesa en el lobby del hotel."
+    "a": "No tenemos juegos para niños."
   },
   {
     "key": "visitors_policy",
     "q": "¿Puedo recibir visitas?",
-    "a": "Sí, se aceptan visitas, pero deben ser registradas como invitados en recepción."
+    "a": "Sí, es posible recibir visitas."
   },
   {
     "key": "pay_with_card",
@@ -512,306 +532,301 @@
   {
     "key": "bank_transfer",
     "q": "¿Aceptan transferencias?",
-    "a": "Sí, aceptamos transferencias."
+    "a": "Sí, se aceptan transferencias con 5 días de anticipación, solicitándolo a través de reservas."
   },
   {
     "key": "pay_in_dollars",
     "q": "¿Puedo pagar con dólares?",
-    "a": "Sí, aceptamos dólares."
+    "a": "Sí, puede pagar con USD."
   },
   {
     "key": "split_payment",
     "q": "¿Puedo dividir el pago entre varias personas?",
-    "a": "Sí, puedes dividir el pago entre varias personas."
+    "a": "Sí, es posible."
   },
   {
     "key": "invoice_or_receipt",
     "q": "¿Entregan boleta o factura?",
-    "a": "Sí, entregamos boleta y factura."
+    "a": "Sí, al momento del check-out."
   },
   {
     "key": "invoice_by_email",
     "q": "¿Puedo recibir una copia de la factura por correo?",
-    "a": "Sí, podemos enviarte una copia de la factura por correo."
+    "a": "Sí, debe solicitarla al check-out."
   },
   {
     "key": "deposit_required",
     "q": "¿Cobran depósito o garantía?",
-    "a": "Sí, cobramos un depósito o garantía."
+    "a": "Sí, tomamos garantía a las tarjetas de crédito al momento del check-in."
   },
   {
     "key": "deposit_return",
     "q": "¿Cuándo devuelven la garantía?",
-    "a": "La garantía se devuelve en un plazo de 48 horas."
+    "a": "Al momento del check-out se libera el monto correspondiente. También puede solicitar la anulación de la garantía en cualquier momento de su estadía. En ambos casos, la devolución puede tardar hasta 5 días hábiles dependiendo de su banco."
   },
   {
     "key": "tax_foreigners",
     "q": "¿Cobran impuesto adicional a extranjeros?",
-    "a": "No, no cobramos impuestos adicionales a extranjeros."
+    "a": "Se exenta del pago del IVA de la habitación solo si paga en USD con tarjeta de crédito y presenta DNI/pasaporte con papel PDI. Este último documento es muy importante."
   },
   {
     "key": "lost_key",
     "q": "¿Qué pasa si pierdo mi llave o tarjeta de acceso?",
-    "a": "Puedes solicitar una nueva llave en recepción."
+    "a": "Puede solicitar una nueva en recepción."
   },
   {
     "key": "room_charge",
     "q": "¿Se puede pagar aparte el consumo en Restaurante?",
-    "a": "Sí, puedes pagar aparte el consumo en el restaurante."
+    "a": "Sí, puede pagar directamente en el restaurante."
   },
   {
     "key": "room_charge_alt",
     "q": "¿Se puede cargar el consumo de Restaurante a la habitación?",
-    "a": "Sí, se puede cargar el consumo del restaurante a la habitación, siempre que exista una garantía registrada."
+    "a": "Es posible solo si deja garantía con tarjeta de crédito al momento del check-in."
   },
   {
     "key": "contact_reception",
     "q": "¿Cómo me comunico con recepción desde la habitación?",
-    "a": "Puedes comunicarte directamente con recepción por WhatsApp al +56 9 2035 5564."
+    "a": "Marcando el 0 desde el teléfono de la habitación, o contactando al +56 9 7796 7879."
   },
   {
     "key": "emergency_number",
     "q": "¿Cuál es el número de emergencia del hotel?",
-    "a": "El número de emergencia del hotel es el +56 9 2035 5564 mediante WhatsApp."
+    "a": "Puede llamarnos al +56 2 2964 1000 o al +56 9 7796 7879."
   },
   {
     "key": "talk_to_manager",
     "q": "¿Puedo hablar con el gerente?",
-    "a": "Puedes hablar con el gerente solo con previa cita. Consulta su disponibilidad directamente en recepción."
+    "a": "Puede preguntar si está disponible nuestro gerente de operaciones directamente en recepción."
   },
   {
     "key": "help_other_language",
     "q": "¿Puedo pedir asistencia en otro idioma?",
-    "a": "Sí, puedes pedir asistencia en otro idioma."
+    "a": "Sí, también estamos disponibles en inglés."
   },
   {
     "key": "comments_complaints",
     "q": "¿Dónde puedo dejar un comentario o reclamo?",
-    "a": "Puedes dejar un comentario, sugerencia o reclamo en la recepción del hotel. Cada habitación también cuenta con un folleto donde puedes dejar tus comentarios."
+    "a": "Puede hacerlo a través del correo pia.falcon@hilton.com o directamente en recepción."
   },
   {
     "key": "itinerary_help",
     "q": "¿Puedo pedir ayuda con mi itinerario?",
-    "a": "Sí, por favor acércate a recepción y te podrán ayudar."
+    "a": "Sí, puede pedir ayuda en recepción."
   },
   {
     "key": "wake_up_service",
     "q": "¿Tienen servicio de despertador?",
-    "a": "Sí, por favor gestionarlo directamente con recepción."
+    "a": "Sí, puede agendar una llamada de despertar directamente en recepción."
   },
   {
     "key": "doctor_available",
     "q": "¿Tienen médico disponible?",
-    "a": "No, no contamos con un médico disponible en el hotel."
+    "a": "No contamos con servicio médico. Nuestro equipo puede ayudarle a buscar servicios médicos privados."
   },
   {
     "key": "first_aid",
     "q": "¿Tienen botiquín o primeros auxilios?",
-    "a": "Sí, contamos con botiquín de primeros auxilios."
+    "a": "Sí, en recepción contamos con un botiquín."
   },
   {
     "key": "umbrellas",
     "q": "¿Tienen paraguas para prestar?",
-    "a": "Sí, contamos con paraguas para prestar. Puedes solicitar el tuyo directamente en recepción."
+    "a": "Sí, puede solicitarlo en recepción."
   },
   {
     "key": "tourist_places",
     "q": "¿Qué lugares turísticos recomiendan cerca?",
-    "a": "Te recomendamos:\n• Mall Apumanque a 5 min caminando\n• Parque Araucano a 9 min caminando\n• Pueblito Los Domínicos a 11 min en vehículo\n• Parque Bicentenario a 11 min en vehículo\n• Sky Costanera a 12 min en vehículo\n• Mall Parque Arauco a 15 min caminando\n• Mercado Central a 18 min en vehículo\n• Palacio La Moneda a 25 min en vehículo\n• Cerro San Cristóbal a 37 min en vehículo\n• Farellones a 41 km en vehículo\n• Cajón del Maipo a 1 hr 35 min en vehículo\n• Viña del Mar / Valparaíso a 2 hrs en vehículo"
+    "a": "El hotel está ubicado en una zona industrial, a 40 minutos de Santiago en vehículo. En Santiago puede visitar el Cerro San Cristóbal, Santiago Centro y Costanera Center."
   },
   {
     "key": "tours_tickets",
     "q": "¿Dónde puedo comprar entradas a tours?",
-    "a": "Puedes comprar entradas a tours en la recepción del hotel."
+    "a": "Puede coordinar tours privados o compartidos en recepción, o en la página web de cada agencia."
   },
   {
     "key": "agencies_deals",
-    "q": "¿Tienen convenios con agencias?",
-    "a": "Sí, consulta por más detalles en recepción. También puedes contactar directamente a: Turistik: +56 9 4226 0408 / Chiletour: +56 9 7976 4222."
+    "q": "¿Tienen convenios con agencias de turismo?",
+    "a": "Sí, puede consultar en recepción los convenios disponibles."
   },
   {
     "key": "city_maps",
     "q": "¿Tienen mapas de la ciudad?",
-    "a": "Sí, puedes solicitar uno en recepción."
+    "a": "No contamos con mapas de la ciudad."
   },
   {
     "key": "money_exchange",
     "q": "¿Dónde puedo cambiar dinero?",
-    "a": "Puedes cambiar dinero en Afex, en el Mall Apumanque, ubicado en Av. Apoquindo con Av. Manquehue Sur."
+    "a": "En el shopping mall, Santiago centro o en el aeropuerto. También contamos con una máquina de cambio de divisas disponible las 24 horas en el primer piso del hotel."
   },
   {
     "key": "car_rental",
     "q": "¿Dónde puedo arrendar un auto?",
-    "a": "Puedes arrendar un auto en Avis, ubicado frente al hotel."
+    "a": "En el aeropuerto puede encontrar opciones de arriendo de vehículos."
   },
   {
     "key": "nearest_supermarket",
     "q": "¿Dónde queda el supermercado más cercano?",
-    "a": "El supermercado más cercano es el Santa Isabel, a 7 minutos caminando desde el hotel."
+    "a": "El Líder se encuentra ubicado a 15 minutos en vehículo."
   },
   {
     "key": "souvenirs",
     "q": "¿Dónde puedo comprar recuerdos?",
-    "a": "Puedes comprar recuerdos en el Mall Apumanque, ubicado en Av. Apoquindo con Av. Manquehue Sur."
+    "a": "Lo más cercano es el Mall Arauco Maipú, a unos 15 minutos en vehículo."
   },
   {
     "key": "nearby_restaurants",
     "q": "¿Qué restaurantes recomiendan cerca?",
-    "a": "Te recomendamos el Olivia Trattoria, ubicado en el piso -1 del hotel."
+    "a": "Al ser una zona industrial no se encuentran restaurantes cercanos, solo el del hotel."
   },
   {
     "key": "where_to_run",
     "q": "¿Dónde puedo salir a caminar o trotar?",
-    "a": "Puedes salir a caminar o trotar al Parque Araucano, a 10 minutos caminando desde el hotel."
+    "a": "Fuera del hotel y los alrededores es seguro caminar o trotar solo de día."
   },
   {
     "key": "bank_nearby",
     "q": "¿Dónde hay un banco cercano?",
-    "a": "El banco más cercano se encuentra a 3 minutos del hotel: Santander Work Café, ubicado en Av. Manquehue Norte 5873."
+    "a": "Al ser una zona industrial, no se encuentran bancos cerca del hotel."
   },
   {
     "key": "atm_nearby",
     "q": "¿Dónde hay un cajero automático cerca?",
-    "a": "El cajero más cercano se encuentra en el metro Manquehue."
+    "a": "A 5 minutos caminando se encuentra una estación de gas Aramco, que cuenta con cajero automático."
   },
   {
     "key": "withdraw_money",
     "q": "¿Dónde puedo sacar dinero?",
-    "a": "El cajero más cercano se encuentra en el metro Manquehue."
+    "a": "A 5 minutos caminando se encuentra una estación de gas Aramco, que cuenta con cajero automático."
   },
   {
     "key": "mall_nearby",
     "q": "¿Dónde hay un centro comercial cercano?",
-    "a": "A 5 minutos caminando se encuentra el Mall Apumanque y a 15 minutos el Mall Parque Arauco, caminando hacia el norte por Av. Manquehue."
+    "a": "El Mall Arauco Maipú se encuentra a unos 15 minutos en vehículo."
   },
   {
     "key": "mall",
     "q": "¿Dónde hay un mall?",
-    "a": "A 5 minutos caminando se encuentra el Mall Apumanque y a 15 minutos el Mall Parque Arauco, caminando hacia el norte por Av. Manquehue."
+    "a": "El Mall Arauco Maipú se encuentra a unos 15 minutos en vehículo."
   },
   {
     "key": "shopping",
     "q": "¿Dónde hay un shopping?",
-    "a": "A 5 minutos caminando se encuentra el Mall Apumanque y a 15 minutos el Mall Parque Arauco, caminando hacia el norte por Av. Manquehue."
+    "a": "El Mall Arauco Maipú se encuentra a unos 15 minutos en vehículo."
   },
   {
     "key": "bar_nearby",
     "q": "¿Dónde hay un bar cerca?",
-    "a": "En el piso -1 del hotel se encuentra el Olivia Trattoria, que cuenta con bar abierto hasta las 2:00 AM y consumo de licor desde las 12:30 PM."
+    "a": "Al ser una zona industrial, no se encuentran bares cerca del hotel."
   },
   {
     "key": "park_nearby",
     "q": "¿Dónde hay un parque cerca?",
-    "a": "A 10 minutos caminando se encuentra el Parque Araucano, que cuenta con multicanchas y espacios habilitados para caminar y hacer deporte."
+    "a": "Hay un parque llamado Parque Enea, aproximadamente a 10 minutos caminando desde el hotel."
   },
   {
     "key": "ice",
     "q": "¿Dónde puedo obtener hielo?",
-    "a": "A 3 minutos caminando desde el hotel se encuentra el Stop by Aramco, donde puedes conseguir hielo."
+    "a": "Puede utilizar la hielera de su habitación y dirigirse a nuestra máquina de hielo ubicada en el segundo piso, junto a la lavandería. También puede solicitar hielo directamente en la barra del restaurante."
   },
   {
     "key": "parque_arauco_location",
     "q": "¿Dónde queda el Parque Arauco?",
-    "a": "El Mall Parque Arauco se encuentra a 15 minutos del hotel caminando por Av. Manquehue hacia el norte, en la calle Cerro Colorado con Rosario Norte."
+    "a": "El Mall Arauco Maipú se encuentra a unos 15 minutos del hotel en vehículo."
   },
   {
     "key": "pets_allowed",
     "q": "¿Aceptan mascotas?",
-    "a": "Sí, somos un hotel Pet-Friendly. Aceptamos mascotas de hasta 15 kg con un costo adicional de $13.990 IVA incluido."
+    "a": "Sí, aceptamos mascotas con un cargo extra de $50 dólares + IVA por mascota y noche."
   },
   {
     "key": "pets_size",
     "q": "¿Qué tamaño máximo aceptan?",
-    "a": "Aceptamos mascotas de hasta 15 kg, con un costo adicional de $13.990 IVA incluido."
+    "a": "Aceptamos mascotas de hasta 10 kilogramos."
   },
   {
     "key": "pets_extra_cost",
     "q": "¿Cobra algún costo adicional?",
-    "a": "Sí, el costo adicional por traer a tu mascota es de $13.990 IVA incluido. La mascota debe pesar máximo 15 kg."
+    "a": "Sí, la estadía de la mascota tiene un valor de $50 dólares + IVA por mascota y noche."
   },
   {
     "key": "pets_alone_in_room",
     "q": "¿Puedo dejar sola a mi mascota en la habitación?",
-    "a": "No, tu mascota no puede quedarse sola en la habitación en ningún momento."
+    "a": "No está permitido dejar a su mascota sola en la habitación."
   },
   {
     "key": "pets_areas",
     "q": "¿Tienen áreas para pasear perros?",
-    "a": "Sí, tenemos un área para pasear a tu mascota frente al hotel. Si necesitas un espacio con más áreas verdes, te recomendamos el Parque Araucano, a 10 minutos caminando hacia el norte por Av. Manquehue."
+    "a": "Sí, puede pasearlo en el jardín y en la entrada del hotel."
   },
   {
     "key": "pets_beds_bowls",
     "q": "¿Tienen camas o platos para mascotas?",
-    "a": "Sí, puedes solicitar camas o platos para tu mascota en recepción."
+    "a": "Sí, al ingresar con su mascota otorgamos cama, pocillos de alimento y agua con su comida."
+  },
+  {
+    "key": "pet_bags",
+    "q": "¿Tienen bolsas para caca de perro?",
+    "a": "No contamos con bolsas para residuos de mascotas."
   },
   {
     "key": "modify_reservation",
     "q": "¿Puedo modificar mi reserva?",
-    "a": "Sí, para hacerlo por favor acércate a recepción."
+    "a": "Se puede modificar hasta 48 horas antes de la fecha de llegada."
   },
   {
     "key": "cancel_reservation",
     "q": "¿Puedo cancelar sin costo?",
-    "a": "Depende de las condiciones de tu reserva. Por favor consulta en recepción para más detalles."
+    "a": "Puede cancelar hasta 48 horas antes de la fecha de llegada. Posterior a eso se cobrará la primera noche."
   },
   {
     "key": "add_nights",
     "q": "¿Puedo agregar noches extra?",
-    "a": "Sí, consulta en recepción por disponibilidad."
+    "a": "Dependerá de la disponibilidad del hotel. Para más información, consulte directamente en recepción."
   },
   {
     "key": "change_room_type",
     "q": "¿Puedo cambiar el tipo de habitación?",
-    "a": "Sí, consulta en recepción por disponibilidad."
+    "a": "Dependerá de la disponibilidad del hotel. Para más información, consulte directamente en recepción."
   },
   {
     "key": "pay_at_hotel",
     "q": "¿Puedo pagar la reserva directamente en el hotel?",
-    "a": "Sí, por favor acércate a recepción de manera presencial para gestionar el pago."
+    "a": "Sí, puede pagarla en el check-in. De todas formas, se necesita una tarjeta de crédito para garantizar la estadía."
   },
   {
     "key": "reservation_received",
     "q": "¿Recibieron mi reserva?",
-    "a": "Para verificarlo, por favor contáctate directamente con recepción al +56 9 2035 5564."
+    "a": "Para confirmar su reserva puede llamar al +56 2 2964 1000 o escribir al correo HGI_ReservaSantiago@hilton.com."
   },
   {
     "key": "reserve_for_someone_else",
     "q": "¿Puedo reservar para otra persona?",
-    "a": "Sí, puedes gestionarlo contactándote con recepción al +56 9 2035 5564. Sin embargo, para hacer efectiva la reserva, debes acercarte a recepción de manera presencial para realizar el pago."
+    "a": "Sí, puede hacer la reserva a nombre de otra persona."
   },
   {
     "key": "reserve_by_phone",
     "q": "¿Puedo reservar por teléfono o WhatsApp?",
-    "a": "Sí, puedes gestionar una reserva con recepción al +56 9 2035 5564. Sin embargo, para hacer efectiva la reserva, debes acercarte a recepción de manera presencial para realizar el pago."
+    "a": "La reserva se debe realizar a través del correo HGI_ReservaSantiago@hilton.com o llamando al +56 2 2964 1000."
   },
   {
     "key": "special_room_occasion",
     "q": "¿Puedo pedir una habitación especial para aniversario o luna de miel?",
-    "a": "Lamentablemente, no contamos con habitaciones especiales para ocasiones específicas."
+    "a": "Sí, contamos con un plan de noche romántica. Puede solicitarlo a través del área de reservas."
   },
   {
     "key": "loyalty_program",
     "q": "¿Existe algún programa de beneficios/Fidelización dentro del hotel?",
-    "a": "Sí, contamos con el programa de fidelización de Accor. Consulta los detalles en: https://all.accor.com/loyalty-program/es/reasontojoin/index.vhtml#earn-rewards"
+    "a": "Sí, tenemos el programa Hilton Honors."
   },
   {
     "key": "reserve_with_points",
     "q": "¿Puedo reservar con puntos o beneficios?",
-    "a": "Sí, puedes reservar aprovechando tus beneficios del programa de fidelización de Accor: https://login.accor.com/oidc/sign-in?flowId=QFJk871r6W"
-  },
-  {
-    "key": "lost_and_found",
-    "q": "Dejé algo olvidado en el hotel, ¿pueden ayudarme?",
-    "a": "Sí, guardamos todos los objetos perdidos. Por favor contáctate con recepción al +56 9 2035 5564."
-  },
-  {
-    "key": "extra_bed",
-    "q": "¿Puedo pedir una cama adicional?",
-    "a": "No, no se pueden solicitar camas adicionales."
+    "a": "Sí, puede hacerlo a través de su perfil en la aplicación de Hilton Honors."
   },
   {
     "key": "payment_methods",
     "q": "¿Qué formas de pago aceptan?",
-    "a": "Aceptamos tarjeta de crédito y débito, transferencias y dólares. También es posible dividir el pago entre varias personas en recepción."
+    "a": "Aceptamos tarjeta de crédito y débito, dólares y transferencias (estas últimas con 5 días de anticipación). También es posible dividir el pago entre varias personas."
   }
 ]

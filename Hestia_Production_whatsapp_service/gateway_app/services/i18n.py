@@ -19,17 +19,17 @@ _PHRASES: dict[str, dict[Lang, str]] = {
     },
     "reception_fallback": {
         "es": (
-            "Para resolver esta duda te pedimos escriba a recepción al *+56 9 2035 5564* "
+            "Para resolver esta duda te pedimos escriba a recepción al *+56 9 7796 7879* "
             "Si necesitas que gestionemos algo (ej. pedir algo a la habitación), "
             "dime 'Necesito...' y lo registramos. 😊"
         ),
         "en": (
-            "To clarify this, please write to Reception at *+56 9 2035 5564*.\n\n"
+            "To clarify this, please write to Reception at *+56 9 7796 7879*.\n\n"
             "If you need us to arrange something (e.g., bring something to your room), "
             "tell me “I need…” and I’ll log it. 😊"
         ),
         "pt": (
-            "Para esclarecer esta dúvida, pedimos que escreva para a Recepção no *+56 9 2035 5564* "
+            "Para esclarecer esta dúvida, pedimos que escreva para a Recepção no *+56 9 7796 7879* "
             "usando o telefone do seu quarto.\n\n"
             "Se precisar que a gente organize algo (ex.: levar algo ao quarto), "
             "diga “Preciso...” e nós registramos. 😊"
