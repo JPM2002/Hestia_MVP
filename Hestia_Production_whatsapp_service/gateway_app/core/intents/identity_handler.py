@@ -429,6 +429,7 @@ def extract_room_simple(msg: str) -> Optional[str]:
     - "habitación 205"
     - "room 305"
     - "hab 123"
+    - "40-25"  -> returns "4025"
     - Just a number like "205"
 
     Returns:
@@ -436,23 +437,25 @@ def extract_room_simple(msg: str) -> Optional[str]:
     """
     msg_lower = msg.lower()
 
-    # Pattern 1: "habitación 205", "room 305", "hab 123"
-    match = re.search(r"(?:habitaci[oó]n|room|hab\.?)\s*(\d{2,4})", msg_lower, re.IGNORECASE)
+    # Pattern 1: "habitación 205", "room 305", "hab 123", "hab 40-25"
+    match = re.search(
+        r"(?:habitaci[oó]n|room|hab\.?)\s*(\d{2,4}(?:-\d{1,4})?)",
+        msg_lower,
+        re.IGNORECASE
+    )
     if match:
-        room = match.group(1)
+        room = match.group(1).replace("-", "")
         logger.debug(f"[EXTRACT] Room extracted (pattern 1): {room}")
         return room
 
-    # Pattern 2: Just a standalone number (2-4 digits)
-    match = re.search(r"\b(\d{2,4})\b", msg)
+    # Pattern 2: standalone number or hyphenated number like "40-25"
+    match = re.search(r"\b(\d{2,4}(?:-\d{1,4})?)\b", msg_lower)
     if match:
-        room = match.group(1)
+        room = match.group(1).replace("-", "")
         logger.debug(f"[EXTRACT] Room extracted (pattern 2): {room}")
         return room
 
-    logger.debug("[EXTRACT] No room pattern matched")
     return None
-
 
 def is_faq_question(msg: str) -> bool:
     """
