@@ -72,17 +72,17 @@
   {
     "key": "airport_transfer",
     "q": "¿Tienen servicio de transporte al aeropuerto?",
-    "a": "Sí, contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos. En caso de urgencia, acérquese a recepción."
+    "a": "Sí, contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente escribiendo al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos. En caso de urgencia, acérquese a recepción."
   },
   {
     "key": "transfer_cost",
     "q": "¿Cuánto cuesta el transfer?",
-    "a": "Puede consultar el costo del transporte al aeropuerto directamente en recepción o llamando al +56 9 7796 7879."
+    "a": "Puede consultar el costo del transporte al aeropuerto directamente en recepción o escribiendo al +56 9 7796 7879."
   },
   {
     "key": "transfer_frequency",
     "q": "¿Cada cuánto sale el transporte hacia el aeropuerto?",
-    "a": "Contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos."
+    "a": "Contamos con transporte desde y hacia el aeropuerto cada 1 hora. Puede reservar directamente escribiendo al +56 9 7796 7879. Debe recibir confirmación ya que hay cupos y horarios establecidos."
   },
   {
     "key": "taxi_booking",
@@ -587,12 +587,12 @@
   {
     "key": "contact_reception",
     "q": "¿Cómo me comunico con recepción desde la habitación?",
-    "a": "Marcando el 0 desde el teléfono de la habitación, o contactando al +56 9 7796 7879."
+    "a": "Marcando el 0 desde el teléfono de la habitación, o escribiendo al +56 9 7796 7879."
   },
   {
     "key": "emergency_number",
     "q": "¿Cuál es el número de emergencia del hotel?",
-    "a": "Puede llamarnos al +56 2 2964 1000 o al +56 9 7796 7879."
+    "a": "Puede llamarnos al +56 2 2964 1000 o escribiendo al +56 9 7796 7879."
   },
   {
     "key": "talk_to_manager",
