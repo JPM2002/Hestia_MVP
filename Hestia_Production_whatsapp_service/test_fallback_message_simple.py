@@ -14,8 +14,7 @@ def get_reception_fallback_message() -> str:
         Formatted message to contact reception
     """
     return (
-        "Para resolver esta duda te pedimos llamar a recepción al *100 o 101+OK* "
-        "desde el teléfono de tu habitación.\n\n"
+        "Para resolver esta duda te pedimos escribir a recepción al *+56 9 2035 5564* "
         "Si necesitas que gestionemos algo (ej. pedir algo a la habitación), "
         "dime 'Necesito...' y lo registramos. 😊"
     )
@@ -35,7 +34,7 @@ def test_mensaje_fallback():
 
     # Verificaciones
     verificaciones = [
-        ("100 o 101+OK", "Incluye teléfono de recepción"),
+        ("+56 9 2035 5564", "Incluye teléfono de recepción"),
         ("habitación", "Menciona que es desde la habitación"),
         ("Necesito", "Sugiere cómo usar el bot para solicitudes"),
         ("resolver esta duda", "Explica que es para preguntas informativas"),

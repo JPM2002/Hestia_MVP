@@ -44,10 +44,11 @@ class CancellationStage(PipelineStage):
             context.session["state"] = STATE_NEW
 
             # Add response
-            context.add_action(text_action(
-                "He cancelado la solicitud actual. Si necesitas algo más para tu habitación, "
-                "solo dime por aquí."
-            ))
+            from gateway_app.services.i18n import get_phrase
+
+            lang = context.session.get("language") or "es"
+            context.add_action(text_action(get_phrase("cancel_confirm", lang)))
+
 
             # Mark as handled
             context.mark_handled()

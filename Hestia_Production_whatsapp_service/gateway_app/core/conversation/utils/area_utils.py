@@ -4,6 +4,8 @@ Area-related utilities.
 from typing import List, Optional
 
 from gateway_app.core.conversation.utils.constants import AREA_MAP
+from gateway_app.services.i18n import normalize_lang, area_name
+
 
 
 def get_area_name(area_code: str) -> str:
@@ -48,31 +50,60 @@ def get_area_description(area_code: str) -> str:
     return info[2] if info else ""
 
 
-def build_area_options_text(detected_areas: Optional[List[str]] = None) -> str:
+def build_area_options_text(
+    detected_areas: Optional[List[str]] = None,
+    lang: Optional[str] = None,
+) -> str:
     """
-    Build area selection options text.
+    Build area selection options text in the correct language.
 
-    Args:
-        detected_areas: List of detected area codes (optional)
-                       If provided, only show these areas
-
-    Returns:
-        Formatted area options text
+    Output format:
+      1️⃣ *Maintenance* (technical/AC/water/lights)
+      2️⃣ *Housekeeping* (cleaning/towels/amenities)
+      3️⃣ *Front Desk* (billing/reservations/info)
+      4️⃣ *Management* (complaint/management)
     """
+    l = normalize_lang(lang)
+
+    desc_map = {
+        "es": {
+            "MANTENCION": "técnico/AC/agua/luz",
+            "HOUSEKEEPING": "limpieza/toallas/amenities",
+            "RECEPCION": "pagos/reservas/info",
+            "GERENCIA": "queja/gerencia",
+        },
+        "en": {
+            "MANTENCION": "technical/AC/water/lights",
+            "HOUSEKEEPING": "cleaning/towels/amenities",
+            "RECEPCION": "billing/reservations/info",
+            "GERENCIA": "complaint/management",
+        },
+        "pt": {
+            "MANTENCION": "técnico/ar/água/luz",
+            "HOUSEKEEPING": "limpeza/toalhas/amenities",
+            "RECEPCION": "pagamentos/reservas/info",
+            "GERENCIA": "reclamação/gerência",
+        },
+    }[l]
+
+    number_map = {
+        "MANTENCION": "1",
+        "HOUSEKEEPING": "2",
+        "RECEPCION": "3",
+        "GERENCIA": "4",
+    }
+
+    def _line(area_code: str) -> str:
+        num = number_map.get(area_code) or (AREA_MAP.get(area_code, ("", "", ""))[1] if area_code in AREA_MAP else "")
+        name_local = area_name(area_code, l)
+        desc = desc_map.get(area_code, "")
+        return f"{num}️⃣ *{name_local}* ({desc})" if desc else f"{num}️⃣ *{name_local}*"
+
+    # stable order (1→4)
+    order = ["MANTENCION", "HOUSEKEEPING", "RECEPCION", "GERENCIA"]
+
     if detected_areas:
-        # Show only detected areas
-        options = []
-        for area in detected_areas:
-            info = AREA_MAP.get(area)
-            if info:
-                name, number, desc = info
-                options.append(f"{number}️⃣ *{name}* ({desc})")
-        return "\n".join(options)
-    else:
-        # Show all areas
-        return (
-            "1️⃣ *Mantenimiento* (técnico/AC/agua/luz)\n"
-            "2️⃣ *Housekeeping* (limpieza/toallas/amenities)\n"
-            "3️⃣ *Recepción* (pagos/reservas/info)\n"
-            "4️⃣ *Otro* (queja/gerencia)"
-        )
+        filtered = [a for a in order if a in set(detected_areas)]
+        return "\n".join(_line(a) for a in filtered)
+
+    return "\n".join(_line(a) for a in order)

@@ -11,6 +11,8 @@ import re
 from typing import Any, Dict, List, Optional
 
 from gateway_app.core.intents.base import text_action
+from gateway_app.services.i18n import get_phrase, normalize_lang, area_name
+
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +90,10 @@ def request_guest_identity(nlu: Any, session: Dict[str, Any]) -> List[Dict[str, 
         }
     )
 
-    text = (
-        "Para poder ayudarte mejor, necesito confirmar algunos datos:\n\n"
-        "📝 ¿Cuál es tu nombre completo?\n"
-        "🏨 ¿En qué número de habitación te encuentras?"
-    )
-
+    lang = normalize_lang(session.get("language"))
+    text = get_phrase("identity_request", lang)
     return [text_action(text)]
+
 
 
 def handle_guest_identify(
@@ -194,9 +193,30 @@ def handle_guest_identify(
         }
     )
 
-    text = f"Gracias, pero aún necesito tu {' y '.join(missing)}. ¿Puedes proporcionarlo?"
+    lang = normalize_lang(session.get("language"))
 
+    labels = {
+        "es": {"name": "nombre", "room": "número de habitación"},
+        "en": {"name": "full name", "room": "room number"},
+        "pt": {"name": "nome completo", "room": "número do quarto"},
+    }[lang]
+
+    missing_parts = []
+    if not temp_name:
+        missing_parts.append(labels["name"])
+    if not temp_room:
+        missing_parts.append(labels["room"])
+
+    if lang == "en":
+        missing_str = " and ".join(missing_parts)
+    elif lang == "pt":
+        missing_str = " e ".join(missing_parts)
+    else:
+        missing_str = " y ".join(missing_parts)
+
+    text = get_phrase("identity_missing_fields", lang, missing=missing_str)
     return True, [text_action(text)]
+
 
 
 def create_combined_confirmation(session: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -216,21 +236,18 @@ def create_combined_confirmation(session: Dict[str, Any]) -> List[Dict[str, Any]
     priority = temp_draft.get("priority", "MEDIA")
     detail = temp_draft.get("detail", "Sin detalles")
 
-    # Map area to friendly name
-    area_map = {
-        "MANTENCION": "Mantenimiento",
-        "HOUSEKEEPING": "Housekeeping",
-        "ROOMSERVICE": "Room Service",
-    }
-    area_name = area_map.get(area, area)
+    lang = normalize_lang(session.get("language"))
+    area_local = area_name(area, lang)
 
-    # Build confirmation message - simplified version
-    text = (
-        f"Perfecto, {temp_name}. Voy a notificar al equipo de {area_name} sobre:\n\n"
-        f"📝 {detail}\n"
-        f"🏨 Habitación {temp_room}\n\n"
-        "¿Confirmas? (Sí/No)"
+    text = get_phrase(
+        "ticket_confirm",
+        lang,
+        name=temp_name,
+        area=area_local,
+        detail=detail,
+        room=temp_room,
     )
+
 
     # Update ticket_draft with collected identity data (single source of truth)
     session["ticket_draft"].update({
@@ -319,23 +336,19 @@ def create_combined_confirmation_direct(nlu: Any, session: Dict[str, Any]) -> Li
 
     # Si confidence OK, continuar con confirmación normal...
 
-    # Map area to friendly name
-    area_map = {
-        "MANTENCION": "Mantenimiento",
-        "HOUSEKEEPING": "Housekeeping",
-        "RECEPCION": "Recepción",
-        "SUPERVISION": "Supervisión",
-        "GERENCIA": "Gerencia",
-    }
-    area_name = area_map.get(area, area)
+    # Build confirmation message (localized)
+    lang = normalize_lang(session.get("language"))
+    area_local = area_name(area, lang)
 
-    # Build confirmation message - simplified version
-    text = (
-        f"Perfecto, {guest_name}. Voy a notificar al equipo de {area_name} sobre:\n\n"
-        f"📝 {detail}\n"
-        f"🏨 Habitación {room}\n\n"
-        "¿Confirmas? (Sí/No)"
+    text = get_phrase(
+        "ticket_confirm",
+        lang,
+        name=guest_name,
+        area=area_local,
+        detail=detail,
+        room=room,
     )
+
 
     # Create ticket draft in session
     session["ticket_draft"] = {
@@ -416,6 +429,7 @@ def extract_room_simple(msg: str) -> Optional[str]:
     - "habitación 205"
     - "room 305"
     - "hab 123"
+    - "40-25"  -> returns "4025"
     - Just a number like "205"
 
     Returns:
@@ -423,23 +437,25 @@ def extract_room_simple(msg: str) -> Optional[str]:
     """
     msg_lower = msg.lower()
 
-    # Pattern 1: "habitación 205", "room 305", "hab 123"
-    match = re.search(r"(?:habitaci[oó]n|room|hab\.?)\s*(\d{2,4})", msg_lower, re.IGNORECASE)
+    # Pattern 1: "habitación 205", "room 305", "hab 123", "hab 40-25"
+    match = re.search(
+        r"(?:habitaci[oó]n|room|hab\.?)\s*(\d{2,4}(?:-\d{1,4})?)",
+        msg_lower,
+        re.IGNORECASE
+    )
     if match:
-        room = match.group(1)
+        room = match.group(1).replace("-", "")
         logger.debug(f"[EXTRACT] Room extracted (pattern 1): {room}")
         return room
 
-    # Pattern 2: Just a standalone number (2-4 digits)
-    match = re.search(r"\b(\d{2,4})\b", msg)
+    # Pattern 2: standalone number or hyphenated number like "40-25"
+    match = re.search(r"\b(\d{2,4}(?:-\d{1,4})?)\b", msg_lower)
     if match:
-        room = match.group(1)
+        room = match.group(1).replace("-", "")
         logger.debug(f"[EXTRACT] Room extracted (pattern 2): {room}")
         return room
 
-    logger.debug("[EXTRACT] No room pattern matched")
     return None
-
 
 def is_faq_question(msg: str) -> bool:
     """
