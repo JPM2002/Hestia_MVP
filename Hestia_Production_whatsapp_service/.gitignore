@@ -10,3 +10,6 @@ ENV/
 
 # Environment variables
 .env
+
+# Project extraction output
+.project_extract.txt
