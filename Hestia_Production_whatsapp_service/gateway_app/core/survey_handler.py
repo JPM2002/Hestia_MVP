@@ -187,8 +187,8 @@ def _handle_q1_response(
     rating = extract_rating(msg_text)
 
     if rating is None:
-        # Respuesta inválida
-        return True, [{"type": "text", "text": SURVEY_INVALID_RATING_MESSAGE}]
+        # No es una calificación válida → dejar que el mensaje pase al pipeline normal (LLM)
+        return False, []
 
     # Guardar calificación
     try:
@@ -264,8 +264,8 @@ def _handle_q3_response(
     utility = extract_rating(msg_text)
 
     if utility is None:
-        # Respuesta inválida
-        return True, [{"type": "text", "text": SURVEY_INVALID_RATING_MESSAGE}]
+        # No es una calificación válida → dejar que el mensaje pase al pipeline normal (LLM)
+        return False, []
 
     # Guardar utilidad y COMPLETAR encuesta
     try:
