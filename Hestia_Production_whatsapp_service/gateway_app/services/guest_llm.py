@@ -43,9 +43,8 @@ logger = logging.getLogger(__name__)
 _client = OpenAI()
 LLM_MODEL = os.getenv("GUEST_LLM_MODEL", "gpt-4o-mini")
 
-# 🔴 TEST: Verificar que el cliente de OpenAI está inicializado
-logger.error(
-    "🔴 [STARTUP] OpenAI client initialized",
+logger.info(
+    "[STARTUP] OpenAI client initialized",
     extra={
         "client_type": type(_client).__name__,
         "model": LLM_MODEL,
@@ -84,11 +83,6 @@ def _call_json_llm(
     )
 
     try:
-        logger.error(
-            "🔴 [LLM] About to call OpenAI chat.completions.create",
-            extra={"model": LLM_MODEL, "location": "guest_llm.py"}
-        )
-
         resp = _client.chat.completions.create(
             model=LLM_MODEL,
             messages=[
@@ -97,11 +91,6 @@ def _call_json_llm(
             ],
             response_format={"type": "json_object"},
             max_tokens=max_tokens,
-        )
-
-        logger.error(
-            "🔴 [LLM] OpenAI response received",
-            extra={"model": LLM_MODEL, "location": "guest_llm.py"}
         )
 
         # Standard OpenAI Chat Completions API
